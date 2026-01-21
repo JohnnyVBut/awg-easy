@@ -48,15 +48,53 @@ module.exports.DICEBEAR_TYPE = process.env.DICEBEAR_TYPE || false;
 module.exports.USE_GRAVATAR = process.env.USE_GRAVATAR || false;
 
 const getRandomInt = (min, max) => min + Math.floor(Math.random() * (max - min));
-const getRandomJunkSize = () => getRandomInt(15, 150);
-const getRandomHeader = () => getRandomInt(1, 2_147_483_647);
 
-module.exports.JC = process.env.JC || getRandomInt(3, 10);
-module.exports.JMIN = process.env.JMIN || 50;
-module.exports.JMAX = process.env.JMAX || 1000;
-module.exports.S1 = process.env.S1 || getRandomJunkSize();
-module.exports.S2 = process.env.S2 || getRandomJunkSize();
-module.exports.H1 = process.env.H1 || getRandomHeader();
-module.exports.H2 = process.env.H2 || getRandomHeader();
-module.exports.H3 = process.env.H3 || getRandomHeader();
-module.exports.H4 = process.env.H4 || getRandomHeader();
+// Generate random range for H parameters (AWG 2.0)
+// Based on real AWG configs, ranges are typically smaller
+const getRandomHeaderRange = () => {
+  const min = getRandomInt(100_000_000, 2_000_000_000);
+  const range = getRandomInt(200_000_000, 500_000_000);
+  const max = Math.min(min + range, 2_147_483_647);
+  return `${min}-${max}`;
+};
+
+// ============================================================================
+// AmneziaWG 2.0 parameters
+// ============================================================================
+
+// Junk packet parameters (based on real AWG client config)
+module.exports.JC = process.env.JC || 6;
+module.exports.JMIN = process.env.JMIN || 10;
+module.exports.JMAX = process.env.JMAX || 50;
+
+// Handshake obfuscation (based on real AWG client config)
+module.exports.S1 = process.env.S1 || 64;
+module.exports.S2 = process.env.S2 || 67;
+module.exports.S3 = process.env.S3 || 17;   // NEW in AWG 2.0
+module.exports.S4 = process.env.S4 || 4;    // NEW in AWG 2.0
+
+// Magic headers (AWG 2.0: now ranges MIN-MAX!)
+module.exports.H1 = process.env.H1 || getRandomHeaderRange();
+module.exports.H2 = process.env.H2 || getRandomHeaderRange();
+module.exports.H3 = process.env.H3 || getRandomHeaderRange();
+module.exports.H4 = process.env.H4 || getRandomHeaderRange();
+
+// Protocol imitation packets (I1-I5)
+// Format: <b 0xHEX> or empty string
+// DNS packet example from real config (tickets.widget.kinopoisk.ru)
+const DNS_PRESET = '<b 0x084481800001000300000000077469636b65747306776964676574096b696e6f706f69736b0272750000010001c00c0005000100000039001806776964676574077469636b6574730679616e646578c025c0390005000100000039002b1765787465726e616c2d7469636b6574732d776964676574066166697368610679616e646578036e657400c05d000100010000001c000457fafe25>';
+
+module.exports.I1 = process.env.I1 || '';
+module.exports.I2 = process.env.I2 || '';
+module.exports.I3 = process.env.I3 || '';
+module.exports.I4 = process.env.I4 || '';
+module.exports.I5 = process.env.I5 || '';   // NEW in AWG 2.0
+
+// Time between I packets (milliseconds)
+module.exports.ITIME = process.env.ITIME || '0';
+
+// DNS preset for easy activation
+module.exports.DNS_PRESET = DNS_PRESET;
+
+// AWG protocol version
+module.exports.AWG_VERSION = '2.0';

@@ -2,9 +2,6 @@
 # nodejs 20 hangs on build with armv6/armv7
 FROM docker.io/library/node:18-alpine AS build_node_modules
 
-# Update npm to latest
-RUN npm install -g npm@latest
-
 # Copy Web UI
 COPY src /app
 WORKDIR /app
@@ -13,6 +10,7 @@ RUN npm ci --omit=dev &&\
 
 # Copy build result to a new image.
 # This saves a lot of disk space.
+# Using AmneziaWG 2.0
 FROM amneziavpn/amneziawg-go:latest
 HEALTHCHECK CMD /usr/bin/timeout 5s /bin/sh -c "/usr/bin/wg show | /bin/grep -q interface || exit 1" --interval=1m --timeout=5s --retries=3
 COPY --from=build_node_modules /app /app
