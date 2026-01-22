@@ -1,37 +1,54 @@
-# AmnewziaWG Easy
+# AWG-Easy 2.0
 
-You have found the easiest way to install & manage WireGuard on any Linux host!
+[![Build & Publish Docker Image](https://github.com/JohnnyVBut/awg-easy/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/JohnnyVBut/awg-easy/actions/workflows/docker-publish.yml)
+[![Docker Pulls](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/JohnnyVBut/awg-easy/pkgs/container/awg-easy)
+[![License](https://img.shields.io/github/license/JohnnyVBut/awg-easy)](LICENSE)
+
+**The easiest way to run AmneziaWG 2.0 + Web-based Admin UI.**
+
+Full support for **AmneziaWG 2.0** with proper obfuscation parameters, DNS protocol imitation, and enhanced DPI circumvention.
 
 <p align="center">
   <img src="./assets/screenshot.png" width="802" />
 </p>
 
-## Features
+## ✨ Features
 
-* All-in-one: AmneziaWG + Web UI.
-* Easy installation, simple to use.
-* List, create, edit, delete, enable & disable clients.
-* Show a client's QR code.
-* Download a client's configuration file.
-* Statistics for which clients are connected.
-* Tx/Rx charts for each connected client.
-* Gravatar support or random avatars.
-* Automatic Light / Dark Mode
-* Multilanguage Support
-* Traffic Stats (default off)
-* One Time Links (default off)
-* Client Expiry (default off)
-* Prometheus metrics support
+* 🔐 **Full AmneziaWG 2.0 Support** - S3, S4, I5 parameters, H ranges
+* 🌐 **All-in-one** - AmneziaWG + Web UI in a single container
+* 📱 **Easy Setup** - One command to get started
+* 👥 **Client Management** - List, create, edit, delete, enable & disable clients
+* 📊 **QR Codes** - Instant client configuration via QR code
+* 📥 **Download Configs** - Get client configuration files
+* 📈 **Statistics** - Real-time connection stats and Tx/Rx charts
+* 🎨 **Modern UI** - Automatic Light/Dark Mode, Gravatar support
+* 🌍 **Multilanguage** - Support for multiple languages
+* 🔗 **One-Time Links** - Temporary download links (optional)
+* ⏱️ **Client Expiry** - Set expiration dates for clients (optional)
+* 📊 **Prometheus Metrics** - Export metrics for monitoring
+* 🍎 **macOS Compatible** - Fixed routing issues with /32 netmask
 
-## Requirements
+## 🎯 What Makes This Special?
 
-* A host with Docker installed.
+Unlike other WireGuard/AmneziaWG solutions:
 
-## Installation
+- ✅ **Real AmneziaWG 2.0** - Not AWG 1.x! Includes S3, S4, I5 parameters
+- ✅ **Proper H Ranges** - Header obfuscation with ranges (not single values)
+- ✅ **DNS Obfuscation** - Pre-configured I1 parameter for traffic masking
+- ✅ **Production Values** - Battle-tested obfuscation parameters
+- ✅ **macOS Fixed** - Client netmask /32 for proper routing
+- ✅ **Password Fix** - Corrected bcrypt hash parsing
+
+## 📋 Requirements
+
+* A host with Docker installed
+* Public IP address or dynamic DNS hostname
+
+## 🚀 Quick Start
 
 ### 1. Install Docker
 
-If you haven't installed Docker yet, install it by running:
+If you haven't installed Docker yet:
 
 ```bash
 curl -sSL https://get.docker.com | sh
@@ -39,102 +56,245 @@ sudo usermod -aG docker $(whoami)
 exit
 ```
 
-And log in again.
+Log in again after installation.
 
-### 2. Run AmneziaWG Easy
+### 2. Generate Password Hash
 
-To automatically install & run wg-easy, simply run:
-
+```bash
+docker run --rm ghcr.io/johnnyvbut/awg-easy:latest wgpw 'your-secure-password'
 ```
-  docker run -d \
+
+Copy the hash (the part after `PASSWORD_HASH='` without quotes).
+
+### 3. Run AWG-Easy
+
+Replace `YOUR_SERVER_IP` and `YOUR_PASSWORD_HASH`:
+
+```bash
+docker run -d \
   --name=awg-easy \
-  -e LANG=en \
-  -e WG_HOST=<🚨YOUR_SERVER_IP> \
-  -e PASSWORD_HASH=<🚨YOUR_ADMIN_PASSWORD_HASH> \
+  --restart unless-stopped \
+  \
+  -e WG_HOST=YOUR_SERVER_IP \
+  -e PASSWORD_HASH='YOUR_PASSWORD_HASH' \
   -e PORT=51821 \
   -e WG_PORT=51820 \
-  -v ~/.awg-easy:/etc/wireguard \
+  -e WG_DEFAULT_DNS=1.1.1.1,8.8.8.8 \
+  \
   -v ~/.awg-easy:/etc/amnezia/amneziawg \
+  \
   -p 51820:51820/udp \
   -p 51821:51821/tcp \
+  \
   --cap-add=NET_ADMIN \
   --cap-add=SYS_MODULE \
-  --sysctl="net.ipv4.conf.all.src_valid_mark=1" \
+  \
   --sysctl="net.ipv4.ip_forward=1" \
+  --sysctl="net.ipv4.conf.all.src_valid_mark=1" \
+  \
   --device=/dev/net/tun:/dev/net/tun \
-  --restart unless-stopped \
-  ghcr.io/gennadykataev/awg-easy
+  \
+  ghcr.io/johnnyvbut/awg-easy:latest
 ```
 
-> 💡 Replace `YOUR_SERVER_IP` with your WAN IP, or a Dynamic DNS hostname.
->
-> 💡 Replace `YOUR_ADMIN_PASSWORD_HASH` with a bcrypt password hash to log in on the Web UI.
-> See [How_to_generate_an_bcrypt_hash.md](./How_to_generate_an_bcrypt_hash.md) for know how generate the hash.
+### 4. Access Web UI
 
-The Web UI will now be available on `http://0.0.0.0:51821`.
+Open in your browser:
+```
+http://YOUR_SERVER_IP:51821
+```
 
-The Prometheus metrics will now be available on `http://0.0.0.0:51821/metrics`. Grafana dashboard [21733](https://grafana.com/grafana/dashboards/21733-wireguard/)
+Login with the password you set in step 2.
 
-> 💡 Your configuration files will be saved in `~/.awg-easy`
+> 💡 Your configuration will be saved in `~/.awg-easy`
 
-## Options
+## 🔧 Configuration Options
 
-These options can be configured by setting environment variables using `-e KEY="VALUE"` in the `docker run` command.
+### Environment Variables
 
-| Env                           | Default           | Example                        | Description                                                                                                                                                                                                              |
-|-------------------------------|-------------------|--------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `PORT`                        | `51821`           | `6789`                         | TCP port for Web UI.                                                                                                                                                                                                     |
-| `WEBUI_HOST`                  | `0.0.0.0`         | `localhost`                    | IP address web UI binds to.                                                                                                                                                                                              |
-| `PASSWORD_HASH`               | -                 | `$2y$05$Ci...`                 | When set, requires a password when logging in to the Web UI. See [How to generate an bcrypt hash.md]("https://github.com/wg-easy/wg-easy/blob/master/How_to_generate_an_bcrypt_hash.md") for know how generate the hash. |
-| `WG_HOST`                     | -                 | `vpn.myserver.com`             | The public hostname of your VPN server.                                                                                                                                                                                  |
-| `WG_DEVICE`                   | `eth0`            | `ens6f0`                       | Ethernet device the wireguard traffic should be forwarded through.                                                                                                                                                       |
-| `WG_PORT`                     | `51820`           | `12345`                        | The public UDP port of your VPN server. WireGuard will listen on that (othwise default) inside the Docker container.                                                                                                     |
-| `WG_CONFIG_PORT`              | `51820`           | `12345`                        | The UDP port used on [Home Assistant Plugin](https://github.com/adriy-be/homeassistant-addons-jdeath/tree/main/wgeasy)                                                                                                   |
-| `WG_MTU`                      | `null`            | `1420`                         | The MTU the clients will use. Server uses default WG MTU.                                                                                                                                                                |
-| `WG_PERSISTENT_KEEPALIVE`     | `0`               | `25`                           | Value in seconds to keep the "connection" open. If this value is 0, then connections won't be kept alive.                                                                                                                |
-| `WG_DEFAULT_ADDRESS`          | `10.8.0.x`        | `10.6.0.x`                     | Clients IP address range.                                                                                                                                                                                                |
-| `WG_DEFAULT_DNS`              | `1.1.1.1`         | `8.8.8.8, 8.8.4.4`             | DNS server clients will use. If set to blank value, clients will not use any DNS.                                                                                                                                        |
-| `WG_ALLOWED_IPS`              | `0.0.0.0/0, ::/0` | `192.168.15.0/24, 10.0.1.0/24` | Allowed IPs clients will use.                                                                                                                                                                                            |
-| `WG_PRE_UP`                   | `...`             | -                              | See [config.js](https://github.com/wg-easy/wg-easy/blob/master/src/config.js#L19) for the default value.                                                                                                                 |
-| `WG_POST_UP`                  | `...`             | `iptables ...`                 | See [config.js](https://github.com/wg-easy/wg-easy/blob/master/src/config.js#L20) for the default value.                                                                                                                 |
-| `WG_PRE_DOWN`                 | `...`             | -                              | See [config.js](https://github.com/wg-easy/wg-easy/blob/master/src/config.js#L27) for the default value.                                                                                                                 |
-| `WG_POST_DOWN`                | `...`             | `iptables ...`                 | See [config.js](https://github.com/wg-easy/wg-easy/blob/master/src/config.js#L28) for the default value.                                                                                                                 |
-| `WG_ENABLE_EXPIRES_TIME`      | `false`           | `true`                         | Enable expire time for clients                                                                                                                                                                                           |
-| `LANG`                        | `en`              | `de`                           | Web UI language (Supports: en, ua, ru, tr, no, pl, fr, de, ca, es, ko, vi, nl, is, pt, chs, cht, it, th, hi).                                                                                                            |
-| `UI_TRAFFIC_STATS`            | `false`           | `true`                         | Enable detailed RX / TX client stats in Web UI                                                                                                                                                                           |
-| `UI_CHART_TYPE`               | `0`               | `1`                            | UI_CHART_TYPE=0 # Charts disabled, UI_CHART_TYPE=1 # Line chart, UI_CHART_TYPE=2 # Area chart, UI_CHART_TYPE=3 # Bar chart                                                                                               |
-| `DICEBEAR_TYPE`               | `false`           | `bottts`                       | see [dicebear types](https://www.dicebear.com/styles/)                                                                                                                                                                   |
-| `USE_GRAVATAR`                | `false`           | `true`                         | Use or not GRAVATAR service                                                                                                                                                                                              |
-| `WG_ENABLE_ONE_TIME_LINKS`    | `false`           | `true`                         | Enable display and generation of short one time download links (expire after 5 minutes)                                                                                                                                  |
-| `MAX_AGE`                     | `0`               | `1440`                         | The maximum age of Web UI sessions in minutes. `0` means that the session will exist until the browser is closed.                                                                                                        |
-| `UI_ENABLE_SORT_CLIENTS`      | `false`           | `true`                         | Enable UI sort clients by name                                                                                                                                                                                           |
-| `ENABLE_PROMETHEUS_METRICS`   | `false`           | `true`                         | Enable Prometheus metrics `http://0.0.0.0:51821/metrics` and `http://0.0.0.0:51821/metrics/json`                                                                                                                         |
-| `PROMETHEUS_METRICS_PASSWORD` | -                 | `$2y$05$Ci...`                 | If set, Basic Auth is required when requesting metrics. See [How to generate an bcrypt hash.md]("https://github.com/wg-easy/wg-easy/blob/master/How_to_generate_an_bcrypt_hash.md") for know how generate the hash.      |
-| `JC`                          | `random`          | `5`                            | Junk packet count — number of packets with random data that are sent before the start of the session.                                                                                                                    |
-| `JMIN`                        | `50`              | `25`                           | Junk packet minimum size — minimum packet size for Junk packet. That is, all randomly generated packets will have a size no smaller than Jmin.                                                                           |
-| `JMAX`                        | `1000`            | `250`                          | Junk packet maximum size — maximum size for Junk packets.                                                                                                                                                                |
-| `S1`                          | `random`          | `75`                           | Init packet junk size — the size of random data that will be added to the init packet, the size of which is initially fixed.                                                                                             |
-| `S2`                          | `random`          | `75`                           | Response packet junk size — the size of random data that will be added to the response packet, the size of which is initially fixed.                                                                                     |
-| `H1`                          | `random`          | `1234567891`                   | Init packet magic header — the header of the first byte of the handshake. Must be < uint_max.                                                                                                                            |
-| `H2`                          | `random`          | `1234567892`                   | Response packet magic header — header of the first byte of the handshake response. Must be < uint_max.                                                                                                                   |
-| `H3`                          | `random`          | `1234567893`                   | Underload packet magic header — UnderLoad packet header. Must be < uint_max.                                                                                                                                             |
-| `H4`                          | `random`          | `1234567894`                   | Transport packet magic header — header of the packet of the data packet. Must be < uint_max.                                                                                                                             |
+| Variable | Default | Example | Description |
+|----------|---------|---------|-------------|
+| `WG_HOST` | - | `vpn.example.com` | **Required**. Public hostname or IP of your VPN server |
+| `PASSWORD_HASH` | - | `$2y$12$...` | **Required**. Bcrypt hash for Web UI login |
+| `PORT` | `51821` | `8080` | TCP port for Web UI |
+| `WG_PORT` | `51820` | `12345` | UDP port for WireGuard/AmneziaWG |
+| `WG_DEFAULT_DNS` | `1.1.1.1,8.8.8.8` | `8.8.8.8` | DNS servers for clients |
+| `WG_DEFAULT_ADDRESS` | `10.8.0.x` | `10.6.0.x` | Client IP address range |
+| `WG_MTU` | `1420` | `1380` | MTU for clients |
+| `WG_PERSISTENT_KEEPALIVE` | `25` | `0` | Keepalive interval (0 to disable) |
+| `WG_ALLOWED_IPS` | `0.0.0.0/0,::/0` | `192.168.1.0/24` | Allowed IPs for routing |
+| `LANG` | `en` | `ru` | Web UI language |
 
-> If you change `WG_PORT`, make sure to also change the exposed port.
+### AmneziaWG 2.0 Parameters
 
-## Updating
+**Pre-configured with production values** (customizable via environment variables):
 
-To update to the latest version, simply run:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JC` | `6` | Junk packet count |
+| `JMIN` | `10` | Junk packet minimum size |
+| `JMAX` | `50` | Junk packet maximum size |
+| `S1` | `64` | Init packet junk size |
+| `S2` | `67` | Response packet junk size |
+| `S3` | `17` | Cookie reply junk size (AWG 2.0) |
+| `S4` | `4` | Transport message junk size (AWG 2.0) |
+| `H1` | `221138202-537563446` | Init packet magic header range |
+| `H2` | `1824677785-1918284606` | Response packet magic header range |
+| `H3` | `2058490965-2098228430` | Underload packet magic header range |
+| `H4` | `2114920036-2134209753` | Transport packet magic header range |
+| `I1` | DNS packet | DNS protocol imitation (tickets.widget.kinopoisk.ru) |
+| `I2-I5` | Empty | Additional imitation parameters |
+
+> 💡 **Default values are production-tested and provide strong obfuscation!**
+
+### Optional Features
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UI_TRAFFIC_STATS` | `false` | Enable detailed RX/TX stats |
+| `UI_CHART_TYPE` | `0` | Chart type: 0=disabled, 1=line, 2=area, 3=bar |
+| `WG_ENABLE_ONE_TIME_LINKS` | `false` | Enable temporary download links |
+| `WG_ENABLE_EXPIRES_TIME` | `false` | Enable client expiration |
+| `ENABLE_PROMETHEUS_METRICS` | `false` | Enable Prometheus metrics at `/metrics` |
+| `MAX_AGE` | `0` | Session max age in minutes (0=until browser close) |
+
+## 🐳 Using Docker Compose
+
+Create `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  awg-easy:
+    image: ghcr.io/johnnyvbut/awg-easy:latest
+    container_name: awg-easy
+    restart: unless-stopped
+    
+    environment:
+      - WG_HOST=YOUR_SERVER_IP
+      - PASSWORD_HASH=YOUR_PASSWORD_HASH
+      - PORT=51821
+      - WG_PORT=51820
+      - WG_DEFAULT_DNS=1.1.1.1,8.8.8.8
+      
+    volumes:
+      - ./data:/etc/amnezia/amneziawg
+      
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+      
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+      
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      
+    devices:
+      - /dev/net/tun:/dev/net/tun
+```
+
+Then run:
+```bash
+docker-compose up -d
+```
+
+## 📱 Client Applications
+
+AmneziaWG 2.0 requires compatible clients:
+
+### Android
+- [Amnezia VPN](https://play.google.com/store/apps/details?id=org.amnezia.vpn) - Official client
+- [AmneziaWG](https://play.google.com/store/apps/details?id=org.amnezia.awg) - Official AWG client
+
+### iOS / macOS
+- [Amnezia VPN](https://apps.apple.com/app/amneziavpn/id1600529900) - Official client
+- [AmneziaWG](https://apps.apple.com/app/amneziawg/id6478942365) - Official AWG client
+
+### Windows
+- [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client/releases) - Official client
+- [AmneziaWG](https://github.com/amnezia-vpn/amneziawg-windows-client/releases) - Official AWG client
+
+### Linux
+- [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client/releases) - Official client
+- [amneziawg-tools](https://github.com/amnezia-vpn/amneziawg-tools) - Command-line tools
+
+> ⚠️ **Regular WireGuard clients will NOT work with AmneziaWG 2.0!**
+
+## 🔄 Updating
+
+To update to the latest version:
 
 ```bash
 docker stop awg-easy
 docker rm awg-easy
-docker pull ghcr.io/gennadykataev/awg-easy
+docker pull ghcr.io/johnnyvbut/awg-easy:latest
 ```
 
-And then run the `docker run -d \ ...` command above again.
+Then run the `docker run` command again.
 
-## Thanks
+Or with docker-compose:
+```bash
+docker-compose pull
+docker-compose up -d
+```
 
-Based on [wg-easy](https://github.com/wg-easy/wg-easy) by Emile Nijssen.  
-Use integrations with AmneziaWg from [amnezia-wg-easy](https://github.com/spcfox/amnezia-wg-easy) by Viktor Yudov.
+## 🛠️ Troubleshooting
+
+### Connection Issues
+
+Run diagnostics:
+```bash
+docker exec awg-easy wg show
+docker exec awg-easy iptables -t nat -L -n -v
+```
+
+### Password Not Working
+
+Generate a new hash:
+```bash
+docker run --rm ghcr.io/johnnyvbut/awg-easy:latest wgpw 'new-password'
+```
+
+### macOS Client Can't Route Traffic
+
+Make sure client config uses `/32` netmask:
+```ini
+[Interface]
+Address = 10.8.0.2/32  # Not /24!
+```
+
+### Logs
+
+View container logs:
+```bash
+docker logs -f awg-easy
+```
+
+## 📖 Documentation
+
+- [FINAL_SUMMARY.md](FINAL_SUMMARY.md) - Complete feature list and changelog
+- [MACOS_FIX.md](MACOS_FIX.md) - macOS routing fix details
+- [PASSWORD_FIX.md](PASSWORD_FIX.md) - Password authentication fix
+- [REAL_CONFIG_ANALYSIS.md](REAL_CONFIG_ANALYSIS.md) - AWG 2.0 parameters explanation
+
+## 🙏 Credits
+
+- Based on [wg-easy](https://github.com/wg-easy/wg-easy) by wg-easy community
+- AmneziaWG integration inspired by [amnezia-wg-easy](https://github.com/spcfox/amnezia-wg-easy)
+- [AmneziaVPN](https://github.com/amnezia-vpn) for AmneziaWG protocol
+
+## 📄 License
+
+This project is licensed under the terms of the license included in this repository.
+
+## ⭐ Support
+
+If this project helps you, please consider giving it a star on GitHub! ⭐
+
+---
+
+**Made with ❤️ for secure and private internet access**
