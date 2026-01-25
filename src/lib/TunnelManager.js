@@ -181,10 +181,11 @@ module.exports = class TunnelManager {
     // Обновить tunnels.json
     await this._updateTunnelsJson();
     
-    // Запустить туннель
-    await tunnel.start();
+    // НЕ запускаем туннель автоматически!
+    // WAN туннели должны запускаться вручную через enable() или restart()
+    // потому что требуют настройки удалённой стороны
     
-    debug(`WAN tunnel created: ${interfaceName}`);
+    debug(`WAN tunnel created: ${interfaceName} (not started)`);
     
     return tunnel.toJSON();
   }
