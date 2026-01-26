@@ -81,6 +81,7 @@ module.exports = class Server {
     // Initialize TunnelManager
     // ========================================================================
     this.tunnelManager = new TunnelManager();
+    const tunnelManager = this.tunnelManager; // Сохраняем ссылку для использования в handlers
 
     app.use(fromNodeMiddleware(expressSession({
       secret: crypto.randomBytes(256).toString('hex'),
@@ -337,7 +338,7 @@ module.exports = class Server {
        * Получить список всех WAN туннелей
        */
       .get('/api/wireguard/wan-tunnels', defineEventHandler(async (event) => {
-        const tunnels = await this.tunnelManager.getWanTunnels();
+        const tunnels = await tunnelManager.getWanTunnels();
         return tunnels;
       }))
 
@@ -347,7 +348,7 @@ module.exports = class Server {
        */
       .post('/api/wireguard/wan-tunnels', defineEventHandler(async (event) => {
         const data = await readBody(event);
-        const tunnel = await this.tunnelManager.createWanTunnel(data);
+        const tunnel = await tunnelManager.createWanTunnel(data);
         return tunnel;
       }))
 
@@ -357,7 +358,7 @@ module.exports = class Server {
        */
       .get('/api/wireguard/wan-tunnels/:id', defineEventHandler(async (event) => {
         const tunnelId = getRouterParam(event, 'id');
-        const tunnel = this.tunnelManager.getWanTunnel(tunnelId);
+        const tunnel = tunnelManager.getWanTunnel(tunnelId);
         const status = await tunnel.getStatus();
         
         return {
@@ -372,7 +373,7 @@ module.exports = class Server {
        */
       .delete('/api/wireguard/wan-tunnels/:id', defineEventHandler(async (event) => {
         const tunnelId = getRouterParam(event, 'id');
-        await this.tunnelManager.deleteWanTunnel(tunnelId);
+        await tunnelManager.deleteWanTunnel(tunnelId);
         return { success: true };
       }))
 
@@ -382,7 +383,7 @@ module.exports = class Server {
        */
       .post('/api/wireguard/wan-tunnels/:id/enable', defineEventHandler(async (event) => {
         const tunnelId = getRouterParam(event, 'id');
-        await this.tunnelManager.enableWanTunnel(tunnelId);
+        await tunnelManager.enableWanTunnel(tunnelId);
         return { success: true };
       }))
 
@@ -392,7 +393,7 @@ module.exports = class Server {
        */
       .post('/api/wireguard/wan-tunnels/:id/disable', defineEventHandler(async (event) => {
         const tunnelId = getRouterParam(event, 'id');
-        await this.tunnelManager.disableWanTunnel(tunnelId);
+        await tunnelManager.disableWanTunnel(tunnelId);
         return { success: true };
       }))
 
@@ -402,7 +403,7 @@ module.exports = class Server {
        */
       .post('/api/wireguard/wan-tunnels/:id/restart', defineEventHandler(async (event) => {
         const tunnelId = getRouterParam(event, 'id');
-        await this.tunnelManager.restartWanTunnel(tunnelId);
+        await tunnelManager.restartWanTunnel(tunnelId);
         return { success: true };
       }))
 
@@ -412,7 +413,7 @@ module.exports = class Server {
        */
       .get('/api/wireguard/wan-tunnels/:id/status', defineEventHandler(async (event) => {
         const tunnelId = getRouterParam(event, 'id');
-        const tunnel = this.tunnelManager.getWanTunnel(tunnelId);
+        const tunnel = tunnelManager.getWanTunnel(tunnelId);
         const status = await tunnel.getStatus();
         return status;
       }))
@@ -423,7 +424,7 @@ module.exports = class Server {
        */
       .get('/api/wireguard/wan-tunnels/:id/config', defineEventHandler(async (event) => {
         const tunnelId = getRouterParam(event, 'id');
-        const tunnel = this.tunnelManager.getWanTunnel(tunnelId);
+        const tunnel = tunnelManager.getWanTunnel(tunnelId);
         const config = await tunnel.getRemoteConfig();
         
         setHeader(event, 'Content-Type', 'text/plain');
