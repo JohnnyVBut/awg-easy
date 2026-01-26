@@ -73,6 +73,19 @@
           </div>
         </div>
         <div class="text-sm text-gray-400 dark:text-neutral-400 mb-5"></div>
+        <!-- WAN Tunnels Tab Navigation -->
+        <div class="flex gap-2 mb-4">
+          <button @click="activeTab = 'clients'" 
+            :class="activeTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'" 
+            class="px-4 py-2 rounded-lg font-medium transition">
+            {{ $t('clients') }}
+          </button>
+          <button @click="activeTab = 'wanTunnels'" 
+            :class="activeTab === 'wanTunnels' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'" 
+            class="px-4 py-2 rounded-lg font-medium transition">
+            WAN Tunnels
+          </button>
+        </div>
         <div v-if="latestRelease"
           class="bg-red-800 dark:bg-red-100 p-4 text-white dark:text-red-600 text-sm font-small mb-10 rounded-md shadow-lg"
           :title="`v${currentRelease} → v${latestRelease.version}`">
@@ -598,6 +611,244 @@
                   </div>
                 </div>
               </div>
+        <!-- WAN Tunnels Section -->
+        <div v-if="activeTab === 'wanTunnels'" class="shadow-md rounded-lg bg-white dark:bg-neutral-700 overflow-hidden mb-10">
+          <div class="flex flex-row flex-auto items-center p-3 px-5 border-b-2 border-gray-100 dark:border-neutral-600">
+            <div class="flex-grow">
+              <p class="text-2xl font-medium dark:text-neutral-200">WAN Tunnels (Site-to-Site)</p>
+            </div>
+            <button @click="showWanTunnelCreate = true"
+              class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded inline-flex items-center transition">
+              <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Create Tunnel
+            </button>
+          </div>
+
+          <div class="p-5">
+            <div v-if="!wanTunnels || wanTunnels.length === 0" class="text-center text-gray-400 dark:text-neutral-400 py-8">
+              No WAN tunnels configured
+            </div>
+
+            <div v-for="tunnel in wanTunnels" :key="tunnel.id"
+              class="mb-4 p-4 border-2 border-gray-100 dark:border-neutral-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition">
+              
+              <div class="flex items-start justify-between">
+                <div class="flex-grow">
+                  <div class="flex items-center gap-2 mb-2">
+                    <h3 class="text-lg font-medium dark:text-neutral-200">{{ tunnel.name }}</h3>
+                    
+                    <span v-if="tunnel.protocol === 'wireguard-1.0'"
+                      class="px-2 py-1 text-xs font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-300 rounded">
+                      Vanilla WG 1.0
+                    </span>
+                    <span v-else
+                      class="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded">
+                      AmneziaWG 2.0
+                    </span>
+
+                    <span v-if="tunnel.status && tunnel.status.running"
+                      class="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">
+                      ● Running
+                    </span>
+                    <span v-else
+                      class="px-2 py-1 text-xs font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-300 rounded">
+                      ○ Stopped
+                    </span>
+                  </div>
+
+                  <div class="text-sm text-gray-600 dark:text-neutral-400 space-y-1">
+                    <div class="flex gap-4">
+                      <span>{{ tunnel.interface }}</span>
+                      <span>Port: {{ tunnel.listenPort }}</span>
+                    </div>
+                    <div>
+                      <span class="font-medium">Local:</span> {{ tunnel.localSubnet }}
+                      <span class="mx-2">↔</span>
+                      <span class="font-medium">Remote:</span> {{ tunnel.remoteSubnet }}
+                    </div>
+                    <div>
+                      <span class="font-medium">Endpoint:</span> {{ tunnel.remoteEndpoint }}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex gap-2 ml-4">
+                  <button @click="downloadWanTunnelConfig(tunnel)"
+                    title="Download config"
+                    class="p-2 rounded bg-gray-100 dark:bg-neutral-600 hover:bg-gray-200 dark:hover:bg-neutral-500 transition">
+                    <svg class="w-5 h-5 text-gray-700 dark:text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </button>
+
+                  <button @click="restartWanTunnel(tunnel)"
+                    title="Restart"
+                    class="p-2 rounded bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 transition">
+                    <svg class="w-5 h-5 text-blue-700 dark:text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+
+                  <button @click="deleteWanTunnel(tunnel)"
+                    title="Delete"
+                    class="p-2 rounded bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 transition">
+                    <svg class="w-5 h-5 text-red-700 dark:text-red-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create WAN Tunnel Modal -->
+        <div v-if="showWanTunnelCreate"
+          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          @click.self="showWanTunnelCreate = false">
+          
+          <div class="bg-white dark:bg-neutral-700 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+              <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Create WAN Tunnel</h2>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Tunnel Name</label>
+                <input v-model="wanTunnelCreate.name"
+                  type="text"
+                  placeholder="e.g., Office-to-DC"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Protocol</label>
+                <select v-model="wanTunnelCreate.protocol"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  <option value="wireguard-1.0">Vanilla WireGuard 1.0</option>
+                  <option value="amneziawg-2.0">AmneziaWG 2.0</option>
+                </select>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Local Subnet</label>
+                  <input v-model="wanTunnelCreate.localSubnet"
+                    placeholder="192.168.1.0/24"
+                    class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Remote Subnet</label>
+                  <input v-model="wanTunnelCreate.remoteSubnet"
+                    placeholder="192.168.2.0/24"
+                    class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Remote Endpoint</label>
+                <input v-model="wanTunnelCreate.remoteEndpoint"
+                  placeholder="vpn.example.com:51820"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Remote Public Key</label>
+                <input v-model="wanTunnelCreate.remotePublicKey"
+                  placeholder="base64-key"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono text-sm">
+              </div>
+
+              <div v-if="wanTunnelCreate.protocol === 'amneziawg-2.0'" class="mb-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded">
+                <h3 class="font-medium dark:text-neutral-200 mb-3">AmneziaWG 2.0 Parameters</h3>
+                
+                <button @click="useProductionDefaults"
+                  class="mb-3 px-3 py-1 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded transition">
+                  Use Defaults
+                </button>
+
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jc</label>
+                    <input v-model.number="wanTunnelCreate.settings.jc" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmin</label>
+                    <input v-model.number="wanTunnelCreate.settings.jmin" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmax</label>
+                    <input v-model.number="wanTunnelCreate.settings.jmax" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S1</label>
+                    <input v-model.number="wanTunnelCreate.settings.s1" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S2</label>
+                    <input v-model.number="wanTunnelCreate.settings.s2" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S3</label>
+                    <input v-model.number="wanTunnelCreate.settings.s3" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S4</label>
+                    <input v-model.number="wanTunnelCreate.settings.s4" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H1</label>
+                    <input v-model="wanTunnelCreate.settings.h1" type="text"
+                      placeholder="123-456"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H2</label>
+                    <input v-model="wanTunnelCreate.settings.h2" type="text"
+                      placeholder="234-567"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H3</label>
+                    <input v-model="wanTunnelCreate.settings.h3" type="text"
+                      placeholder="345-678"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H4</label>
+                    <input v-model="wanTunnelCreate.settings.h4" type="text"
+                      placeholder="456-789"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex gap-3 justify-end">
+                <button @click="showWanTunnelCreate = false"
+                  class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
+                  Cancel
+                </button>
+                <button @click="createWanTunnel"
+                  class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition">
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
               <div class="bg-gray-50 dark:bg-neutral-600 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                 <button type="button" @click="deleteClient(clientDelete); clientDelete = null"
                   class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 dark:bg-red-600 text-base font-medium text-white dark:text-white hover:bg-red-700 dark:hover:bg-red-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">

@@ -101,6 +101,32 @@ new Vue({
     sortClient: true, // Sort clients by name, true = asc, false = desc
     enableExpireTime: false,
 
+    // WAN Tunnels
+    activeTab: 'clients',
+    wanTunnels: [],
+    showWanTunnelCreate: false,
+    wanTunnelCreate: {
+      name: '',
+      protocol: 'wireguard-1.0',
+      localSubnet: '',
+      remoteSubnet: '',
+      remoteEndpoint: '',
+      remotePublicKey: '',
+      settings: {
+        jc: 6,
+        jmin: 10,
+        jmax: 50,
+        s1: 64,
+        s2: 67,
+        s3: 64,
+        s4: 4,
+        h1: '',
+        h2: '',
+        h3: '',
+        h4: '',
+      },
+    },
+
     uiShowCharts: localStorage.getItem('uiShowCharts') === '1',
     uiTheme: localStorage.theme || 'auto',
     prefersDarkScheme: window.matchMedia('(prefers-color-scheme: dark)'),
@@ -509,6 +535,8 @@ new Vue({
       this.currentRelease = currentRelease;
       this.latestRelease = latestRelease;
     }).catch((err) => console.error(err));
+    // Load WAN Tunnels
+    if (this.authenticated) this.loadWanTunnels();
   },
   computed: {
     chartOptionsTX() {
@@ -537,6 +565,142 @@ new Vue({
         return this.prefersDarkScheme.matches ? 'dark' : 'light';
       }
       return this.uiTheme;
+    },
+
+    // WAN Tunnels Methods
+    async loadWanTunnels() {
+      try {
+        const res = await fetch('/api/wireguard/wan-tunnels', { credentials: 'include' });
+        if (!res.ok) throw new Error(res.statusText);
+        this.wanTunnels = await res.json();
+      } catch (err) {
+        console.error('Failed to load WAN tunnels:', err);
+      }
+    },
+
+    async createWanTunnel() {
+      try {
+        if (!this.wanTunnelCreate.name || !this.wanTunnelCreate.localSubnet || 
+            !this.wanTunnelCreate.remoteSubnet || !this.wanTunnelCreate.remoteEndpoint || 
+            !this.wanTunnelCreate.remotePublicKey) {
+          alert('Please fill all required fields');
+          return;
+        }
+
+        if (this.wanTunnelCreate.protocol === 'amneziawg-2.0') {
+          if (!this.wanTunnelCreate.settings.h1 || !this.wanTunnelCreate.settings.h2 || 
+              !this.wanTunnelCreate.settings.h3 || !this.wanTunnelCreate.settings.h4) {
+            alert('Please set H1-H4 parameters for AWG 2.0');
+            return;
+          }
+        }
+
+        const payload = {
+          name: this.wanTunnelCreate.name,
+          protocol: this.wanTunnelCreate.protocol,
+          localSubnet: this.wanTunnelCreate.localSubnet,
+          remoteSubnet: this.wanTunnelCreate.remoteSubnet,
+          remoteEndpoint: this.wanTunnelCreate.remoteEndpoint,
+          remotePublicKey: this.wanTunnelCreate.remotePublicKey,
+        };
+
+        if (this.wanTunnelCreate.protocol === 'amneziawg-2.0') {
+          payload.settings = this.wanTunnelCreate.settings;
+        }
+
+        const res = await fetch('/api/wireguard/wan-tunnels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || res.statusText);
+        }
+
+        this.showWanTunnelCreate = false;
+        this.wanTunnelCreate = {
+          name: '',
+          protocol: 'wireguard-1.0',
+          localSubnet: '',
+          remoteSubnet: '',
+          remoteEndpoint: '',
+          remotePublicKey: '',
+          settings: { jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4, h1: '', h2: '', h3: '', h4: '' },
+        };
+
+        await this.loadWanTunnels();
+        alert('WAN tunnel created!');
+      } catch (err) {
+        console.error('Failed to create WAN tunnel:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async deleteWanTunnel(tunnel) {
+      if (!confirm(`Delete "${tunnel.name}"?`)) return;
+      try {
+        const res = await fetch(`/api/wireguard/wan-tunnels/${tunnel.id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        await this.loadWanTunnels();
+        alert('Deleted!');
+      } catch (err) {
+        console.error('Delete failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async restartWanTunnel(tunnel) {
+      try {
+        const res = await fetch(`/api/wireguard/wan-tunnels/${tunnel.id}/restart`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        await this.loadWanTunnels();
+        alert('Restarted!');
+      } catch (err) {
+        console.error('Restart failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async downloadWanTunnelConfig(tunnel) {
+      try {
+        const res = await fetch(`/api/wireguard/wan-tunnels/${tunnel.id}/config`, { credentials: 'include' });
+        if (!res.ok) throw new Error(res.statusText);
+        const config = await res.text();
+        const blob = new Blob([config], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${tunnel.id}-remote.conf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Download failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    useProductionDefaults() {
+      const rand = () => {
+        const min = Math.floor(Math.random() * 2000000000) + 100000000;
+        const max = Math.min(min + Math.floor(Math.random() * 500000000) + 200000000, 2147483647);
+        return `${min}-${max}`;
+      };
+      this.wanTunnelCreate.settings = {
+        jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4,
+        h1: rand(), h2: rand(), h3: rand(), h4: rand(),
+      };
+      alert('Defaults applied!');
     },
   },
 });

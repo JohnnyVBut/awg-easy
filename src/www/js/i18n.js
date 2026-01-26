@@ -40,6 +40,16 @@ const messages = { // eslint-disable-line no-unused-vars
     ExpireDate: 'Expire Date',
     Permanent: 'Permanent',
     OneTimeLink: 'Generate short one time link',
+    // WAN Tunnels
+    wanTunnels: 'WAN Tunnels',
+    createTunnel: 'Create Tunnel',
+    noWanTunnels: 'No WAN tunnels configured',
+    tunnelName: 'Tunnel Name',
+    protocol: 'Protocol',
+    localSubnet: 'Local Subnet',
+    remoteSubnet: 'Remote Subnet',
+    remoteEndpoint: 'Remote Endpoint',
+    remotePublicKey: 'Remote Public Key',
   },
   ua: {
     name: 'Ім`я',
@@ -114,6 +124,16 @@ const messages = { // eslint-disable-line no-unused-vars
     ExpireDate: 'Дата истечения срока',
     Permanent: 'Бессрочно',
     OneTimeLink: 'Создать короткую одноразовую ссылку',
+    // WAN Tunnels
+    wanTunnels: 'WAN Туннели',
+    createTunnel: 'Создать туннель',
+    noWanTunnels: 'WAN туннели не настроены',
+    tunnelName: 'Название туннеля',
+    protocol: 'Протокол',
+    localSubnet: 'Локальная подсеть',
+    remoteSubnet: 'Удалённая подсеть',
+    remoteEndpoint: 'Удалённая точка',
+    remotePublicKey: 'Публичный ключ',
   },
   tr: { // Müslüm Barış Korkmazer @babico
     name: 'İsim',
