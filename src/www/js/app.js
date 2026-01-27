@@ -101,32 +101,6 @@ new Vue({
     sortClient: true, // Sort clients by name, true = asc, false = desc
     enableExpireTime: false,
 
-    // WAN Tunnels
-    activeTab: 'clients',
-    wanTunnels: [],
-    showWanTunnelCreate: false,
-    wanTunnelCreate: {
-      name: '',
-      protocol: 'wireguard-1.0',
-      localSubnet: '',
-      remoteSubnet: '',
-      remoteEndpoint: '',
-      remotePublicKey: '',
-      settings: {
-        jc: 6,
-        jmin: 10,
-        jmax: 50,
-        s1: 64,
-        s2: 67,
-        s3: 64,
-        s4: 4,
-        h1: '',
-        h2: '',
-        h3: '',
-        h4: '',
-      },
-    },
-
     uiShowCharts: localStorage.getItem('uiShowCharts') === '1',
     uiTheme: localStorage.theme || 'auto',
     prefersDarkScheme: window.matchMedia('(prefers-color-scheme: dark)'),
@@ -426,146 +400,6 @@ new Vue({
     expiredDateEditFormat: (value) => {
       if (value === null) return 'yyyy-MM-dd';
     },
-  },
-  mounted() {
-    this.prefersDarkScheme.addListener(this.handlePrefersChange);
-    this.setTheme(this.uiTheme);
-
-    this.api = new API();
-    this.api.getSession()
-      .then((session) => {
-        this.authenticated = session.authenticated;
-        this.requiresPassword = session.requiresPassword;
-        this.refresh({
-          updateCharts: this.updateCharts,
-        }).catch((err) => {
-          alert(err.message || err.toString());
-        });
-      })
-      .catch((err) => {
-        alert(err.message || err.toString());
-      });
-
-    this.api.getRememberMeEnabled()
-      .then((rememberMeEnabled) => {
-        this.rememberMeEnabled = rememberMeEnabled;
-      });
-
-    setInterval(() => {
-      this.refresh({
-        updateCharts: this.updateCharts,
-      }).catch(console.error);
-    }, 1000);
-
-    this.api.getuiTrafficStats()
-      .then((res) => {
-        this.uiTrafficStats = res;
-      })
-      .catch(() => {
-        this.uiTrafficStats = false;
-      });
-
-    this.api.getChartType()
-      .then((res) => {
-        this.uiChartType = parseInt(res, 10);
-      })
-      .catch(() => {
-        this.uiChartType = 0;
-      });
-
-    this.api.getWGEnableOneTimeLinks()
-      .then((res) => {
-        this.enableOneTimeLinks = res;
-      })
-      .catch(() => {
-        this.enableOneTimeLinks = false;
-      });
-
-    this.api.getUiSortClients()
-      .then((res) => {
-        this.enableSortClient = res;
-      })
-      .catch(() => {
-        this.enableSortClient = false;
-      });
-
-    this.api.getWGEnableExpireTime()
-      .then((res) => {
-        this.enableExpireTime = res;
-      })
-      .catch(() => {
-        this.enableExpireTime = false;
-      });
-
-    this.api.getAvatarSettings()
-      .then((res) => {
-        this.avatarSettings = res;
-      })
-      .catch(() => {
-          this.avatarSettings = {
-            'dicebear': null,
-            'gravatar': false,
-          };
-      });
-
-    Promise.resolve().then(async () => {
-      const lang = await this.api.getLang();
-      if (lang !== localStorage.getItem('lang') && i18n.availableLocales.includes(lang)) {
-        localStorage.setItem('lang', lang);
-        i18n.locale = lang;
-      }
-
-      const currentRelease = await this.api.getRelease();
-      const latestRelease = await fetch('https://wg-easy.github.io/wg-easy/changelog.json')
-        .then((res) => res.json())
-        .then((releases) => {
-          const releasesArray = Object.entries(releases).map(([version, changelog]) => ({
-            version: parseInt(version, 10),
-            changelog,
-          }));
-          releasesArray.sort((a, b) => {
-            return b.version - a.version;
-          });
-
-          return releasesArray[0];
-        });
-
-      if (currentRelease >= latestRelease.version) return;
-
-      this.currentRelease = currentRelease;
-      this.latestRelease = latestRelease;
-    }).catch((err) => console.error(err));
-    // Load WAN Tunnels
-    if (this.authenticated) this.loadWanTunnels();
-  },
-  computed: {
-    chartOptionsTX() {
-      const opts = {
-        ...this.chartOptions,
-        colors: [CHART_COLORS.tx[this.theme]],
-      };
-      opts.chart.type = UI_CHART_TYPES[this.uiChartType].type || false;
-      opts.stroke.width = UI_CHART_TYPES[this.uiChartType].strokeWidth;
-      return opts;
-    },
-    chartOptionsRX() {
-      const opts = {
-        ...this.chartOptions,
-        colors: [CHART_COLORS.rx[this.theme]],
-      };
-      opts.chart.type = UI_CHART_TYPES[this.uiChartType].type || false;
-      opts.stroke.width = UI_CHART_TYPES[this.uiChartType].strokeWidth;
-      return opts;
-    },
-    updateCharts() {
-      return this.uiChartType > 0 && this.uiShowCharts;
-    },
-    theme() {
-      if (this.uiTheme === 'auto') {
-        return this.prefersDarkScheme.matches ? 'dark' : 'light';
-      }
-      return this.uiTheme;
-    },
 
     // WAN Tunnels Methods
     async loadWanTunnels() {
@@ -701,6 +535,144 @@ new Vue({
         h1: rand(), h2: rand(), h3: rand(), h4: rand(),
       };
       alert('Defaults applied!');
+    },
+  },
+  mounted() {
+    this.prefersDarkScheme.addListener(this.handlePrefersChange);
+    this.setTheme(this.uiTheme);
+
+    this.api = new API();
+    this.api.getSession()
+      .then((session) => {
+        this.authenticated = session.authenticated;
+        this.requiresPassword = session.requiresPassword;
+        this.refresh({
+          updateCharts: this.updateCharts,
+        }).catch((err) => {
+          alert(err.message || err.toString());
+        });
+      })
+      .catch((err) => {
+        alert(err.message || err.toString());
+      });
+
+    this.api.getRememberMeEnabled()
+      .then((rememberMeEnabled) => {
+        this.rememberMeEnabled = rememberMeEnabled;
+      });
+
+    setInterval(() => {
+      this.refresh({
+        updateCharts: this.updateCharts,
+      }).catch(console.error);
+    }, 1000);
+
+    this.api.getuiTrafficStats()
+      .then((res) => {
+        this.uiTrafficStats = res;
+      })
+      .catch(() => {
+        this.uiTrafficStats = false;
+      });
+
+    this.api.getChartType()
+      .then((res) => {
+        this.uiChartType = parseInt(res, 10);
+      })
+      .catch(() => {
+        this.uiChartType = 0;
+      });
+
+    this.api.getWGEnableOneTimeLinks()
+      .then((res) => {
+        this.enableOneTimeLinks = res;
+      })
+      .catch(() => {
+        this.enableOneTimeLinks = false;
+      });
+
+    this.api.getUiSortClients()
+      .then((res) => {
+        this.enableSortClient = res;
+      })
+      .catch(() => {
+        this.enableSortClient = false;
+      });
+
+    this.api.getWGEnableExpireTime()
+      .then((res) => {
+        this.enableExpireTime = res;
+      })
+      .catch(() => {
+        this.enableExpireTime = false;
+      });
+
+    this.api.getAvatarSettings()
+      .then((res) => {
+        this.avatarSettings = res;
+      })
+      .catch(() => {
+          this.avatarSettings = {
+            'dicebear': null,
+            'gravatar': false,
+          };
+      });
+
+    Promise.resolve().then(async () => {
+      const lang = await this.api.getLang();
+      if (lang !== localStorage.getItem('lang') && i18n.availableLocales.includes(lang)) {
+        localStorage.setItem('lang', lang);
+        i18n.locale = lang;
+      }
+
+      const currentRelease = await this.api.getRelease();
+      const latestRelease = await fetch('https://wg-easy.github.io/wg-easy/changelog.json')
+        .then((res) => res.json())
+        .then((releases) => {
+          const releasesArray = Object.entries(releases).map(([version, changelog]) => ({
+            version: parseInt(version, 10),
+            changelog,
+          }));
+          releasesArray.sort((a, b) => {
+            return b.version - a.version;
+          });
+
+          return releasesArray[0];
+        });
+
+      if (currentRelease >= latestRelease.version) return;
+
+      this.currentRelease = currentRelease;
+      this.latestRelease = latestRelease;
+    }).catch((err) => console.error(err));
+  },
+  computed: {
+    chartOptionsTX() {
+      const opts = {
+        ...this.chartOptions,
+        colors: [CHART_COLORS.tx[this.theme]],
+      };
+      opts.chart.type = UI_CHART_TYPES[this.uiChartType].type || false;
+      opts.stroke.width = UI_CHART_TYPES[this.uiChartType].strokeWidth;
+      return opts;
+    },
+    chartOptionsRX() {
+      const opts = {
+        ...this.chartOptions,
+        colors: [CHART_COLORS.rx[this.theme]],
+      };
+      opts.chart.type = UI_CHART_TYPES[this.uiChartType].type || false;
+      opts.stroke.width = UI_CHART_TYPES[this.uiChartType].strokeWidth;
+      return opts;
+    },
+    updateCharts() {
+      return this.uiChartType > 0 && this.uiShowCharts;
+    },
+    theme() {
+      if (this.uiTheme === 'auto') {
+        return this.prefersDarkScheme.matches ? 'dark' : 'light';
+      }
+      return this.uiTheme;
     },
   },
 });
