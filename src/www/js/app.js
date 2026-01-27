@@ -411,21 +411,6 @@ new Vue({
     toggleCharts() {
       localStorage.setItem('uiShowCharts', this.uiShowCharts ? 1 : 0);
     },
-  },
-  filters: {
-    bytes,
-    timeago: (value) => {
-      return timeago.format(value, i18n.locale);
-    },
-    expiredDateFormat: (value) => {
-      if (value === null) return i18n.t('Permanent');
-      const dateTime = new Date(value);
-      const options = { year: 'numeric', month: 'long', day: 'numeric' };
-      return dateTime.toLocaleDateString(i18n.locale, options);
-    },
-    expiredDateEditFormat: (value) => {
-      if (value === null) return 'yyyy-MM-dd';
-    },
 
     // WAN Tunnels Methods
     async loadWanTunnels() {
@@ -563,6 +548,21 @@ new Vue({
       alert('Defaults applied!');
     },
   },
+  filters: {
+    bytes,
+    timeago: (value) => {
+      return timeago.format(value, i18n.locale);
+    },
+    expiredDateFormat: (value) => {
+      if (value === null) return i18n.t('Permanent');
+      const dateTime = new Date(value);
+      const options = { year: 'numeric', month: 'long', day: 'numeric' };
+      return dateTime.toLocaleDateString(i18n.locale, options);
+    },
+    expiredDateEditFormat: (value) => {
+      if (value === null) return 'yyyy-MM-dd';
+    },
+
   mounted() {
     this.prefersDarkScheme.addListener(this.handlePrefersChange);
     this.setTheme(this.uiTheme);
