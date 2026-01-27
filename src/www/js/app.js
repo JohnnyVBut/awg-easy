@@ -101,6 +101,32 @@ new Vue({
     sortClient: true, // Sort clients by name, true = asc, false = desc
     enableExpireTime: false,
 
+    // WAN Tunnels
+    activeTab: 'clients',
+    wanTunnels: [],
+    showWanTunnelCreate: false,
+    wanTunnelCreate: {
+      name: '',
+      protocol: 'wireguard-1.0',
+      localSubnet: '',
+      remoteSubnet: '',
+      remoteEndpoint: '',
+      remotePublicKey: '',
+      settings: {
+        jc: 6,
+        jmin: 10,
+        jmax: 50,
+        s1: 64,
+        s2: 67,
+        s3: 64,
+        s4: 4,
+        h1: '',
+        h2: '',
+        h3: '',
+        h4: '',
+      },
+    },
+
     uiShowCharts: localStorage.getItem('uiShowCharts') === '1',
     uiTheme: localStorage.theme || 'auto',
     prefersDarkScheme: window.matchMedia('(prefers-color-scheme: dark)'),
