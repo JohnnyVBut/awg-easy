@@ -562,7 +562,7 @@ new Vue({
     expiredDateEditFormat: (value) => {
       if (value === null) return 'yyyy-MM-dd';
     },
-
+  },
   mounted() {
     this.prefersDarkScheme.addListener(this.handlePrefersChange);
     this.setTheme(this.uiTheme);
