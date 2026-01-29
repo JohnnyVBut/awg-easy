@@ -207,21 +207,43 @@ module.exports = class WanTunnel {
    * Возвращает конфиг который нужно применить на другом конце туннеля
    */
   async getRemoteConfig() {
+    // Генерируем новую пару ключей для удалённой стороны
+    const remotePrivateKey = await Util.exec('wg genkey');
+    const remotePublicKey = await Util.exec(`echo ${remotePrivateKey} | wg pubkey`, {
+      log: 'echo ***hidden*** | wg pubkey',
+    });
+    
     let remoteConf = '';
+    
+    // ========================================================================
+    // Инструкция вверху
+    // ========================================================================
+    remoteConf += '# ═══════════════════════════════════════════════════════════════\n';
+    remoteConf += '# Remote Site Configuration - Apply this on the OTHER side\n';
+    remoteConf += `# Tunnel: ${this.data.name}\n`;
+    remoteConf += `# Protocol: ${this.data.protocol === 'amneziawg-2.0' ? 'AmneziaWG 2.0' : 'WireGuard 1.0'}\n`;
+    remoteConf += '# ═══════════════════════════════════════════════════════════════\n';
+    remoteConf += '\n';
     
     // ========================================================================
     // [Interface] секция для удалённой стороны
     // ========================================================================
     remoteConf += '[Interface]\n';
-    remoteConf += '# Replace with your private key\n';
-    remoteConf += 'PrivateKey = YOUR_PRIVATE_KEY_HERE\n';
-    remoteConf += '# Use appropriate port\n';
+    remoteConf += `# Private key for remote side (GENERATED)\n`;
+    remoteConf += `PrivateKey = ${remotePrivateKey}\n`;
+    remoteConf += '\n';
+    remoteConf += '# Listen port (choose any free UDP port)\n';
     remoteConf += 'ListenPort = 51820\n';
+    remoteConf += '\n';
+    remoteConf += `# Local subnet on REMOTE side\n`;
+    remoteConf += `# Address = ${this.data.remoteSubnet.split('/')[0].replace(/\.\d+$/, '.1')}/${this.data.remoteSubnet.split('/')[1]}\n`;
     
     // Добавить AWG параметры если нужно
     if (this.data.protocol === 'amneziawg-2.0') {
       const s = this.data.settings;
-      remoteConf += '\n# AmneziaWG 2.0 Parameters (MUST match exactly!)\n';
+      remoteConf += '\n# ═══════════════════════════════════════════════════════════════\n';
+      remoteConf += '# AmneziaWG 2.0 Parameters (MUST match EXACTLY on both sides!)\n';
+      remoteConf += '# ═══════════════════════════════════════════════════════════════\n';
       remoteConf += `Jc = ${s.jc}\n`;
       remoteConf += `Jmin = ${s.jmin}\n`;
       remoteConf += `Jmax = ${s.jmax}\n`;
@@ -242,16 +264,53 @@ module.exports = class WanTunnel {
     }
     
     // ========================================================================
-    // [Peer] секция - наша сторона
+    // [Peer] секция - настройка для подключения к НАШЕЙ стороне
     // ========================================================================
     remoteConf += '\n[Peer]\n';
-    remoteConf += `# Our public key\n`;
+    remoteConf += `# Public key of THIS server\n`;
     remoteConf += `PublicKey = ${this.data.publicKey}\n`;
-    remoteConf += `# Our subnet\n`;
+    remoteConf += '\n';
+    remoteConf += `# Routes to THIS server's subnet\n`;
     remoteConf += `AllowedIPs = ${this.data.localSubnet}\n`;
-    remoteConf += `# Our endpoint (replace YOUR_SERVER_IP with actual IP)\n`;
-    remoteConf += `Endpoint = YOUR_SERVER_IP:${this.data.listenPort}\n`;
+    remoteConf += '\n';
+    
+    // Попытка определить публичный IP сервера
+    let serverEndpoint = 'YOUR_SERVER_PUBLIC_IP';
+    try {
+      // Пробуем получить из переменной окружения WG_HOST
+      const WG_HOST = process.env.WG_HOST;
+      if (WG_HOST && WG_HOST !== '0.0.0.0') {
+        serverEndpoint = WG_HOST;
+      }
+    } catch (e) {
+      // Игнорируем ошибку
+    }
+    
+    remoteConf += `# Endpoint of THIS server\n`;
+    remoteConf += `# Replace ${serverEndpoint} with your actual public IP if needed\n`;
+    remoteConf += `Endpoint = ${serverEndpoint}:${this.data.listenPort}\n`;
+    remoteConf += '\n';
     remoteConf += 'PersistentKeepalive = 25\n';
+    
+    // ========================================================================
+    // Инструкция внизу
+    // ========================================================================
+    remoteConf += '\n';
+    remoteConf += '# ═══════════════════════════════════════════════════════════════\n';
+    remoteConf += '# IMPORTANT: Copy the public key below and add it to THIS server!\n';
+    remoteConf += '# ═══════════════════════════════════════════════════════════════\n';
+    remoteConf += `# Remote Public Key: ${remotePublicKey}\n`;
+    remoteConf += '#\n';
+    remoteConf += '# How to apply on remote side:\n';
+    if (this.data.protocol === 'amneziawg-2.0') {
+      remoteConf += '#   1. Save this file as /etc/amnezia/amneziawg/wg0.conf\n';
+      remoteConf += '#   2. Run: awg-quick up wg0\n';
+    } else {
+      remoteConf += '#   1. Save this file as /etc/wireguard/wg0.conf\n';
+      remoteConf += '#   2. Run: wg-quick up wg0\n';
+    }
+    remoteConf += `#   3. Update THIS server with remote public key: ${remotePublicKey}\n`;
+    remoteConf += '# ═══════════════════════════════════════════════════════════════\n';
     
     return remoteConf;
   }
