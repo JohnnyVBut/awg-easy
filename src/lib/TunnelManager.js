@@ -147,6 +147,8 @@ module.exports = class TunnelManager {
       type: 'wan',
       protocol: data.protocol,
       interface: interfaceName,
+      localTunnelAddress: data.localTunnelAddress || '',    // ДОБАВЛЕНО
+      remoteTunnelAddress: data.remoteTunnelAddress || '',  // ДОБАВЛЕНО
       localSubnet: data.localSubnet,
       remoteSubnet: data.remoteSubnet,
       remoteEndpoint: data.remoteEndpoint,
