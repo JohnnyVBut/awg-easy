@@ -50,6 +50,11 @@ module.exports = class WanTunnel {
     wgConf += `PrivateKey = ${this.data.privateKey}\n`;
     wgConf += `ListenPort = ${this.data.listenPort}\n`;
     
+    // Добавить туннельный Address если указан
+    if (this.data.localTunnelAddress) {
+      wgConf += `Address = ${this.data.localTunnelAddress}\n`;
+    }
+    
     // Добавить AWG 2.0 параметры ТОЛЬКО если protocol = "amneziawg-2.0"
     if (this.data.protocol === 'amneziawg-2.0') {
       const s = this.data.settings;
@@ -235,8 +240,13 @@ module.exports = class WanTunnel {
     remoteConf += '# Listen port (choose any free UDP port)\n';
     remoteConf += 'ListenPort = 51820\n';
     remoteConf += '\n';
-    remoteConf += `# Local subnet on REMOTE side\n`;
-    remoteConf += `# Address = ${this.data.remoteSubnet.split('/')[0].replace(/\.\d+$/, '.1')}/${this.data.remoteSubnet.split('/')[1]}\n`;
+    
+    // Добавить туннельный Address если указан
+    if (this.data.remoteTunnelAddress) {
+      remoteConf += `# Tunnel address for remote side\n`;
+      remoteConf += `Address = ${this.data.remoteTunnelAddress}\n`;
+      remoteConf += '\n';
+    }
     
     // Добавить AWG параметры если нужно
     if (this.data.protocol === 'amneziawg-2.0') {

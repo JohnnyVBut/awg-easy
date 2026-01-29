@@ -108,6 +108,8 @@ new Vue({
     wanTunnelCreate: {
       name: '',
       protocol: 'wireguard-1.0',
+      localTunnelAddress: '',    // Tunnel P2P IP (this side)
+      remoteTunnelAddress: '',   // Tunnel P2P IP (other side)
       localSubnet: '',
       remoteSubnet: '',
       remoteEndpoint: '',

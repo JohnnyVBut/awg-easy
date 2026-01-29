@@ -683,6 +683,41 @@
                 </select>
               </div>
 
+              <!-- Tunnel Addresses (Point-to-Point) -->
+              <div class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                <h3 class="font-medium dark:text-neutral-200 mb-2 flex items-center text-sm">
+                  <svg class="w-4 h-4 mr-2 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Tunnel Addresses (Point-to-Point) - Optional
+                </h3>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                  Assign IP addresses to tunnel endpoints. Needed for PBR/gateway usage (like pfSense). Leave empty for simple S2S.
+                </p>
+                
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">
+                      Local Tunnel Address <span class="text-gray-500">(this side)</span>
+                    </label>
+                    <input v-model="wanTunnelCreate.localTunnelAddress"
+                      placeholder="10.100.0.1/30"
+                      class="w-full px-3 py-2 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">
+                      Remote Tunnel Address <span class="text-gray-500">(other side)</span>
+                    </label>
+                    <input v-model="wanTunnelCreate.remoteTunnelAddress"
+                      placeholder="10.100.0.2/30"
+                      class="w-full px-3 py-2 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  💡 Use /30 (4 IPs) or /31 (2 IPs) for P2P. Example: 10.100.0.1/30 ↔ 10.100.0.2/30
+                </p>
+              </div>
+
               <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Local Subnet</label>
