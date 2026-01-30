@@ -21,7 +21,8 @@
     "debug": "^4.3.7",
     "express-session": "^1.18.0",
     "h3": "^1.12.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.9",

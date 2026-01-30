@@ -101,10 +101,37 @@ new Vue({
     sortClient: true, // Sort clients by name, true = asc, false = desc
     enableExpireTime: false,
 
-    // WAN Tunnels
+    // WAN Tunnels (old architecture - deprecated)
     activeTab: 'clients',
     wanTunnels: [],
     showWanTunnelCreate: false,
+
+    // Tunnel Interfaces (new architecture)
+    tunnelInterfaces: [],
+    tunnelInterfacesSubTab: 'interfaces', // 'interfaces' or 'peers'
+    selectedInterface: null,
+    selectedInterfacePeers: [],
+    showInterfaceCreate: false,
+    showPeerCreate: false,
+    interfaceCreate: {
+      name: '',
+      protocol: 'wireguard-1.0',
+      address: '',
+      listenPort: '',
+      settings: {
+        jc: 6, jmin: 10, jmax: 50,
+        s1: 64, s2: 67, s3: 64, s4: 4,
+        h1: '', h2: '', h3: '', h4: '',
+      },
+    },
+    peerCreate: {
+      name: '',
+      publicKey: '',
+      endpoint: '',
+      allowedIPs: '',
+      remoteAddress: '',
+      persistentKeepalive: 25,
+    },
     wanTunnelCreate: {
       name: '',
       protocol: 'wireguard-1.0',
@@ -548,6 +575,250 @@ new Vue({
         return `${min}-${max}`;
       };
       this.wanTunnelCreate.settings = {
+        jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4,
+        h1: rand(), h2: rand(), h3: rand(), h4: rand(),
+      };
+      alert('Defaults applied!');
+    },
+
+    // ========================================================================
+    // Tunnel Interfaces Methods (New Architecture)
+    // ========================================================================
+
+    async loadTunnelInterfaces() {
+      try {
+        const res = await fetch('/api/tunnel-interfaces', { credentials: 'include' });
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        this.tunnelInterfaces = data.interfaces || [];
+      } catch (err) {
+        console.error('Failed to load tunnel interfaces:', err);
+      }
+    },
+
+    async createTunnelInterface() {
+      try {
+        if (!this.interfaceCreate.name) {
+          alert('Please enter interface name');
+          return;
+        }
+
+        if (this.interfaceCreate.protocol === 'amneziawg-2.0') {
+          if (!this.interfaceCreate.settings.h1 || !this.interfaceCreate.settings.h2 ||
+              !this.interfaceCreate.settings.h3 || !this.interfaceCreate.settings.h4) {
+            alert('Please set H1-H4 parameters for AWG 2.0');
+            return;
+          }
+        }
+
+        const payload = {
+          name: this.interfaceCreate.name,
+          protocol: this.interfaceCreate.protocol,
+          address: this.interfaceCreate.address || undefined,
+          listenPort: this.interfaceCreate.listenPort ? parseInt(this.interfaceCreate.listenPort, 10) : undefined,
+        };
+
+        if (this.interfaceCreate.protocol === 'amneziawg-2.0') {
+          payload.settings = this.interfaceCreate.settings;
+        }
+
+        const res = await fetch('/api/tunnel-interfaces', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.message || res.statusText);
+        }
+
+        this.showInterfaceCreate = false;
+        this.interfaceCreate = {
+          name: '', protocol: 'wireguard-1.0', address: '', listenPort: '',
+          settings: { jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4, h1: '', h2: '', h3: '', h4: '' },
+        };
+
+        await this.loadTunnelInterfaces();
+        alert('Interface created!');
+      } catch (err) {
+        console.error('Failed to create interface:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async deleteTunnelInterface(iface) {
+      if (!confirm(`Delete interface "${iface.name}"? This will also delete all peers.`)) return;
+      try {
+        const res = await fetch(`/api/tunnel-interfaces/${iface.id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        await this.loadTunnelInterfaces();
+        if (this.selectedInterface && this.selectedInterface.id === iface.id) {
+          this.selectedInterface = null;
+          this.selectedInterfacePeers = [];
+        }
+        alert('Interface deleted!');
+      } catch (err) {
+        console.error('Delete failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async startTunnelInterface(iface) {
+      try {
+        const res = await fetch(`/api/tunnel-interfaces/${iface.id}/start`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        await this.loadTunnelInterfaces();
+      } catch (err) {
+        console.error('Start failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async stopTunnelInterface(iface) {
+      try {
+        const res = await fetch(`/api/tunnel-interfaces/${iface.id}/stop`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        await this.loadTunnelInterfaces();
+      } catch (err) {
+        console.error('Stop failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async restartTunnelInterface(iface) {
+      try {
+        const res = await fetch(`/api/tunnel-interfaces/${iface.id}/restart`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        await this.loadTunnelInterfaces();
+        alert('Interface restarted!');
+      } catch (err) {
+        console.error('Restart failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async selectInterface(iface) {
+      this.selectedInterface = iface;
+      this.tunnelInterfacesSubTab = 'peers';
+      await this.loadInterfacePeers(iface.id);
+    },
+
+    async loadInterfacePeers(interfaceId) {
+      try {
+        const res = await fetch(`/api/tunnel-interfaces/${interfaceId}/peers`, { credentials: 'include' });
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        this.selectedInterfacePeers = data.peers || [];
+      } catch (err) {
+        console.error('Failed to load peers:', err);
+        this.selectedInterfacePeers = [];
+      }
+    },
+
+    async createPeer() {
+      if (!this.selectedInterface) {
+        alert('Please select an interface first');
+        return;
+      }
+      try {
+        if (!this.peerCreate.name || !this.peerCreate.publicKey || !this.peerCreate.allowedIPs) {
+          alert('Please fill name, public key, and allowed IPs');
+          return;
+        }
+
+        const payload = {
+          name: this.peerCreate.name,
+          publicKey: this.peerCreate.publicKey,
+          endpoint: this.peerCreate.endpoint || undefined,
+          allowedIPs: this.peerCreate.allowedIPs,
+          remoteAddress: this.peerCreate.remoteAddress || undefined,
+          persistentKeepalive: this.peerCreate.persistentKeepalive || 25,
+        };
+
+        const res = await fetch(`/api/tunnel-interfaces/${this.selectedInterface.id}/peers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.message || res.statusText);
+        }
+
+        this.showPeerCreate = false;
+        this.peerCreate = { name: '', publicKey: '', endpoint: '', allowedIPs: '', remoteAddress: '', persistentKeepalive: 25 };
+
+        await this.loadInterfacePeers(this.selectedInterface.id);
+        await this.loadTunnelInterfaces();
+        alert('Peer created!');
+      } catch (err) {
+        console.error('Failed to create peer:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async deletePeer(peer) {
+      if (!confirm(`Delete peer "${peer.name}"?`)) return;
+      try {
+        const res = await fetch(`/api/tunnel-interfaces/${this.selectedInterface.id}/peers/${peer.id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        await this.loadInterfacePeers(this.selectedInterface.id);
+        await this.loadTunnelInterfaces();
+        alert('Peer deleted!');
+      } catch (err) {
+        console.error('Delete failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async downloadPeerConfig(peer) {
+      try {
+        const res = await fetch(`/api/tunnel-interfaces/${this.selectedInterface.id}/peers/${peer.id}/config`, {
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        const config = await res.text();
+        const blob = new Blob([config], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${peer.name.replace(/\s+/g, '-')}.conf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Download failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    useInterfaceDefaults() {
+      const rand = () => {
+        const min = Math.floor(Math.random() * 2000000000) + 100000000;
+        const max = Math.min(min + Math.floor(Math.random() * 500000000) + 200000000, 2147483647);
+        return `${min}-${max}`;
+      };
+      this.interfaceCreate.settings = {
         jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4,
         h1: rand(), h2: rand(), h3: rand(), h4: rand(),
       };

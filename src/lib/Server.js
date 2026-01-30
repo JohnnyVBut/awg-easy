@@ -10,6 +10,7 @@ const { resolve, sep } = require('node:path');
 const expressSession = require('express-session');
 const debug = require('debug')('Server');
 const TunnelManager = require('./TunnelManager');
+const InterfaceManager = require('./InterfaceManager');
 
 const {
   createApp,
@@ -426,9 +427,232 @@ module.exports = class Server {
         const tunnelId = getRouterParam(event, 'id');
         const tunnel = tunnelManager.getWanTunnel(tunnelId);
         const config = await tunnel.getRemoteConfig();
-        
+
         setHeader(event, 'Content-Type', 'text/plain');
         setHeader(event, 'Content-Disposition', `attachment; filename="${tunnelId}-remote.conf"`);
+        return config;
+      }))
+
+      // ========================================================================
+      // Tunnel Interfaces API (New Architecture)
+      // ========================================================================
+
+      /**
+       * GET /api/tunnel-interfaces
+       * Получить список всех интерфейсов
+       */
+      .get('/api/tunnel-interfaces', defineEventHandler(async () => {
+        const manager = await InterfaceManager.getInstance();
+        const interfaces = manager.getAllInterfaces();
+        return {
+          interfaces: interfaces.map(iface => iface.toJSON()),
+        };
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces
+       * Создать новый интерфейс
+       */
+      .post('/api/tunnel-interfaces', defineEventHandler(async (event) => {
+        const { name, protocol, address, listenPort, settings } = await readBody(event);
+
+        if (!name) {
+          throw createError({ status: 400, message: 'Name is required' });
+        }
+
+        if (protocol === 'amneziawg-2.0' && !settings) {
+          throw createError({ status: 400, message: 'Settings required for AmneziaWG 2.0' });
+        }
+
+        const manager = await InterfaceManager.getInstance();
+        const iface = await manager.createInterface({ name, protocol, address, listenPort, settings });
+
+        debug(`Interface created: ${iface.id}`);
+        return { interface: iface.toJSON() };
+      }))
+
+      /**
+       * GET /api/tunnel-interfaces/:id
+       * Получить информацию об интерфейсе
+       */
+      .get('/api/tunnel-interfaces/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const iface = manager.getInterface(id);
+
+        if (!iface) {
+          throw createError({ status: 404, message: 'Interface not found' });
+        }
+
+        return { interface: iface.toJSON() };
+      }))
+
+      /**
+       * PATCH /api/tunnel-interfaces/:id
+       * Обновить интерфейс
+       */
+      .patch('/api/tunnel-interfaces/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const updates = await readBody(event);
+
+        const manager = await InterfaceManager.getInstance();
+        const iface = await manager.updateInterface(id, updates);
+
+        debug(`Interface updated: ${id}`);
+        return { interface: iface.toJSON() };
+      }))
+
+      /**
+       * DELETE /api/tunnel-interfaces/:id
+       * Удалить интерфейс
+       */
+      .delete('/api/tunnel-interfaces/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        await manager.deleteInterface(id);
+
+        debug(`Interface deleted: ${id}`);
+        return { success: true };
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces/:id/start
+       * Запустить интерфейс
+       */
+      .post('/api/tunnel-interfaces/:id/start', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const iface = await manager.startInterface(id);
+
+        debug(`Interface started: ${id}`);
+        return { interface: iface.toJSON() };
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces/:id/stop
+       * Остановить интерфейс
+       */
+      .post('/api/tunnel-interfaces/:id/stop', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const iface = await manager.stopInterface(id);
+
+        debug(`Interface stopped: ${id}`);
+        return { interface: iface.toJSON() };
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces/:id/restart
+       * Перезапустить интерфейс
+       */
+      .post('/api/tunnel-interfaces/:id/restart', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const iface = await manager.restartInterface(id);
+
+        debug(`Interface restarted: ${id}`);
+        return { interface: iface.toJSON() };
+      }))
+
+      // ========================================================================
+      // Peers API (for Tunnel Interfaces)
+      // ========================================================================
+
+      /**
+       * GET /api/tunnel-interfaces/:id/peers
+       * Получить список peers интерфейса
+       */
+      .get('/api/tunnel-interfaces/:id/peers', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const peers = manager.getPeers(id);
+
+        return { peers: peers.map(peer => peer.toJSON()) };
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces/:id/peers
+       * Добавить peer к интерфейсу
+       */
+      .post('/api/tunnel-interfaces/:id/peers', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const { name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive } = await readBody(event);
+
+        if (!name || !publicKey || !allowedIPs) {
+          throw createError({ status: 400, message: 'name, publicKey, and allowedIPs are required' });
+        }
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = await manager.addPeer(id, { name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive });
+
+        debug(`Peer added: ${peer.id} to ${id}`);
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * GET /api/tunnel-interfaces/:id/peers/:peerId
+       * Получить информацию о peer
+       */
+      .get('/api/tunnel-interfaces/:id/peers/:peerId', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = manager.getPeer(id, peerId);
+
+        if (!peer) {
+          throw createError({ status: 404, message: 'Peer not found' });
+        }
+
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * PATCH /api/tunnel-interfaces/:id/peers/:peerId
+       * Обновить peer
+       */
+      .patch('/api/tunnel-interfaces/:id/peers/:peerId', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+        const updates = await readBody(event);
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = await manager.updatePeer(id, peerId, updates);
+
+        debug(`Peer updated: ${peerId}`);
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * DELETE /api/tunnel-interfaces/:id/peers/:peerId
+       * Удалить peer
+       */
+      .delete('/api/tunnel-interfaces/:id/peers/:peerId', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        await manager.removePeer(id, peerId);
+
+        debug(`Peer deleted: ${peerId}`);
+        return { success: true };
+      }))
+
+      /**
+       * GET /api/tunnel-interfaces/:id/peers/:peerId/config
+       * Скачать конфиг для peer
+       */
+      .get('/api/tunnel-interfaces/:id/peers/:peerId/config', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        const config = await manager.getPeerRemoteConfig(id, peerId);
+        const peer = manager.getPeer(id, peerId);
+        const filename = `${peer.name.replace(/\s+/g, '-')}.conf`;
+
+        setHeader(event, 'Content-Type', 'text/plain');
+        setHeader(event, 'Content-Disposition', `attachment; filename="${filename}"`);
         return config;
       }));
 

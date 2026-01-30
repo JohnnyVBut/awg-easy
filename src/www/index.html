@@ -73,17 +73,22 @@
           </div>
         </div>
         <div class="text-sm text-gray-400 dark:text-neutral-400 mb-5"></div>
-        <!-- WAN Tunnels Tab Navigation -->
-        <div class="flex gap-2 mb-4">
-          <button @click="activeTab = 'clients'" 
-            :class="activeTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'" 
+        <!-- Main Tab Navigation -->
+        <div class="flex gap-2 mb-4 flex-wrap">
+          <button @click="activeTab = 'clients'"
+            :class="activeTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
             class="px-4 py-2 rounded-lg font-medium transition">
             {{ $t('clients') }}
           </button>
-          <button @click="activeTab = 'wanTunnels'" 
-            :class="activeTab === 'wanTunnels' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'" 
+          <button @click="activeTab = 'wanTunnels'"
+            :class="activeTab === 'wanTunnels' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
             class="px-4 py-2 rounded-lg font-medium transition">
             WAN Tunnels
+          </button>
+          <button @click="activeTab = 'tunnelInterfaces'; loadTunnelInterfaces()"
+            :class="activeTab === 'tunnelInterfaces' ? 'bg-green-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+            class="px-4 py-2 rounded-lg font-medium transition">
+            Tunnel Interfaces
           </button>
         </div>
         <div v-if="latestRelease"
@@ -841,6 +846,416 @@
             </div>
           </div>
         </div>
+
+        <!-- ================================================================ -->
+        <!-- Tunnel Interfaces Section (New Architecture) -->
+        <!-- ================================================================ -->
+        <div v-if="activeTab === 'tunnelInterfaces'" class="shadow-md rounded-lg bg-white dark:bg-neutral-700 overflow-hidden mb-10">
+          <!-- Sub-tabs: Interfaces / Peers -->
+          <div class="flex gap-2 p-4 border-b border-gray-100 dark:border-neutral-600">
+            <button @click="tunnelInterfacesSubTab = 'interfaces'; selectedInterface = null"
+              :class="tunnelInterfacesSubTab === 'interfaces' ? 'bg-green-600 text-white' : 'bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+              class="px-3 py-1.5 rounded text-sm font-medium transition">
+              Interfaces
+            </button>
+            <button @click="tunnelInterfacesSubTab = 'peers'"
+              :class="tunnelInterfacesSubTab === 'peers' ? 'bg-green-600 text-white' : 'bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+              class="px-3 py-1.5 rounded text-sm font-medium transition"
+              :disabled="!selectedInterface">
+              Peers <span v-if="selectedInterface">({{ selectedInterface.name }})</span>
+            </button>
+          </div>
+
+          <!-- Interfaces Tab -->
+          <div v-if="tunnelInterfacesSubTab === 'interfaces'">
+            <div class="flex flex-row flex-auto items-center p-3 px-5 border-b-2 border-gray-100 dark:border-neutral-600">
+              <div class="flex-grow">
+                <p class="text-2xl font-medium dark:text-neutral-200">Tunnel Interfaces</p>
+                <p class="text-sm text-gray-500 dark:text-neutral-400">Hub-and-spoke VPN architecture</p>
+              </div>
+              <button @click="showInterfaceCreate = true"
+                class="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded inline-flex items-center transition">
+                <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                New Interface
+              </button>
+            </div>
+
+            <div class="p-5">
+              <div v-if="!tunnelInterfaces || tunnelInterfaces.length === 0" class="text-center text-gray-400 dark:text-neutral-400 py-8">
+                No tunnel interfaces configured. Create one to get started.
+              </div>
+
+              <div v-for="iface in tunnelInterfaces" :key="iface.id"
+                class="mb-4 p-4 border-2 border-gray-100 dark:border-neutral-600 rounded-lg hover:border-green-400 dark:hover:border-green-600 transition cursor-pointer"
+                @click="selectInterface(iface)">
+
+                <div class="flex items-start justify-between">
+                  <div class="flex-grow">
+                    <div class="flex items-center gap-2 mb-2">
+                      <h3 class="text-lg font-medium dark:text-neutral-200">{{ iface.name }}</h3>
+                      <span class="px-2 py-0.5 text-xs font-mono bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-300 rounded">
+                        {{ iface.id }}
+                      </span>
+
+                      <span v-if="iface.protocol === 'wireguard-1.0'"
+                        class="px-2 py-1 text-xs font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-300 rounded">
+                        WG 1.0
+                      </span>
+                      <span v-else
+                        class="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded">
+                        AWG 2.0
+                      </span>
+
+                      <span v-if="iface.enabled"
+                        class="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">
+                        ● Running
+                      </span>
+                      <span v-else
+                        class="px-2 py-1 text-xs font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-300 rounded">
+                        ○ Stopped
+                      </span>
+                    </div>
+
+                    <div class="text-sm text-gray-600 dark:text-neutral-400 space-y-1">
+                      <div class="flex gap-4">
+                        <span>Port: {{ iface.listenPort }}</span>
+                        <span v-if="iface.address">Address: {{ iface.address }}</span>
+                        <span class="font-medium text-green-600 dark:text-green-400">{{ iface.peerCount }} peer(s)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex gap-2 ml-4" @click.stop>
+                    <button v-if="!iface.enabled" @click="startTunnelInterface(iface)"
+                      title="Start"
+                      class="p-2 rounded bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 transition">
+                      <svg class="w-5 h-5 text-green-700 dark:text-green-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+
+                    <button v-if="iface.enabled" @click="stopTunnelInterface(iface)"
+                      title="Stop"
+                      class="p-2 rounded bg-yellow-100 dark:bg-yellow-900 hover:bg-yellow-200 dark:hover:bg-yellow-800 transition">
+                      <svg class="w-5 h-5 text-yellow-700 dark:text-yellow-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+
+                    <button @click="restartTunnelInterface(iface)"
+                      title="Restart"
+                      class="p-2 rounded bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 transition">
+                      <svg class="w-5 h-5 text-blue-700 dark:text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+
+                    <button @click="deleteTunnelInterface(iface)"
+                      title="Delete"
+                      class="p-2 rounded bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 transition">
+                      <svg class="w-5 h-5 text-red-700 dark:text-red-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Peers Tab -->
+          <div v-if="tunnelInterfacesSubTab === 'peers'">
+            <div class="flex flex-row flex-auto items-center p-3 px-5 border-b-2 border-gray-100 dark:border-neutral-600">
+              <div class="flex-grow">
+                <p class="text-2xl font-medium dark:text-neutral-200">
+                  Peers
+                  <span v-if="selectedInterface" class="text-lg text-gray-500">for {{ selectedInterface.name }} ({{ selectedInterface.id }})</span>
+                </p>
+              </div>
+              <button @click="showPeerCreate = true" :disabled="!selectedInterface"
+                class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-2 px-4 rounded inline-flex items-center transition">
+                <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Peer
+              </button>
+            </div>
+
+            <div class="p-5">
+              <div v-if="!selectedInterface" class="text-center text-gray-400 dark:text-neutral-400 py-8">
+                Select an interface from the Interfaces tab to view its peers.
+              </div>
+
+              <div v-else-if="selectedInterfacePeers.length === 0" class="text-center text-gray-400 dark:text-neutral-400 py-8">
+                No peers configured for {{ selectedInterface.name }}. Add one to connect remote sites.
+              </div>
+
+              <div v-for="peer in selectedInterfacePeers" :key="peer.id"
+                class="mb-4 p-4 border-2 border-gray-100 dark:border-neutral-600 rounded-lg">
+
+                <div class="flex items-start justify-between">
+                  <div class="flex-grow">
+                    <div class="flex items-center gap-2 mb-2">
+                      <h3 class="text-lg font-medium dark:text-neutral-200">{{ peer.name }}</h3>
+                      <span v-if="peer.enabled"
+                        class="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">
+                        Enabled
+                      </span>
+                      <span v-else
+                        class="px-2 py-1 text-xs font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-300 rounded">
+                        Disabled
+                      </span>
+                    </div>
+
+                    <div class="text-sm text-gray-600 dark:text-neutral-400 space-y-1">
+                      <div><span class="font-medium">Allowed IPs:</span> {{ peer.allowedIPs }}</div>
+                      <div v-if="peer.endpoint"><span class="font-medium">Endpoint:</span> {{ peer.endpoint }}</div>
+                      <div v-if="peer.remoteAddress"><span class="font-medium">Remote Address:</span> {{ peer.remoteAddress }}</div>
+                      <div class="font-mono text-xs text-gray-400 dark:text-neutral-500 truncate">
+                        Public Key: {{ peer.publicKey }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex gap-2 ml-4">
+                    <button @click="downloadPeerConfig(peer)"
+                      title="Download remote config"
+                      class="p-2 rounded bg-gray-100 dark:bg-neutral-600 hover:bg-gray-200 dark:hover:bg-neutral-500 transition">
+                      <svg class="w-5 h-5 text-gray-700 dark:text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </button>
+
+                    <button @click="deletePeer(peer)"
+                      title="Delete"
+                      class="p-2 rounded bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 transition">
+                      <svg class="w-5 h-5 text-red-700 dark:text-red-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Interface Modal -->
+        <div v-if="showInterfaceCreate"
+          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          @click.self="showInterfaceCreate = false">
+
+          <div class="bg-white dark:bg-neutral-700 rounded-lg max-w-lg w-full max-h-[90vh] flex flex-col">
+            <div class="p-6 pb-4 border-b dark:border-neutral-600">
+              <h2 class="text-2xl font-medium dark:text-neutral-200">Create Interface</h2>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6 pt-4">
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Interface Name</label>
+                <input v-model="interfaceCreate.name"
+                  type="text"
+                  placeholder="e.g., Main VPN Hub"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Protocol</label>
+                <select v-model="interfaceCreate.protocol"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  <option value="wireguard-1.0">WireGuard 1.0</option>
+                  <option value="amneziawg-2.0">AmneziaWG 2.0</option>
+                </select>
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Tunnel Address (optional)</label>
+                <input v-model="interfaceCreate.address"
+                  type="text"
+                  placeholder="e.g., 10.100.0.1/24"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Listen Port (optional, auto-assigned)</label>
+                <input v-model="interfaceCreate.listenPort"
+                  type="number"
+                  placeholder="e.g., 51830"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <!-- AWG 2.0 settings -->
+              <div v-if="interfaceCreate.protocol === 'amneziawg-2.0'" class="mb-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded">
+                <h3 class="font-medium dark:text-neutral-200 mb-3">AmneziaWG 2.0 Parameters</h3>
+
+                <button @click="useInterfaceDefaults" type="button"
+                  class="mb-3 px-3 py-1 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded transition">
+                  Use Defaults
+                </button>
+
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jc</label>
+                    <input v-model.number="interfaceCreate.settings.jc" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmin</label>
+                    <input v-model.number="interfaceCreate.settings.jmin" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmax</label>
+                    <input v-model.number="interfaceCreate.settings.jmax" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S1</label>
+                    <input v-model.number="interfaceCreate.settings.s1" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S2</label>
+                    <input v-model.number="interfaceCreate.settings.s2" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S3</label>
+                    <input v-model.number="interfaceCreate.settings.s3" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S4</label>
+                    <input v-model.number="interfaceCreate.settings.s4" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H1</label>
+                    <input v-model="interfaceCreate.settings.h1" type="text"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H2</label>
+                    <input v-model="interfaceCreate.settings.h2" type="text"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H3</label>
+                    <input v-model="interfaceCreate.settings.h3" type="text"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H4</label>
+                    <input v-model="interfaceCreate.settings.h4" type="text"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="p-6 pt-4 border-t dark:border-neutral-600">
+              <div class="flex gap-3 justify-end">
+                <button @click="showInterfaceCreate = false"
+                  class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
+                  Cancel
+                </button>
+                <button @click="createTunnelInterface"
+                  class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition">
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Peer Modal -->
+        <div v-if="showPeerCreate"
+          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          @click.self="showPeerCreate = false">
+
+          <div class="bg-white dark:bg-neutral-700 rounded-lg max-w-lg w-full">
+            <div class="p-6 pb-4 border-b dark:border-neutral-600">
+              <h2 class="text-2xl font-medium dark:text-neutral-200">Add Peer</h2>
+              <p v-if="selectedInterface" class="text-sm text-gray-500 dark:text-neutral-400">
+                Adding to {{ selectedInterface.name }} ({{ selectedInterface.id }})
+              </p>
+            </div>
+
+            <div class="p-6 pt-4">
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Peer Name</label>
+                <input v-model="peerCreate.name"
+                  type="text"
+                  placeholder="e.g., Office-A"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Public Key</label>
+                <input v-model="peerCreate.publicKey"
+                  type="text"
+                  placeholder="base64-encoded public key"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono text-sm">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Allowed IPs (required)</label>
+                <input v-model="peerCreate.allowedIPs"
+                  type="text"
+                  placeholder="e.g., 192.168.1.0/24"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1">Networks to route through this peer</p>
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Endpoint (optional)</label>
+                <input v-model="peerCreate.endpoint"
+                  type="text"
+                  placeholder="e.g., office-a.example.com:51820"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Remote Tunnel Address (optional)</label>
+                <input v-model="peerCreate.remoteAddress"
+                  type="text"
+                  placeholder="e.g., 10.100.0.2/24"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Persistent Keepalive</label>
+                <input v-model.number="peerCreate.persistentKeepalive"
+                  type="number"
+                  placeholder="25"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+            </div>
+
+            <div class="p-6 pt-0 border-t dark:border-neutral-600">
+              <div class="flex gap-3 justify-end pt-4">
+                <button @click="showPeerCreate = false"
+                  class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
+                  Cancel
+                </button>
+                <button @click="createPeer"
+                  class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition">
+                  Add Peer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Delete Dialog -->
         <div v-if="clientDelete" class="fixed z-10 inset-0 overflow-y-auto">
           <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
