@@ -445,6 +445,8 @@ new Vue({
         const payload = {
           name: this.wanTunnelCreate.name,
           protocol: this.wanTunnelCreate.protocol,
+          localTunnelAddress: this.wanTunnelCreate.localTunnelAddress,    // ДОБАВЛЕНО
+          remoteTunnelAddress: this.wanTunnelCreate.remoteTunnelAddress,  // ДОБАВЛЕНО
           localSubnet: this.wanTunnelCreate.localSubnet,
           remoteSubnet: this.wanTunnelCreate.remoteSubnet,
           remoteEndpoint: this.wanTunnelCreate.remoteEndpoint,
@@ -471,6 +473,8 @@ new Vue({
         this.wanTunnelCreate = {
           name: '',
           protocol: 'wireguard-1.0',
+          localTunnelAddress: '',    // ДОБАВЛЕНО
+          remoteTunnelAddress: '',   // ДОБАВЛЕНО
           localSubnet: '',
           remoteSubnet: '',
           remoteEndpoint: '',
