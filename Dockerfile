@@ -5,7 +5,7 @@ FROM docker.io/library/node:18-alpine AS build_node_modules
 # Copy Web UI
 COPY src /app
 WORKDIR /app
-RUN npm ci --omit=dev &&\
+RUN npm install --omit=dev &&\
     mv node_modules /node_modules
 
 # Copy build result to a new image.
