@@ -1,7 +1,9 @@
 const fs = require('fs').promises;
 const path = require('path');
-const Util = require('../Util');
-const Peer = require('../Peer');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
+const Peer = require('./Peer');
 const debug = require('debug')('awg:TunnelInterface');
 
 /**
