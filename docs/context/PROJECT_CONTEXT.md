@@ -1,424 +1,161 @@
-# 🚀 AWG-Easy: Контекст разработки (30 января 2026)
+# AWG-Easy: Контекст разработки
 
-## 📌 Проект
-
-**AWG-Easy** - веб-интерфейс для управления WireGuard и AmneziaWG VPN туннелями  
-**Репозиторий:** https://github.com/JohnnyVBut/awg-easy  
-**Текущая ветка:** `feature/wan-tunnels`  
-**Технологии:** Node.js, Express, Vue.js, Docker, WireGuard, AmneziaWG
+**Последнее обновление:** 2026-03-01
+**Репозиторий:** https://github.com/JohnnyVBut/awg-easy
+**Рабочая ветка:** `feature/wan-tunnels`
 
 ---
 
-## 📊 Текущее состояние проекта
+## Стек технологий
 
-### ✅ Что работает (в development ветке):
-
-1. **VPN Users** - управление клиентами WireGuard/AmneziaWG
-2. **WAN Tunnels** - Site-to-Site VPN туннели (текущая реализация)
-   - Модель: 1 туннель = 1 интерфейс + 1 peer (1:1)
-   - Недавно добавлены поля Tunnel Address для PBR
-   - Генерация конфигов для обеих сторон
-
-### 🚧 В разработке (feature/wan-tunnels):
-
-**Новая архитектура туннелей:**
-- Модель: 1 интерфейс → много peers (1:N) - hub-and-spoke
-- Разделение Interface и Peer как отдельные сущности
-- Как в pfSense/OPNsense
+- **Backend:** Node.js, h3 (не Express!), роуты через `createRouter()` + `defineEventHandler()`
+- **Frontend:** Vue.js 2 (vanilla, без сборки), Tailwind CSS
+- **VPN:** WireGuard + AmneziaWG 2.0
+- **Деплой:** Docker, удалённый сервер по SSH
 
 ---
 
-## 🎯 Цель текущей разработки
+## Как работать с проектом
 
-### Проблема старой модели:
-
+### Редактирование файлов
+Всегда редактировать в основной папке:
 ```
-WAN Tunnel = Interface + Peer (слитно)
-├─ wg10 → Office-A (1:1)
-├─ wg11 → Office-B (1:1)
-└─ wg12 → Office-C (1:1)
+/Users/jenya/PycharmProjects/awg-easy/
+```
+НЕ в `.claude/worktrees/lucid-lumiere/` — там PyCharm не видит изменений.
 
-Проблемы:
-❌ Нельзя добавить второй peer к одному интерфейсу
-❌ Hub-and-spoke требует много интерфейсов
-❌ Смешивает локальную и удалённую конфигурацию
+### Деплой на сервер
+```bash
+# Локально — закоммитить и запушить:
+git add .
+git commit -m "описание изменений"
+git push origin feature/wan-tunnels
+
+# На сервере по SSH:
+cd awg-easy
+git pull origin feature/wan-tunnels
+docker build -t awg2-easy:latest .
+docker stop awg-easy && docker rm awg-easy
+./run.sh
 ```
 
-### Решение - новая модель:
-
+### Просмотр логов на сервере
+```bash
+docker logs -f awg-easy
 ```
-Interface wg10 (Main VPN Hub)
+
+---
+
+## Архитектура
+
+### Старая модель WAN Tunnels (устаревшая, оставлена)
+```
+WAN Tunnel = Interface + Peer (слитно, 1:1)
+wg10 → Office-A
+wg11 → Office-B
+```
+Файлы: `WanTunnel.js`, `TunnelManager.js`
+API: `/api/wireguard/wan-tunnels`
+
+### Новая модель Tunnel Interfaces (текущая разработка)
+```
+Interface wg10 (Hub)
   ├─ Peer "Office-A"
   ├─ Peer "Office-B"
   └─ Peer "Office-C"
-
-Преимущества:
-✅ Один интерфейс для всех подключений
-✅ Логическое разделение Interface и Peer
-✅ Гибкость - можно добавлять/удалять peers
-✅ Соответствует WireGuard концепции
-✅ Как в pfSense/OPNsense
 ```
+Файлы: `TunnelInterface.js`, `Peer.js`, `InterfaceManager.js`
+API: `/api/tunnel-interfaces`
 
----
-
-## 📁 Созданные файлы новой архитектуры
-
-### Backend (Node.js):
-
-**src/lib/TunnelInterface.js** (10 KB)
-- Класс управления интерфейсом (wg10, wg11, etc.)
-- Один интерфейс → много peers
-- Генерация WireGuard конфига из интерфейса + peers
-- Методы: start(), stop(), restart(), reload(), addPeer(), removePeer()
-
-**src/lib/Peer.js** (11 KB)
-- Класс представления удалённого подключения
-- Данные: name, publicKey, endpoint, allowedIPs, remoteAddress
-- Валидация данных
-- Генерация remote config для скачивания (опциональная функция)
-
-**src/lib/InterfaceManager.js** (8.7 KB)
-- Singleton менеджер всех интерфейсов
-- Управление созданием/удалением интерфейсов
-- Auto-assign портов и имён интерфейсов (wg10, wg11...)
-- Управление peers через интерфейсы
-
-**src/routes/tunnel-interfaces.js** (11 KB)
-- Express REST API routes
-- Endpoints для интерфейсов и peers
-- Полный CRUD для обеих сущностей
-
----
-
-## 🗂️ Файловая структура данных
-
+### Структура данных на сервере
 ```
 /etc/wireguard/
-├── data/                          ← Новая структура
+├── wg0.conf                        ← основной WireGuard (клиенты)
+├── wg10.conf                       ← конфиг интерфейса wg10 (auto-generated)
+├── data/
 │   ├── interfaces/
-│   │   ├── wg10.json             ← Данные интерфейса
-│   │   └── wg11.json
+│   │   └── wg10.json              ← данные интерфейса
 │   └── peers/
-│       ├── wg10/
-│       │   ├── uuid-1.json       ← Данные peer
-│       │   ├── uuid-2.json
-│       │   └── uuid-3.json
-│       └── wg11/
-│           └── uuid-4.json
-│
-├── wg10.conf                     ← Генерируется автоматически
-└── wg11.conf
+│       └── wg10/
+│           └── <uuid>.json        ← данные peer
+└── tunnels.json                   ← старые WAN туннели
 ```
 
 ---
 
-## 🔌 API Endpoints (новая архитектура)
+## Ключевые файлы
 
-### Interfaces:
-```
-GET    /api/tunnel-interfaces              # Список интерфейсов
-POST   /api/tunnel-interfaces              # Создать интерфейс
-GET    /api/tunnel-interfaces/:id          # Инфо об интерфейсе
-PATCH  /api/tunnel-interfaces/:id          # Обновить интерфейс
-DELETE /api/tunnel-interfaces/:id          # Удалить интерфейс
-POST   /api/tunnel-interfaces/:id/start    # Запустить
-POST   /api/tunnel-interfaces/:id/stop     # Остановить
-POST   /api/tunnel-interfaces/:id/restart  # Перезапустить
-```
-
-### Peers:
-```
-GET    /api/tunnel-interfaces/:id/peers                # Список peers
-POST   /api/tunnel-interfaces/:id/peers                # Добавить peer
-GET    /api/tunnel-interfaces/:id/peers/:peerId        # Инфо о peer
-PATCH  /api/tunnel-interfaces/:id/peers/:peerId        # Обновить peer
-DELETE /api/tunnel-interfaces/:id/peers/:peerId        # Удалить peer
-GET    /api/tunnel-interfaces/:id/peers/:peerId/config # Скачать конфиг
-```
+| Файл | Назначение |
+|------|-----------|
+| `src/lib/Server.js` | Все API роуты (h3), инициализация сервера |
+| `src/lib/TunnelInterface.js` | Класс туннельного интерфейса |
+| `src/lib/Peer.js` | Класс peer (удалённого подключения) |
+| `src/lib/InterfaceManager.js` | Singleton-менеджер интерфейсов |
+| `src/lib/Util.js` | Утилиты: `Util.exec()`, `Util.isValidIPv4()` |
+| `src/lib/TunnelManager.js` | Старые WAN туннели (deprecated) |
+| `src/lib/WanTunnel.js` | Старый класс WAN туннеля (deprecated) |
+| `src/www/js/app.js` | Vue.js frontend (~980 строк) |
+| `src/www/index.html` | HTML шаблон (~1420 строк) |
 
 ---
 
-## 📝 Пример использования API
+## Состояние на 2026-03-01
 
-### Создать интерфейс:
-```json
-POST /api/tunnel-interfaces
-{
-  "name": "Main VPN Hub",
-  "protocol": "wireguard-1.0",
-  "address": "10.100.0.1/24",
-  "listenPort": 51830
-}
+### ✅ Готово и работает:
+- VPN Users — управление клиентами WireGuard/AmneziaWG
+- WAN Tunnels (старая архитектура) — Site-to-Site 1:1
+- Tunnel Interfaces UI — вкладка с двумя под-вкладками (Interfaces / Peers)
+- API `/api/tunnel-interfaces` — полный CRUD для интерфейсов и peers
+- Создание интерфейса (wg10, wg11...) с авто-назначением портов (51830+)
 
-Response: { "interface": { "id": "wg10", ... } }
-```
+### 🐛 Исправлено:
+- `TunnelInterface.js` — отсутствовал `const Util = require('./Util')` — исправлено 2026-03-01
 
-### Добавить peer:
-```json
-POST /api/tunnel-interfaces/wg10/peers
-{
-  "name": "Office-A",
-  "publicKey": "aBcD1234...",
-  "endpoint": "office-a.com:51820",
-  "allowedIPs": "192.168.1.0/24",
-  "remoteAddress": "10.100.0.2/24",
-  "persistentKeepalive": 25
-}
+### 🔧 Тестируется:
+- Start/Stop/Restart интерфейса на реальном сервере
+- Создание/удаления peer
+- Download peer config
 
-Response: { "peer": { "id": "uuid-1234", ... } }
-```
+### ❌ Не сделано:
+- Миграция старых WAN Tunnels → новая архитектура
+- Редактирование интерфейса (PATCH)
+- Enable/Disable отдельного peer
+- Unit/integration тесты
 
 ---
 
-## 🔧 Технические детали
+## Нумерация интерфейсов и портов
 
-### Зависимости:
-- **uuid** - для генерации peer IDs (нужно добавить в package.json)
-- **debug** - для логирования
-- **express** - REST API
+- Интерфейсы: `wg10`, `wg11`, `wg12`, ... (основной wg0 не трогаем)
+- Порты: `51830`, `51831`, `51832`, ...
+- Порт `51820` — основной WireGuard (клиенты)
+- Порт `51821` — Web UI
 
-### Структура данных Peer:
+---
 
+## Важные замечания
+
+### h3 vs Express
+Проект использует **h3**, не Express. Это важно при добавлении роутов:
 ```javascript
-{
-  id: "uuid",                      // Уникальный ID
-  name: "Office-A",                // Friendly name
-  interfaceId: "wg10",             // К какому интерфейсу
-  publicKey: "...",                // Public key удалённой стороны
-  presharedKey: "",                // PSK (опционально)
-  endpoint: "office-a.com:51820",  // Endpoint удалённой стороны
-  allowedIPs: "192.168.1.0/24",    // Какие сети маршрутизировать
-  remoteAddress: "10.100.0.2/24",  // Туннельный IP удалённой стороны
-  persistentKeepalive: 25,         // Keepalive
-  enabled: true,                   // Включен ли
-  createdAt: "2026-01-30..."       // Дата создания
-}
+// Правильно (h3):
+router.get('/api/something', defineEventHandler(async (event) => {
+  const id = getRouterParam(event, 'id');
+  const body = await readBody(event);
+  return { result: '...' };
+}))
 ```
 
-### Hot Reload:
-Используется `wg syncconf` для применения изменений без остановки туннеля:
-```bash
-wg syncconf wg10 <(wg-quick strip wg10)
+### Util.exec()
+Все системные команды через `Util.exec()`:
+```javascript
+const Util = require('./Util');
+await Util.exec('wg genkey');
 ```
+На macOS возвращает пустую строку без выполнения (только Linux).
 
----
-
-## ❓ Открытые вопросы для обсуждения
-
-### 1. Download Config функция
-**Вопрос:** Нужна ли функция скачивания конфига для удалённой стороны?
-
-**За:**
-- Удобно для настройки remote без AWG-Easy
-- Шаблон для других систем (Mikrotik, pfSense)
-
-**Против:**
-- Опциональная функция, не обязательная для работы
-- Может запутать пользователей
-
-**Текущий статус:** Реализована, но опциональна
-
----
-
-### 2. Import Config функция
-**Вопрос:** Добавить ли возможность импорта конфига при создании Peer?
-
-**Workflow:**
+### InterfaceManager — Singleton
+```javascript
+const { getInstance } = require('./InterfaceManager');
+const manager = await getInstance();
 ```
-1. Remote сторона создаёт конфиг
-2. Hub импортирует .conf файл
-3. Парсинг → автозаполнение полей
-4. Create Peer
-```
-
-**Статус:** Не реализована, обсуждается
-
----
-
-### 3. UI дизайн
-**Вопрос:** Как должен выглядеть UI для новой модели?
-
-**Варианты:**
-
-**Вариант A - Две вкладки:**
-```
-┌─────────────────────────────────┐
-│ [Interfaces] [Peers]            │
-├─────────────────────────────────┤
-│ Interfaces:                     │
-│ ├─ wg10 (Main Hub) [3 peers]   │
-│ └─ wg11 (AWS DC)   [1 peer]    │
-└─────────────────────────────────┘
-```
-
-**Вариант B - Вложенный список:**
-```
-┌─────────────────────────────────┐
-│ Tunnel Interfaces               │
-├─────────────────────────────────┤
-│ ▶ wg10 - Main Hub               │
-│   Port: 51830 | Peers: 3        │
-│ ▼ wg11 - AWS DC                 │
-│   Port: 51831 | Peers: 1        │
-│   ├─ Peer "Office-A"            │
-│   │  [Edit] [Delete] [Config]   │
-│   └─ [Add Peer]                 │
-└─────────────────────────────────┘
-```
-
-**Статус:** Не реализован, требует обсуждения
-
----
-
-## 🚀 Следующие шаги
-
-### Приоритет 1: Интеграция Backend
-
-**Задачи:**
-1. Скопировать файлы в проект:
-   - TunnelInterface.js → src/lib/
-   - Peer.js → src/lib/
-   - InterfaceManager.js → src/lib/
-   - tunnel-interfaces.js → src/routes/
-
-2. Добавить в package.json:
-   ```json
-   "dependencies": {
-     "uuid": "^9.0.0"
-   }
-   ```
-
-3. Интегрировать routes в Server.js:
-   ```javascript
-   const tunnelInterfacesRoutes = require('../routes/tunnel-interfaces');
-   app.use('/api/tunnel-interfaces', tunnelInterfacesRoutes);
-   ```
-
-4. Тестировать API через curl/Postman
-
----
-
-### Приоритет 2: Frontend UI
-
-**Задачи:**
-1. Определить UI дизайн (Вариант A или B)
-2. Создать Vue компоненты:
-   - InterfacesList.vue
-   - InterfaceForm.vue
-   - PeersList.vue
-   - PeerForm.vue
-3. Добавить вкладку "Tunnel Interfaces" в index.html
-4. Интегрировать с API
-
----
-
-### Приоритет 3: Тестирование
-
-**Задачи:**
-1. Unit тесты для классов
-2. Integration тесты API
-3. E2E тесты UI
-4. Тестирование на реальных туннелях
-
----
-
-## 📚 История разработки (краткая)
-
-### Фаза 1: Исправление WAN Tunnels (29 января)
-- Добавлены поля Tunnel Address (localTunnelAddress, remoteTunnelAddress)
-- Исправлена генерация remote конфигов
-- Исправлена передача данных в API (payload fix)
-- Автогенерация ключей для remote стороны
-
-**Файлы:** index.html, app.js, WanTunnel.js, TunnelManager.js
-
-### Фаза 2: Анализ требований (30 января)
-- Обсуждение логичности текущей модели
-- Предложение разделить Interface и Peer
-- Анализ валидности требований
-- Оценка подводных камней
-
-### Фаза 3: Новая архитектура (30 января - сейчас)
-- Создание Backend классов
-- Создание API endpoints
-- Подготовка к Frontend разработке
-
-**Ветка:** feature/wan-tunnels
-
----
-
-## 🔑 Ключевые принципы
-
-### Backend:
-- **Singleton** для InterfaceManager
-- **Композиция** - Interface содержит Peers
-- **Separation of Concerns** - Interface vs Peer
-- **Hot Reload** - изменения без перезапуска
-- **Валидация** - проверка данных перед сохранением
-- **Auto-generation** - ключи, порты, имена интерфейсов
-
-### Frontend (планируется):
-- **Vue.js** компоненты
-- **Формы** для создания/редактирования
-- **Списки** с возможностью expand/collapse
-- **Валидация** на клиенте
-- **Feedback** - loading states, error messages
-
----
-
-## 💡 Важные замечания
-
-### О Download Config:
-- Это **опциональная helper функция**
-- НЕ обязательна для работы Peer
-- Полезна для настройки remote без AWG-Easy
-- Можно создать Peer вручную указав только 5 параметров:
-  1. Endpoint
-  2. Public Key
-  3. PSK (опционально)
-  4. Remote Address
-  5. AllowedIPs
-
-### О WireGuard:
-- Один интерфейс может иметь **неограниченное** количество peers
-- Это стандартная hub-and-spoke модель
-- AllowedIPs определяет куда маршрутизировать трафик
-- Endpoint опционален (для incoming-only connections)
-
-### О миграции:
-- Старые WAN Tunnels пока оставляем
-- Миграция отложена до завершения новой архитектуры
-- Можно реализовать позже через migration script
-
----
-
-## 🎯 Текущий фокус
-
-**СЕЙЧАС НУЖНО:**
-
-1. **Решить по UI дизайну** - какой вариант использовать?
-2. **Интегрировать Backend** - скопировать файлы, добавить routes
-3. **Протестировать API** - через curl/Postman
-4. **Создать Frontend** - Vue компоненты для управления
-
-**ПОТОМ:**
-- Миграция старых WAN Tunnels
-- Удаление deprecated кода
-- Документация
-- Release
-
----
-
-## 📞 Контакты и ресурсы
-
-- **GitHub:** https://github.com/JohnnyVBut/awg-easy
-- **Ветка:** feature/wan-tunnels
-- **Документация WireGuard:** https://www.wireguard.com/
-- **AmneziaWG:** https://github.com/amnezia-vpn/amneziawg
-
----
-
-**Дата создания контекста:** 30 января 2026  
-**Последнее обновление:** 30 января 2026 10:30 UTC  
-**Статус:** Backend готов, ждёт интеграции и Frontend разработки
