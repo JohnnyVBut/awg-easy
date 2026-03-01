@@ -826,14 +826,18 @@ new Vue({
     },
 
     useInterfaceDefaults() {
-      const rand = () => {
-        const min = Math.floor(Math.random() * 2000000000) + 100000000;
-        const max = Math.min(min + Math.floor(Math.random() * 500000000) + 200000000, 2147483647);
-        return `${min}-${max}`;
+      // H1-H4: unique uint32 values, must NOT be ranges and must NOT equal
+      // standard WireGuard packet types 1-4 (causes "headers must not overlap" error)
+      const usedH = new Set([1, 2, 3, 4]);
+      const randH = () => {
+        let v;
+        do { v = Math.floor(Math.random() * 0xFFFFFFFB) + 5; } while (usedH.has(v));
+        usedH.add(v);
+        return v;
       };
       this.interfaceCreate.settings = {
         jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4,
-        h1: rand(), h2: rand(), h3: rand(), h4: rand(),
+        h1: randH(), h2: randH(), h3: randH(), h4: randH(),
         i1: '', i2: '', i3: '', i4: '', i5: '',
       };
       alert('Defaults applied!');
