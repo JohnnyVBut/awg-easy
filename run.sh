@@ -63,10 +63,45 @@ if docker ps -a --format '{{.Names}}' | grep -q '^awg-easy$'; then
     docker rm awg-easy >/dev/null 2>&1 || true
 fi
 
-# Enable IP forwarding on the host (required for --network host mode)
+# ============================================================
+# Kernel / network stack tuning (applied to host, shared with
+# container via --network host)
+# ============================================================
 echo -e "${BLUE}Setting kernel parameters on host...${NC}"
+
+# --- Required for WireGuard / AWG routing ---
 sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv6.conf.all.forwarding=1
 sysctl -w net.ipv4.conf.all.src_valid_mark=1
+
+# --- TCP congestion control: BBR + FQ scheduler ---
+# BBR gives better throughput and lower latency under packet loss.
+# Works on kernel 4.9+; if unavailable the two lines below are no-ops.
+modprobe tcp_bbr 2>/dev/null || true
+if [ "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" != "bbr" ]; then
+    sysctl -w net.core.default_qdisc=fq
+    sysctl -w net.ipv4.tcp_congestion_control=bbr
+fi
+
+# --- Socket buffer sizes (recv/send, ~256 MB max) ---
+# Raises the ceiling; the kernel auto-tunes within this range.
+sysctl -w net.core.rmem_max=268435456
+sysctl -w net.core.wmem_max=268435456
+sysctl -w net.ipv4.tcp_rmem="4096 131072 268435456"
+sysctl -w net.ipv4.tcp_wmem="4096 65536 268435456"
+
+# --- Connection queue / SYN handling ---
+sysctl -w net.core.somaxconn=4096
+sysctl -w net.ipv4.tcp_max_syn_backlog=4096
+
+# --- TIME_WAIT reuse (safe for outbound connections) ---
+sysctl -w net.ipv4.tcp_tw_reuse=1
+
+# --- Netfilter connection tracking (raise limit for busy VPN hubs) ---
+if sysctl net.netfilter.nf_conntrack_max >/dev/null 2>&1; then
+    sysctl -w net.netfilter.nf_conntrack_max=524288
+fi
+
 echo ""
 
 # Run container
