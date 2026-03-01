@@ -270,7 +270,11 @@ class TunnelInterface {
    * Запустить интерфейс
    */
   async start() {
-    await Util.exec(`wg-quick up ${this.id}`);
+    // WG_PROCESS_FOREGROUND=1 is required for amneziawg-go when another AWG interface
+    // (e.g. wg0) is already running — otherwise amneziawg-go detects "kernel first class
+    // support" (registered by the wg0 userspace instance) and exits without creating the interface.
+    const prefix = this.data.protocol === 'amneziawg-2.0' ? 'WG_PROCESS_FOREGROUND=1 ' : '';
+    await Util.exec(`${prefix}wg-quick up ${this.id}`);
 
     this.data.enabled = true;
     await this.save();
