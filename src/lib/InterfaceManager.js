@@ -20,18 +20,18 @@ class InterfaceManager {
    */
   async init() {
     debug('Initializing InterfaceManager...');
-    
+
     // Создать директории
     await fs.mkdir(this.interfacesDir, { recursive: true });
     await fs.mkdir(`${this.dataDir}/peers`, { recursive: true });
-    
+
     // Загрузить существующие интерфейсы
     try {
       const files = await fs.readdir(this.interfacesDir);
-      
+
       for (const file of files) {
         if (!file.endsWith('.json')) continue;
-        
+
         const id = file.replace('.json', '');
         try {
           const iface = await TunnelInterface.load(id);
@@ -41,11 +41,27 @@ class InterfaceManager {
           debug(`Error loading interface ${id}:`, err.message);
         }
       }
-      
+
       debug(`Initialized with ${this.interfaces.size} interfaces`);
     } catch (err) {
       if (err.code !== 'ENOENT') throw err;
       debug('No existing interfaces found');
+    }
+
+    // Auto-start interfaces that were running before container restart.
+    // enabled:true is persisted in the JSON — restore their state on boot.
+    for (const [id, iface] of this.interfaces) {
+      if (!iface.data.enabled) continue;
+      try {
+        await iface.start();
+        debug(`Auto-started interface ${id}`);
+      } catch (err) {
+        // Don't crash init if one interface fails to start;
+        // log and leave it disabled so the UI shows the real state.
+        debug(`Failed to auto-start interface ${id}: ${err.message}`);
+        iface.data.enabled = false;
+        await iface.save().catch(() => {});
+      }
     }
   }
 
