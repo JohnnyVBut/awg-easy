@@ -323,17 +323,29 @@ class TunnelInterface {
   }
 
   /**
-   * Запустить интерфейс
-   * Kernel mode: awg-quick определяет тип amneziawg и использует kernel module.
-   * Не требует никаких userspace-обходов (awg-go-wrapper больше не нужен).
+   * Запустить интерфейс.
+   * Всегда регенерирует конфиг перед подъёмом — это гарантирует что
+   * PostUp/PostDown, DNS и прочие параметры актуальны даже если конфиг
+   * был создан старой версией приложения.
+   *
+   * С --network host интерфейс wg10/wg11 живёт в ядре хоста и переживает
+   * docker stop/start. Если awg-quick up падает с "already exists" —
+   * делаем down+up принудительно, чтобы PostUp (iptables MASQUERADE)
+   * выполнился с актуальным конфигом.
    */
   async start() {
+    // Всегда пересоздаём конфиг — применяем актуальный шаблон
+    await this.regenerateConfig();
+
     try {
       await Util.exec(`${this._quickBin} up ${this.id}`);
     } catch (err) {
-      // Idempotent: если интерфейс уже существует — считаем запущенным
       if (err.message && err.message.includes('already exists')) {
-        debug(`Interface ${this.id} already exists, marking as enabled`);
+        // Интерфейс уже поднят (пережил docker restart в kernel mode).
+        // Опускаем и поднимаем заново — только так выполнится PostUp.
+        debug(`Interface ${this.id} already exists — cycling down/up to apply PostUp`);
+        await Util.exec(`${this._quickBin} down ${this.id}`);
+        await Util.exec(`${this._quickBin} up ${this.id}`);
       } else {
         throw err;
       }
