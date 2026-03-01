@@ -231,19 +231,44 @@ class TunnelInterface {
   /**
    * Сгенерировать WireGuard конфиг
    */
+  /**
+   * Compute network address from a CIDR string.
+   * e.g. "10.100.0.1/24" → "10.100.0.0/24"
+   */
+  _cidrToSubnet(cidr) {
+    const [ip, prefix] = cidr.split('/');
+    const prefixLen = parseInt(prefix, 10);
+    const parts = ip.split('.').map(Number);
+    const ipInt = (parts[0] << 24 | parts[1] << 16 | parts[2] << 8 | parts[3]) >>> 0;
+    const maskInt = prefixLen === 0 ? 0 : (0xffffffff << (32 - prefixLen)) >>> 0;
+    const subnetInt = (ipInt & maskInt) >>> 0;
+    const s = [
+      (subnetInt >>> 24) & 0xff,
+      (subnetInt >>> 16) & 0xff,
+      (subnetInt >>> 8) & 0xff,
+      subnetInt & 0xff,
+    ];
+    return `${s.join('.')}/${prefix}`;
+  }
+
   generateWgConfig() {
     let config = '';
-    
+
     // ======== [Interface] ========
     config += '[Interface]\n';
     config += `# ${this.data.name}\n`;
     config += `PrivateKey = ${this.data.privateKey}\n`;
     config += `ListenPort = ${this.data.listenPort}\n`;
-    
+
     if (this.data.address) {
       config += `Address = ${this.data.address}\n`;
+      // NAT: masquerade VPN client traffic so it can reach the internet.
+      // PostUp/PostDown are executed by wg-quick / awg-quick on interface up/down.
+      const subnet = this._cidrToSubnet(this.data.address);
+      config += `PostUp = iptables -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
+      config += `PostDown = iptables -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE\n`;
     }
-    
+
     // AWG параметры
     if (this.data.protocol === 'amneziawg-2.0') {
       const s = this.data.settings;

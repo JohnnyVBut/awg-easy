@@ -173,6 +173,13 @@ class Peer {
       config += `Address = ${this.remoteAddress}\n`;
     }
 
+    // DNS — include for client peers (full-tunnel, peerType === 'client').
+    // Site-to-site peers handle DNS on their own network.
+    if (this.peerType === 'client' || !this.peerType) {
+      const dns = process.env.WG_DEFAULT_DNS || '1.1.1.1, 8.8.8.8';
+      config += `DNS = ${dns}\n`;
+    }
+
     if (interfaceData.protocol === 'amneziawg-2.0' && interfaceData.settings) {
       const s = interfaceData.settings;
       config += `Jc = ${s.jc}\n`;
@@ -239,8 +246,14 @@ class Peer {
     config += 'ListenPort = 51820\n\n';
 
     if (this.remoteAddress) {
-      config += `Address = ${this.remoteAddress}\n\n`;
+      config += `Address = ${this.remoteAddress}\n`;
     }
+
+    if (this.peerType === 'client' || !this.peerType) {
+      const dns = process.env.WG_DEFAULT_DNS || '1.1.1.1, 8.8.8.8';
+      config += `DNS = ${dns}\n`;
+    }
+    config += '\n';
 
     if (interfaceData.protocol === 'amneziawg-2.0' && interfaceData.settings) {
       const s = interfaceData.settings;
