@@ -270,12 +270,11 @@ class TunnelInterface {
    * Запустить интерфейс
    */
   async start() {
-    const cmd = this.data.protocol === 'amneziawg-2.0' ? 'awg-quick' : 'wg-quick';
-    await Util.exec(`${cmd} up ${this.id}`);
-    
+    await Util.exec(`wg-quick up ${this.id}`);
+
     this.data.enabled = true;
     await this.save();
-    
+
     debug(`Interface ${this.id} started`);
   }
 
@@ -284,17 +283,16 @@ class TunnelInterface {
    */
   async stop() {
     try {
-      const cmd = this.data.protocol === 'amneziawg-2.0' ? 'awg-quick' : 'wg-quick';
-      await Util.exec(`${cmd} down ${this.id}`);
+      await Util.exec(`wg-quick down ${this.id}`);
     } catch (err) {
       if (!err.message.includes('is not a WireGuard interface')) {
         throw err;
       }
     }
-    
+
     this.data.enabled = false;
     await this.save();
-    
+
     debug(`Interface ${this.id} stopped`);
   }
 
@@ -311,12 +309,7 @@ class TunnelInterface {
    */
   async reload() {
     try {
-      const cmd = this.data.protocol === 'amneziawg-2.0' ? 'awg' : 'wg';
-      const stripCmd = this.data.protocol === 'amneziawg-2.0' ? 'awg-quick' : 'wg-quick';
-      
-      // wg syncconf wg10 <(wg-quick strip wg10)
-      await Util.exec(`${cmd} syncconf ${this.id} <(${stripCmd} strip ${this.id})`);
-      
+      await Util.exec(`wg syncconf ${this.id} <(wg-quick strip ${this.id})`);
       debug(`Interface ${this.id} reloaded (hot)`);
     } catch (err) {
       debug(`Hot reload failed, restarting:`, err.message);
