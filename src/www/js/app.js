@@ -113,6 +113,7 @@ new Vue({
     selectedInterfacePeers: [],
     showInterfaceCreate: false,
     showPeerCreate: false,
+    loadingInterfaceId: null, // ID интерфейса, над которым выполняется операция
     interfaceCreate: {
       name: '',
       protocol: 'wireguard-1.0',
@@ -670,6 +671,8 @@ new Vue({
     },
 
     async startTunnelInterface(iface) {
+      if (this.loadingInterfaceId) return; // предотвратить двойной клик
+      this.loadingInterfaceId = iface.id;
       try {
         const res = await fetch(`/api/tunnel-interfaces/${iface.id}/start`, {
           method: 'POST',
@@ -680,10 +683,14 @@ new Vue({
       } catch (err) {
         console.error('Start failed:', err);
         alert(`Failed: ${err.message}`);
+      } finally {
+        this.loadingInterfaceId = null;
       }
     },
 
     async stopTunnelInterface(iface) {
+      if (this.loadingInterfaceId) return;
+      this.loadingInterfaceId = iface.id;
       try {
         const res = await fetch(`/api/tunnel-interfaces/${iface.id}/stop`, {
           method: 'POST',
@@ -694,10 +701,14 @@ new Vue({
       } catch (err) {
         console.error('Stop failed:', err);
         alert(`Failed: ${err.message}`);
+      } finally {
+        this.loadingInterfaceId = null;
       }
     },
 
     async restartTunnelInterface(iface) {
+      if (this.loadingInterfaceId) return;
+      this.loadingInterfaceId = iface.id;
       try {
         const res = await fetch(`/api/tunnel-interfaces/${iface.id}/restart`, {
           method: 'POST',
@@ -705,10 +716,11 @@ new Vue({
         });
         if (!res.ok) throw new Error(res.statusText);
         await this.loadTunnelInterfaces();
-        alert('Interface restarted!');
       } catch (err) {
         console.error('Restart failed:', err);
         alert(`Failed: ${err.message}`);
+      } finally {
+        this.loadingInterfaceId = null;
       }
     },
 
