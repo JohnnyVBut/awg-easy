@@ -1,73 +1,33 @@
 #!/bin/sh
 # awg-go-wrapper — wrapper for amneziawg-go to bypass "kernel first class support"
 # false detection when wg0 is already running via amneziawg-go userspace.
+#
+# NOTE: this version of amneziawg-go uses the kernel netlink API (not a unix
+# socket file), so we wait for the interface to appear in `ip link`, NOT for
+# /var/run/wireguard/<name>.sock (which is never created).
 
 IFACE="${1:-}"
-LOG="/tmp/awg-${IFACE}.log"
 
 if [ -z "$IFACE" ]; then
     echo "awg-go-wrapper: interface name required" >&2
     exit 1
 fi
 
-# Ensure socket directory exists
-mkdir -p /var/run/wireguard /run/wireguard 2>/dev/null
-
 # Find amneziawg-go binary
-AWG_BIN=$(which amneziawg-go 2>/dev/null)
-if [ -z "$AWG_BIN" ]; then
-    AWG_BIN="/usr/bin/amneziawg-go"
-fi
-
-{
-    echo "=== awg-go-wrapper for ${IFACE} at $(date) ==="
-    echo "AWG_BIN=${AWG_BIN} (exists: $([ -x "${AWG_BIN}" ] && echo YES || echo NO))"
-    echo "WG_PROCESS_FOREGROUND=${WG_PROCESS_FOREGROUND:-<not set>}"
-    echo "/var/run/wireguard contents: $(ls /var/run/wireguard/ 2>/dev/null || echo 'dir missing')"
-    echo "/run/wireguard contents: $(ls /run/wireguard/ 2>/dev/null || echo 'dir missing')"
-} > "${LOG}" 2>&1
+AWG_BIN=$(which amneziawg-go 2>/dev/null || echo "/usr/bin/amneziawg-go")
 
 # Start amneziawg-go in background with WG_PROCESS_FOREGROUND=1
 # WG_PROCESS_FOREGROUND=1 bypasses the "kernel first class support" exit check
-WG_PROCESS_FOREGROUND=1 "${AWG_BIN}" "${IFACE}" >> "${LOG}" 2>&1 &
-AWG_PID=$!
-echo "Started amneziawg-go PID=${AWG_PID}" >> "${LOG}"
+WG_PROCESS_FOREGROUND=1 "${AWG_BIN}" "${IFACE}" >/tmp/awg-${IFACE}.log 2>&1 &
 
-# Wait up to 10s for UAPI socket (check both /var/run and /run paths)
-SOCK1="/var/run/wireguard/${IFACE}.sock"
-SOCK2="/run/wireguard/${IFACE}.sock"
-
+# Wait up to 10s for the interface to appear in ip link
+# (amneziawg-go uses kernel netlink API — no socket file is created)
 i=0
 while [ $i -lt 20 ]; do
-    if [ -S "${SOCK1}" ] || [ -S "${SOCK2}" ]; then
-        echo "Socket found at attempt ${i}" >> "${LOG}"
-        exit 0
-    fi
-
-    # Check if process died early
-    if ! kill -0 ${AWG_PID} 2>/dev/null; then
-        echo "amneziawg-go (PID=${AWG_PID}) exited early!" >> "${LOG}"
-        break
-    fi
-
+    ip link show "${IFACE}" > /dev/null 2>&1 && exit 0
     sleep 0.5
     i=$((i + 1))
 done
 
-# Diagnostics on failure
-{
-    echo "=== FAILED after ${i} attempts ==="
-    echo "Socket ${SOCK1}: $([ -S "${SOCK1}" ] && echo EXISTS || echo missing)"
-    echo "Socket ${SOCK2}: $([ -S "${SOCK2}" ] && echo EXISTS || echo missing)"
-    echo "--- /var/run/wireguard ---"
-    ls -la /var/run/wireguard/ 2>&1 || true
-    echo "--- /run/wireguard ---"
-    ls -la /run/wireguard/ 2>&1 || true
-    echo "--- ip link ---"
-    ip link show "${IFACE}" 2>&1 || true
-    echo "--- amneziawg-go processes ---"
-    ps aux 2>/dev/null | grep amneziawg || true
-} >> "${LOG}"
-
-echo "awg-go-wrapper: failed for ${IFACE}. See: docker exec awg-easy cat ${LOG}" >&2
+echo "awg-go-wrapper: timeout waiting for interface ${IFACE}" >&2
 exit 1
