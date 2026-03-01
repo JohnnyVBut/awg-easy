@@ -81,19 +81,20 @@ services:
       # - WG_ENABLE_EXPIRES_TIME=true
 
     volumes:
+      - ./data:/etc/wireguard
       - ./data:/etc/amnezia/amneziawg
 
-    ports:
-      - "51820:51820/udp"    # WireGuard port
-      - "51821:51821/tcp"    # Web UI port
+    # --network host: container shares host network namespace.
+    # All WireGuard/AWG ports (51820, 51830, 51831, ...) are reachable directly
+    # without explicit port mappings — required for dynamically created tunnel interfaces.
+    # Set sysctls on the host before starting:
+    #   sysctl -w net.ipv4.ip_forward=1
+    #   sysctl -w net.ipv4.conf.all.src_valid_mark=1
+    network_mode: host
 
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
-
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv4.conf.all.src_valid_mark=1
 
     devices:
       - /dev/net/tun:/dev/net/tun

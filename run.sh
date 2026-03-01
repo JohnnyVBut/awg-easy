@@ -63,13 +63,24 @@ if docker ps -a --format '{{.Names}}' | grep -q '^awg-easy$'; then
     docker rm awg-easy >/dev/null 2>&1 || true
 fi
 
+# Enable IP forwarding on the host (required for --network host mode)
+echo -e "${BLUE}Setting kernel parameters on host...${NC}"
+sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv4.conf.all.src_valid_mark=1
+echo ""
+
 # Run container
+# --network host: container shares host network namespace so all WireGuard/AWG
+# ports (51820, 51830, 51831, ...) are immediately reachable without explicit -p flags.
+# This is required to support dynamically created tunnel interfaces.
 echo -e "${BLUE}Starting AWG-Easy 2.0 container...${NC}"
 echo ""
 
 docker run -d \
   --name awg-easy \
   --restart unless-stopped \
+  \
+  --network host \
   \
   -e WG_HOST="$SERVER_IP" \
   -e PASSWORD_HASH=''"$PASSWORD_HASH"'' \
@@ -98,14 +109,8 @@ docker run -d \
   -v "$(pwd)/data:/etc/wireguard" \
   -v "$(pwd)/data:/etc/amnezia/amneziawg" \
   \
-  -p 51820:51820/udp \
-  -p 51821:51821/tcp \
-  \
   --cap-add=NET_ADMIN \
   --cap-add=SYS_MODULE \
-  \
-  --sysctl="net.ipv4.ip_forward=1" \
-  --sysctl="net.ipv4.conf.all.src_valid_mark=1" \
   \
   --device=/dev/net/tun:/dev/net/tun \
   \
