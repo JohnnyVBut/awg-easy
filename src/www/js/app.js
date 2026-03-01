@@ -122,6 +122,7 @@ new Vue({
         jc: 6, jmin: 10, jmax: 50,
         s1: 64, s2: 67, s3: 64, s4: 4,
         h1: '', h2: '', h3: '', h4: '',
+        i1: '', i2: '', i3: '', i4: '', i5: '',
       },
     },
     peerCreate: {
@@ -637,7 +638,7 @@ new Vue({
         this.showInterfaceCreate = false;
         this.interfaceCreate = {
           name: '', protocol: 'wireguard-1.0', address: '', listenPort: '',
-          settings: { jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4, h1: '', h2: '', h3: '', h4: '' },
+          settings: { jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4, h1: '', h2: '', h3: '', h4: '', i1: '', i2: '', i3: '', i4: '', i5: '' },
         };
 
         await this.loadTunnelInterfaces();
@@ -821,6 +822,7 @@ new Vue({
       this.interfaceCreate.settings = {
         jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4,
         h1: rand(), h2: rand(), h3: rand(), h4: rand(),
+        i1: '', i2: '', i3: '', i4: '', i5: '',
       };
       alert('Defaults applied!');
     },
