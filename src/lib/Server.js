@@ -3,6 +3,7 @@
 const bcrypt = require('bcryptjs');
 const crypto = require('node:crypto');
 const basicAuth = require('basic-auth');
+const QRCode = require('qrcode');
 const { createServer } = require('node:http');
 const { stat, readFile } = require('node:fs/promises');
 const { resolve, sep } = require('node:path');
@@ -654,6 +655,22 @@ module.exports = class Server {
         setHeader(event, 'Content-Type', 'text/plain');
         setHeader(event, 'Content-Disposition', `attachment; filename="${filename}"`);
         return config;
+      }))
+
+      /**
+       * GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
+       * QR-код с конфигом для peer (для мобильных клиентов AmneziaWG)
+       */
+      .get('/api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        const config = await manager.getPeerRemoteConfig(id, peerId);
+        const svg = await QRCode.toString(config, { type: 'svg', width: 512 });
+
+        setHeader(event, 'Content-Type', 'image/svg+xml');
+        return svg;
       }));
 
     const safePathJoin = (base, target) => {
