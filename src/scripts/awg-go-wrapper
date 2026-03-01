@@ -1,36 +1,73 @@
 #!/bin/sh
-# awg-go-wrapper — обёртка для amneziawg-go при запуске дополнительных AWG интерфейсов.
-#
-# Проблема:
-#   Когда wg0 уже работает через amneziawg-go (userspace), запуск нового
-#   amneziawg-go для wg10 обнаруживает зарегистрированный тип amneziawg в ядре
-#   и ошибочно считает, что "ядро имеет первоклассную поддержку AmneziaWG",
-#   после чего завершается, не создав интерфейс.
-#
-# Решение:
-#   Запускаем amneziawg-go с WG_PROCESS_FOREGROUND=1 (обходит проверку ядра)
-#   в фоне (&), затем ждём появления UAPI-сокета и возвращаем управление wg-quick.
-#   wg-quick после этого нормально настраивает интерфейс (ключи, пиры, маршруты).
+# awg-go-wrapper — wrapper for amneziawg-go to bypass "kernel first class support"
+# false detection when wg0 is already running via amneziawg-go userspace.
 
 IFACE="${1:-}"
+LOG="/tmp/awg-${IFACE}.log"
 
 if [ -z "$IFACE" ]; then
     echo "awg-go-wrapper: interface name required" >&2
     exit 1
 fi
 
-SOCK="/var/run/wireguard/${IFACE}.sock"
+# Ensure socket directory exists
+mkdir -p /var/run/wireguard /run/wireguard 2>/dev/null
 
-# Запускаем amneziawg-go в фоне с WG_PROCESS_FOREGROUND=1
-WG_PROCESS_FOREGROUND=1 amneziawg-go "${IFACE}" >"/tmp/awg-${IFACE}.log" 2>&1 &
+# Find amneziawg-go binary
+AWG_BIN=$(which amneziawg-go 2>/dev/null)
+if [ -z "$AWG_BIN" ]; then
+    AWG_BIN="/usr/bin/amneziawg-go"
+fi
 
-# Ждём появления UAPI-сокета (до 10 секунд)
+{
+    echo "=== awg-go-wrapper for ${IFACE} at $(date) ==="
+    echo "AWG_BIN=${AWG_BIN} (exists: $([ -x "${AWG_BIN}" ] && echo YES || echo NO))"
+    echo "WG_PROCESS_FOREGROUND=${WG_PROCESS_FOREGROUND:-<not set>}"
+    echo "/var/run/wireguard contents: $(ls /var/run/wireguard/ 2>/dev/null || echo 'dir missing')"
+    echo "/run/wireguard contents: $(ls /run/wireguard/ 2>/dev/null || echo 'dir missing')"
+} > "${LOG}" 2>&1
+
+# Start amneziawg-go in background with WG_PROCESS_FOREGROUND=1
+# WG_PROCESS_FOREGROUND=1 bypasses the "kernel first class support" exit check
+WG_PROCESS_FOREGROUND=1 "${AWG_BIN}" "${IFACE}" >> "${LOG}" 2>&1 &
+AWG_PID=$!
+echo "Started amneziawg-go PID=${AWG_PID}" >> "${LOG}"
+
+# Wait up to 10s for UAPI socket (check both /var/run and /run paths)
+SOCK1="/var/run/wireguard/${IFACE}.sock"
+SOCK2="/run/wireguard/${IFACE}.sock"
+
 i=0
 while [ $i -lt 20 ]; do
-    [ -S "${SOCK}" ] && exit 0
+    if [ -S "${SOCK1}" ] || [ -S "${SOCK2}" ]; then
+        echo "Socket found at attempt ${i}" >> "${LOG}"
+        exit 0
+    fi
+
+    # Check if process died early
+    if ! kill -0 ${AWG_PID} 2>/dev/null; then
+        echo "amneziawg-go (PID=${AWG_PID}) exited early!" >> "${LOG}"
+        break
+    fi
+
     sleep 0.5
     i=$((i + 1))
 done
 
-echo "awg-go-wrapper: timeout waiting for ${SOCK}" >&2
+# Diagnostics on failure
+{
+    echo "=== FAILED after ${i} attempts ==="
+    echo "Socket ${SOCK1}: $([ -S "${SOCK1}" ] && echo EXISTS || echo missing)"
+    echo "Socket ${SOCK2}: $([ -S "${SOCK2}" ] && echo EXISTS || echo missing)"
+    echo "--- /var/run/wireguard ---"
+    ls -la /var/run/wireguard/ 2>&1 || true
+    echo "--- /run/wireguard ---"
+    ls -la /run/wireguard/ 2>&1 || true
+    echo "--- ip link ---"
+    ip link show "${IFACE}" 2>&1 || true
+    echo "--- amneziawg-go processes ---"
+    ps aux 2>/dev/null | grep amneziawg || true
+} >> "${LOG}"
+
+echo "awg-go-wrapper: failed for ${IFACE}. See: docker exec awg-easy cat ${LOG}" >&2
 exit 1
