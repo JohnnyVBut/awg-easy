@@ -1,0 +1,36 @@
+#!/bin/sh
+# awg-go-wrapper — обёртка для amneziawg-go при запуске дополнительных AWG интерфейсов.
+#
+# Проблема:
+#   Когда wg0 уже работает через amneziawg-go (userspace), запуск нового
+#   amneziawg-go для wg10 обнаруживает зарегистрированный тип amneziawg в ядре
+#   и ошибочно считает, что "ядро имеет первоклассную поддержку AmneziaWG",
+#   после чего завершается, не создав интерфейс.
+#
+# Решение:
+#   Запускаем amneziawg-go с WG_PROCESS_FOREGROUND=1 (обходит проверку ядра)
+#   в фоне (&), затем ждём появления UAPI-сокета и возвращаем управление wg-quick.
+#   wg-quick после этого нормально настраивает интерфейс (ключи, пиры, маршруты).
+
+IFACE="${1:-}"
+
+if [ -z "$IFACE" ]; then
+    echo "awg-go-wrapper: interface name required" >&2
+    exit 1
+fi
+
+SOCK="/var/run/wireguard/${IFACE}.sock"
+
+# Запускаем amneziawg-go в фоне с WG_PROCESS_FOREGROUND=1
+WG_PROCESS_FOREGROUND=1 amneziawg-go "${IFACE}" >"/tmp/awg-${IFACE}.log" 2>&1 &
+
+# Ждём появления UAPI-сокета (до 10 секунд)
+i=0
+while [ $i -lt 20 ]; do
+    [ -S "${SOCK}" ] && exit 0
+    sleep 0.5
+    i=$((i + 1))
+done
+
+echo "awg-go-wrapper: timeout waiting for ${SOCK}" >&2
+exit 1

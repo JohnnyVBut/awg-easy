@@ -270,12 +270,19 @@ class TunnelInterface {
    * Запустить интерфейс
    */
   async start() {
-    // WG_PROCESS_FOREGROUND=1 is required for amneziawg-go when another AWG interface
-    // (e.g. wg0) is already running — otherwise amneziawg-go detects "kernel first class
-    // support" (registered by the wg0 userspace instance) and exits without creating the interface.
-    const prefix = this.data.protocol === 'amneziawg-2.0' ? 'WG_PROCESS_FOREGROUND=1 ' : '';
+    // For AWG 2.0: use awg-go-wrapper as the userspace implementation.
+    // Problem: when wg0 is already running via amneziawg-go userspace, a new
+    // amneziawg-go for wg10 detects the registered amneziawg netlink type and
+    // exits with "kernel has first class support" (false positive).
+    // The wrapper runs amneziawg-go with WG_PROCESS_FOREGROUND=1 (bypasses the
+    // check) in background, waits for the UAPI socket, then returns — so wg-quick
+    // can configure the interface normally without hanging.
+    const cmd = this.data.protocol === 'amneziawg-2.0'
+      ? `WG_QUICK_USERSPACE_IMPLEMENTATION=awg-go-wrapper wg-quick up ${this.id}`
+      : `wg-quick up ${this.id}`;
+
     try {
-      await Util.exec(`${prefix}wg-quick up ${this.id}`);
+      await Util.exec(cmd);
     } catch (err) {
       // Idempotent: if interface already exists, treat as already started
       if (err.message && err.message.includes('already exists')) {

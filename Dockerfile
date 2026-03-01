@@ -28,6 +28,11 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
+# Copy awg-go-wrapper: fixes amneziawg-go "kernel first class support" false detection
+# when starting additional AWG interfaces (wg10, wg11...) while wg0 is already running
+COPY src/scripts/awg-go-wrapper /usr/local/bin/awg-go-wrapper
+RUN chmod +x /usr/local/bin/awg-go-wrapper
+
 # Install Linux packages
 RUN apk add --no-cache \
     dpkg \
