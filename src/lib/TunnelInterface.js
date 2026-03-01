@@ -265,8 +265,8 @@ class TunnelInterface {
       // NAT: masquerade VPN client traffic so it can reach the internet.
       // PostUp/PostDown are executed by wg-quick / awg-quick on interface up/down.
       const subnet = this._cidrToSubnet(this.data.address);
-      config += `PostUp = iptables -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
-      config += `PostDown = iptables -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE\n`;
+      config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
+      config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE\n`;
     }
 
     // AWG параметры
