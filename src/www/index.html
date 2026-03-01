@@ -1018,6 +1018,14 @@
                   <div class="flex-grow">
                     <div class="flex items-center gap-2 mb-2">
                       <h3 class="text-lg font-medium dark:text-neutral-200">{{ peer.name }}</h3>
+                      <span v-if="peer.peerType === 'client'"
+                        class="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded">
+                        Client
+                      </span>
+                      <span v-else-if="peer.peerType === 'site'"
+                        class="px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded">
+                        Site
+                      </span>
                       <span v-if="peer.enabled"
                         class="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">
                         Enabled
@@ -1278,6 +1286,34 @@
                 </button>
               </div>
 
+              <!-- Тип пира: Client / Site -->
+              <div class="mb-2 flex rounded-lg overflow-hidden border dark:border-neutral-500">
+                <button @click="peerCreate.peerType = 'client'"
+                  :class="peerCreate.peerType === 'client'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white dark:bg-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-500'"
+                  class="flex-1 py-2 px-3 text-sm font-medium transition flex items-center justify-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                  </svg>
+                  Client
+                </button>
+                <button @click="peerCreate.peerType = 'site'"
+                  :class="peerCreate.peerType === 'site'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white dark:bg-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-500'"
+                  class="flex-1 py-2 px-3 text-sm font-medium transition flex items-center justify-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                  </svg>
+                  Site
+                </button>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-neutral-400 mb-4">
+                <span v-if="peerCreate.peerType === 'client'">Mobile/roaming client. Dynamic IP — no endpoint needed. All traffic goes through VPN.</span>
+                <span v-else>Fixed location (office, branch). Set endpoint for reliable connectivity.</span>
+              </p>
+
               <div class="mb-4">
                 <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Peer Name</label>
                 <input v-model="peerCreate.name"
@@ -1308,17 +1344,33 @@
                 <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Allowed IPs (required)</label>
                 <input v-model="peerCreate.allowedIPs"
                   type="text"
-                  placeholder="e.g., 192.168.1.0/24"
+                  :placeholder="peerCreate.peerType === 'client' ? 'e.g., 10.100.0.2/32 (peer VPN IP)' : 'e.g., 192.168.1.0/24 (remote subnet)'"
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
-                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1">Networks to route through this peer</p>
+                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1">
+                  <span v-if="peerCreate.peerType === 'client'">Hub will route traffic to this peer's VPN IP</span>
+                  <span v-else>Hub will route traffic to this remote subnet</span>
+                </p>
               </div>
 
               <div class="mb-4">
-                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Endpoint (optional)</label>
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">
+                  Endpoint
+                  <span v-if="peerCreate.peerType === 'client'" class="text-gray-400 dark:text-neutral-500 font-normal">(optional — clients have dynamic IP)</span>
+                  <span v-else class="text-gray-400 dark:text-neutral-500 font-normal">(recommended for sites)</span>
+                </label>
                 <input v-model="peerCreate.endpoint"
                   type="text"
                   placeholder="e.g., office-a.example.com:51820"
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Client Allowed IPs <span class="text-gray-400 dark:text-neutral-500 font-normal">(optional)</span></label>
+                <input v-model="peerCreate.clientAllowedIPs"
+                  type="text"
+                  :placeholder="peerCreate.peerType === 'client' ? 'default: 0.0.0.0/0, ::/0 (all traffic)' : 'default: hub network'"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1">What the remote side routes through VPN (in client config). Leave empty for default.</p>
               </div>
 
               <div class="mb-4">

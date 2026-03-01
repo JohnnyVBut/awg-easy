@@ -128,10 +128,12 @@ new Vue({
     },
     peerCreate: {
       mode: 'generate', // 'generate' | 'manual'
+      peerType: 'client', // 'client' (mobile/dynamic IP) | 'site' (fixed IP/subnet)
       name: '',
       publicKey: '',
       endpoint: '',
       allowedIPs: '',
+      clientAllowedIPs: '',
       remoteAddress: '',
       persistentKeepalive: 25,
     },
@@ -763,6 +765,8 @@ new Vue({
         const payload = {
           name: this.peerCreate.name,
           allowedIPs: this.peerCreate.allowedIPs,
+          peerType: this.peerCreate.peerType,
+          clientAllowedIPs: this.peerCreate.clientAllowedIPs || undefined,
           endpoint: this.peerCreate.endpoint || undefined,
           remoteAddress: this.peerCreate.remoteAddress || undefined,
           persistentKeepalive: this.peerCreate.persistentKeepalive || 25,
@@ -788,7 +792,7 @@ new Vue({
         const peerId = data.peer && data.peer.id;
 
         this.showPeerCreate = false;
-        this.peerCreate = { mode: 'generate', name: '', publicKey: '', endpoint: '', allowedIPs: '', remoteAddress: '', persistentKeepalive: 25 };
+        this.peerCreate = { mode: 'generate', peerType: 'client', name: '', publicKey: '', endpoint: '', allowedIPs: '', clientAllowedIPs: '', remoteAddress: '', persistentKeepalive: 25 };
 
         await this.loadInterfacePeers(interfaceId);
         await this.loadTunnelInterfaces();

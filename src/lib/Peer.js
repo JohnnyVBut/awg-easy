@@ -28,7 +28,9 @@ class Peer {
     this.privateKey = data.privateKey || ''; // только для server-generated пиров
     this.presharedKey = data.presharedKey || '';
     this.endpoint = data.endpoint || '';
-    this.allowedIPs = data.allowedIPs;
+    this.allowedIPs = data.allowedIPs;           // AllowedIPs на стороне хаба (что хаб маршрутизирует к пиру)
+    this.clientAllowedIPs = data.clientAllowedIPs || ''; // AllowedIPs в клиентском конфиге
+    this.peerType = data.peerType || 'site';     // 'client' (мобильный/динамический IP) | 'site' (фиксированный IP)
     this.persistentKeepalive = data.persistentKeepalive || 25;
     this.remoteAddress = data.remoteAddress || '';
     this.enabled = data.enabled !== false; // default true
@@ -50,6 +52,8 @@ class Peer {
       presharedKey: this.presharedKey,
       endpoint: this.endpoint,
       allowedIPs: this.allowedIPs,
+      clientAllowedIPs: this.clientAllowedIPs,
+      peerType: this.peerType,
       persistentKeepalive: this.persistentKeepalive,
       remoteAddress: this.remoteAddress,
       enabled: this.enabled,
@@ -201,11 +205,12 @@ class Peer {
       config += `Endpoint = ${hubEndpoint}:${interfaceData.listenPort}\n`;
     }
 
-    if (interfaceData.address) {
-      config += `AllowedIPs = ${interfaceData.address}\n`;
-    } else {
-      config += `AllowedIPs = 0.0.0.0/0, ::/0\n`;
-    }
+    // AllowedIPs в клиентском конфиге:
+    // - client-пир: весь трафик через VPN (или кастомное значение)
+    // - site-пир: только сеть хаба
+    const clientAllowedIPs = this.clientAllowedIPs
+      || (this.peerType === 'client' ? '0.0.0.0/0, ::/0' : interfaceData.address || '0.0.0.0/0, ::/0');
+    config += `AllowedIPs = ${clientAllowedIPs}\n`;
 
     config += `PersistentKeepalive = ${this.persistentKeepalive}\n`;
 
@@ -257,11 +262,9 @@ class Peer {
     const hubEndpoint = process.env.WG_HOST || 'YOUR_HUB_PUBLIC_IP';
     config += `Endpoint = ${hubEndpoint}:${interfaceData.listenPort}\n`;
 
-    if (interfaceData.address) {
-      config += `AllowedIPs = ${interfaceData.address}\n`;
-    } else {
-      config += `AllowedIPs = 0.0.0.0/0\n`;
-    }
+    const clientAllowedIPs = this.clientAllowedIPs
+      || (this.peerType === 'client' ? '0.0.0.0/0, ::/0' : interfaceData.address || '0.0.0.0/0');
+    config += `AllowedIPs = ${clientAllowedIPs}\n`;
 
     config += `PersistentKeepalive = ${this.persistentKeepalive}\n\n`;
 

@@ -577,7 +577,8 @@ module.exports = class Server {
        */
       .post('/api/tunnel-interfaces/:id/peers', defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id');
-        const { name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive, generateKeys } = await readBody(event);
+        const { name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive,
+                generateKeys, peerType, clientAllowedIPs } = await readBody(event);
 
         if (!name || !allowedIPs) {
           throw createError({ status: 400, message: 'name and allowedIPs are required' });
@@ -588,7 +589,8 @@ module.exports = class Server {
 
         const manager = await InterfaceManager.getInstance();
         const peer = await manager.addPeer(id, {
-          name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive, generateKeys,
+          name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive,
+          generateKeys, peerType, clientAllowedIPs,
         });
 
         debug(`Peer added: ${peer.id} to ${id}`);
