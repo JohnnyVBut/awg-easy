@@ -110,9 +110,10 @@ API: `/api/tunnel-interfaces`
 
 ### 🐛 Исправлено:
 - `TunnelInterface.js` — отсутствовал `const Util = require('./Util')` — исправлено 2026-03-01
+- `TunnelInterface.js` — AWG 2.0 интерфейсы не запускались (amneziawg-go выходил с "kernel first class support") — исправлено добавлением `WG_PROCESS_FOREGROUND=1`
 
 ### 🔧 Тестируется:
-- Start/Stop/Restart интерфейса на реальном сервере
+- Start/Stop/Restart AWG 2.0 интерфейса (wg10, wg11)
 - Создание/удаления peer
 - Download peer config
 
