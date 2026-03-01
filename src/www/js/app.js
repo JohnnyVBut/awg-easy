@@ -849,18 +849,23 @@ new Vue({
     },
 
     useInterfaceDefaults() {
-      // H1-H4: unique uint32 values, must NOT be ranges and must NOT equal
-      // standard WireGuard packet types 1-4 (causes "headers must not overlap" error)
-      const usedH = new Set([1, 2, 3, 4]);
-      const randH = () => {
-        let v;
-        do { v = Math.floor(Math.random() * 0xFFFFFFFB) + 5; } while (usedH.has(v));
-        usedH.add(v);
-        return v;
+      // H1-H4: non-overlapping ranges in the uint32 space (5 … 0xFFFFFFFF).
+      // The space is split into 4 equal zones so ranges are guaranteed to
+      // never overlap. Within each zone a random sub-range of ~50 M values
+      // is chosen. Format "start-end" — awg-quick picks a fresh random value
+      // inside the range on every handshake, making the protocol harder to
+      // fingerprint compared to a fixed uint32.
+      const RANGE_SIZE = 50_000_000;
+      const ZONE_SIZE  = Math.floor((0xFFFFFFFF - 5) / 4);
+      const randHRange = (zone) => {
+        const zoneStart = 5 + zone * ZONE_SIZE;
+        const zoneEnd   = zoneStart + ZONE_SIZE - 1;
+        const start = zoneStart + Math.floor(Math.random() * (zoneEnd - zoneStart - RANGE_SIZE));
+        return `${start}-${start + RANGE_SIZE}`;
       };
       this.interfaceCreate.settings = {
         jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4,
-        h1: randH(), h2: randH(), h3: randH(), h4: randH(),
+        h1: randHRange(0), h2: randHRange(1), h3: randHRange(2), h4: randHRange(3),
         i1: '', i2: '', i3: '', i4: '', i5: '',
       };
       alert('Defaults applied!');
