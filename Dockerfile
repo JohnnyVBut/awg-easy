@@ -10,7 +10,10 @@ RUN npm install --omit=dev &&\
 
 # Copy build result to a new image.
 # This saves a lot of disk space.
-# Using AmneziaWG 2.0
+# Kernel mode: amneziawg.ko must be loaded on the Docker host.
+# Install on Ubuntu/Debian host: sudo add-apt-repository ppa:amnezia/ppa && sudo apt-get install amneziawg
+# The container uses awg-quick / awg tools from the base image to configure interfaces.
+# No userspace amneziawg-go is needed — the kernel module handles everything.
 FROM amneziavpn/amneziawg-go:latest
 HEALTHCHECK CMD /usr/bin/timeout 5s /bin/sh -c "/usr/bin/wg show | /bin/grep -q interface || exit 1" --interval=1m --timeout=5s --retries=3
 COPY --from=build_node_modules /app /app
@@ -27,11 +30,6 @@ COPY --from=build_node_modules /node_modules /node_modules
 # Copy the needed wg-password scripts
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
-
-# Copy awg-go-wrapper: fixes amneziawg-go "kernel first class support" false detection
-# when starting additional AWG interfaces (wg10, wg11...) while wg0 is already running
-COPY src/scripts/awg-go-wrapper /usr/local/bin/awg-go-wrapper
-RUN chmod +x /usr/local/bin/awg-go-wrapper
 
 # Install Linux packages
 RUN apk add --no-cache \

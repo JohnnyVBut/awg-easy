@@ -267,24 +267,28 @@ class TunnelInterface {
   }
 
   /**
+   * Возвращает правильную утилиту для управления интерфейсом:
+   * - amneziawg-2.0 → awg-quick / awg (требует amneziawg.ko на хосте)
+   * - wireguard-1.0  → wg-quick  / wg
+   */
+  get _quickBin() {
+    return this.data.protocol === 'amneziawg-2.0' ? 'awg-quick' : 'wg-quick';
+  }
+
+  get _syncBin() {
+    return this.data.protocol === 'amneziawg-2.0' ? 'awg' : 'wg';
+  }
+
+  /**
    * Запустить интерфейс
+   * Kernel mode: awg-quick определяет тип amneziawg и использует kernel module.
+   * Не требует никаких userspace-обходов (awg-go-wrapper больше не нужен).
    */
   async start() {
-    // For AWG 2.0: use awg-go-wrapper as the userspace implementation.
-    // Problem: when wg0 is already running via amneziawg-go userspace, a new
-    // amneziawg-go for wg10 detects the registered amneziawg netlink type and
-    // exits with "kernel has first class support" (false positive).
-    // The wrapper runs amneziawg-go with WG_PROCESS_FOREGROUND=1 (bypasses the
-    // check) in background, waits for the UAPI socket, then returns — so wg-quick
-    // can configure the interface normally without hanging.
-    const cmd = this.data.protocol === 'amneziawg-2.0'
-      ? `WG_QUICK_USERSPACE_IMPLEMENTATION=awg-go-wrapper wg-quick up ${this.id}`
-      : `wg-quick up ${this.id}`;
-
     try {
-      await Util.exec(cmd);
+      await Util.exec(`${this._quickBin} up ${this.id}`);
     } catch (err) {
-      // Idempotent: if interface already exists, treat as already started
+      // Idempotent: если интерфейс уже существует — считаем запущенным
       if (err.message && err.message.includes('already exists')) {
         debug(`Interface ${this.id} already exists, marking as enabled`);
       } else {
@@ -303,9 +307,11 @@ class TunnelInterface {
    */
   async stop() {
     try {
-      await Util.exec(`wg-quick down ${this.id}`);
+      await Util.exec(`${this._quickBin} down ${this.id}`);
     } catch (err) {
-      if (!err.message.includes('is not a WireGuard interface')) {
+      // Игнорируем если интерфейс уже был остановлен
+      if (!err.message.includes('is not a WireGuard interface') &&
+          !err.message.includes('is not an AmneziaWG interface')) {
         throw err;
       }
     }
@@ -326,10 +332,11 @@ class TunnelInterface {
 
   /**
    * Перезагрузить конфиг без остановки (hot reload)
+   * Использует awg syncconf для AWG и wg syncconf для WireGuard.
    */
   async reload() {
     try {
-      await Util.exec(`wg syncconf ${this.id} <(wg-quick strip ${this.id})`);
+      await Util.exec(`${this._syncBin} syncconf ${this.id} <(${this._quickBin} strip ${this.id})`);
       debug(`Interface ${this.id} reloaded (hot)`);
     } catch (err) {
       debug(`Hot reload failed, restarting:`, err.message);
