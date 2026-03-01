@@ -274,7 +274,16 @@ class TunnelInterface {
     // (e.g. wg0) is already running — otherwise amneziawg-go detects "kernel first class
     // support" (registered by the wg0 userspace instance) and exits without creating the interface.
     const prefix = this.data.protocol === 'amneziawg-2.0' ? 'WG_PROCESS_FOREGROUND=1 ' : '';
-    await Util.exec(`${prefix}wg-quick up ${this.id}`);
+    try {
+      await Util.exec(`${prefix}wg-quick up ${this.id}`);
+    } catch (err) {
+      // Idempotent: if interface already exists, treat as already started
+      if (err.message && err.message.includes('already exists')) {
+        debug(`Interface ${this.id} already exists, marking as enabled`);
+      } else {
+        throw err;
+      }
+    }
 
     this.data.enabled = true;
     await this.save();
