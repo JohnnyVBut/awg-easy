@@ -127,6 +127,7 @@ new Vue({
       },
     },
     peerCreate: {
+      mode: 'generate', // 'generate' | 'manual'
       name: '',
       publicKey: '',
       endpoint: '',
@@ -748,18 +749,26 @@ new Vue({
         return;
       }
       try {
-        if (!this.peerCreate.name || !this.peerCreate.publicKey || !this.peerCreate.allowedIPs) {
-          alert('Please fill name, public key, and allowed IPs');
+        const isGenerate = this.peerCreate.mode === 'generate';
+
+        if (!this.peerCreate.name || !this.peerCreate.allowedIPs) {
+          alert('Please fill name and allowed IPs');
+          return;
+        }
+        if (!isGenerate && !this.peerCreate.publicKey) {
+          alert('Please enter the public key');
           return;
         }
 
         const payload = {
           name: this.peerCreate.name,
-          publicKey: this.peerCreate.publicKey,
-          endpoint: this.peerCreate.endpoint || undefined,
           allowedIPs: this.peerCreate.allowedIPs,
+          endpoint: this.peerCreate.endpoint || undefined,
           remoteAddress: this.peerCreate.remoteAddress || undefined,
           persistentKeepalive: this.peerCreate.persistentKeepalive || 25,
+          ...(isGenerate
+            ? { generateKeys: true }
+            : { publicKey: this.peerCreate.publicKey }),
         };
 
         const res = await fetch(`/api/tunnel-interfaces/${this.selectedInterface.id}/peers`, {
@@ -774,12 +783,22 @@ new Vue({
           throw new Error(error.message || res.statusText);
         }
 
-        this.showPeerCreate = false;
-        this.peerCreate = { name: '', publicKey: '', endpoint: '', allowedIPs: '', remoteAddress: '', persistentKeepalive: 25 };
+        const data = await res.json();
+        const interfaceId = this.selectedInterface.id;
+        const peerId = data.peer && data.peer.id;
 
-        await this.loadInterfacePeers(this.selectedInterface.id);
+        this.showPeerCreate = false;
+        this.peerCreate = { mode: 'generate', name: '', publicKey: '', endpoint: '', allowedIPs: '', remoteAddress: '', persistentKeepalive: 25 };
+
+        await this.loadInterfacePeers(interfaceId);
         await this.loadTunnelInterfaces();
-        alert('Peer created!');
+
+        // Если ключи сгенерированы сервером — сразу показать QR код
+        if (isGenerate && peerId) {
+          this.qrcode = `./api/tunnel-interfaces/${interfaceId}/peers/${peerId}/qrcode.svg`;
+        } else {
+          alert('Peer created!');
+        }
       } catch (err) {
         console.error('Failed to create peer:', err);
         alert(`Failed: ${err.message}`);

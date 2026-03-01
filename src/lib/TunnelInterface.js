@@ -94,8 +94,26 @@ class TunnelInterface {
 
   /**
    * Добавить peer
+   * Если peerData.generateKeys === true — сервер генерирует ключи автоматически.
    */
   async addPeer(peerData) {
+    // Генерация ключей если запрошена
+    if (peerData.generateKeys) {
+      const privateKey = (await Util.exec('wg genkey')).trim();
+      const publicKey = (await Util.exec(`echo ${privateKey} | wg pubkey`, {
+        log: 'echo ***hidden*** | wg pubkey',
+      })).trim();
+      const presharedKey = (await Util.exec('wg genpsk')).trim();
+
+      peerData = {
+        ...peerData,
+        privateKey,
+        publicKey,
+        presharedKey,
+        generateKeys: undefined, // убрать флаг
+      };
+    }
+
     // Валидация
     const peer = new Peer({
       ...peerData,

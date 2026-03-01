@@ -25,6 +25,7 @@ class Peer {
     this.name = data.name;
     this.interfaceId = data.interfaceId;
     this.publicKey = data.publicKey;
+    this.privateKey = data.privateKey || ''; // только для server-generated пиров
     this.presharedKey = data.presharedKey || '';
     this.endpoint = data.endpoint || '';
     this.allowedIPs = data.allowedIPs;
@@ -45,6 +46,7 @@ class Peer {
       name: this.name,
       interfaceId: this.interfaceId,
       publicKey: this.publicKey,
+      privateKey: this.privateKey,
       presharedKey: this.presharedKey,
       endpoint: this.endpoint,
       allowedIPs: this.allowedIPs,
@@ -52,6 +54,7 @@ class Peer {
       remoteAddress: this.remoteAddress,
       enabled: this.enabled,
       createdAt: this.createdAt,
+      hasGeneratedKeys: !!this.privateKey, // для UI: знать что QR доступен
     };
   }
 
@@ -143,45 +146,31 @@ class Peer {
   }
 
   /**
-   * Генерация конфига для удалённой стороны
+   * Генерация конфига для удалённой стороны.
+   * Если у пира есть privateKey (server-generated) — полный готовый конфиг (для QR).
+   * Если нет — шаблон с инструкциями (для ручной настройки).
    * @param {Object} interfaceData - данные интерфейса к которому подключается peer
    */
   generateRemoteConfig(interfaceData) {
-    let config = '';
-    
-    // Header
-    config += '# ═══════════════════════════════════════════════════════════════\n';
-    config += `# Remote Configuration for: ${this.name}\n`;
-    config += `# Connect to: ${interfaceData.name}\n`;
-    config += `# Protocol: ${interfaceData.protocol === 'amneziawg-2.0' ? 'AmneziaWG 2.0' : 'WireGuard 1.0'}\n`;
-    config += '# ═══════════════════════════════════════════════════════════════\n';
-    config += '\n';
-    
-    // [Interface] для удалённой стороны
-    config += '[Interface]\n';
-    config += '# IMPORTANT: Generate your own private key on remote side:\n';
-    config += '#   wg genkey > privatekey\n';
-    config += '#   cat privatekey | wg pubkey > publickey\n';
-    config += '# Then replace YOUR_PRIVATE_KEY with content of privatekey\n';
-    config += 'PrivateKey = YOUR_PRIVATE_KEY\n';
-    config += '\n';
-    config += '# Listen port (choose any free UDP port)\n';
-    config += 'ListenPort = 51820\n';
-    config += '\n';
-    
-    // Remote address если указан
+    return this.privateKey
+      ? this._generateCompleteConfig(interfaceData)
+      : this._generateTemplateConfig(interfaceData);
+  }
+
+  /**
+   * Полный рабочий конфиг (когда ключи сгенерированы сервером).
+   * Минимум комментариев — важно для QR-кода (ограниченная ёмкость).
+   */
+  _generateCompleteConfig(interfaceData) {
+    let config = '[Interface]\n';
+    config += `PrivateKey = ${this.privateKey}\n`;
+
     if (this.remoteAddress) {
-      config += `# Tunnel address for this side\n`;
       config += `Address = ${this.remoteAddress}\n`;
-      config += '\n';
     }
-    
-    // AWG параметры если нужно (должны совпадать!)
+
     if (interfaceData.protocol === 'amneziawg-2.0' && interfaceData.settings) {
       const s = interfaceData.settings;
-      config += '# ═══════════════════════════════════════════════════════════════\n';
-      config += '# AmneziaWG 2.0 Parameters (MUST match EXACTLY on both sides!)\n';
-      config += '# ═══════════════════════════════════════════════════════════════\n';
       config += `Jc = ${s.jc}\n`;
       config += `Jmin = ${s.jmin}\n`;
       config += `Jmax = ${s.jmax}\n`;
@@ -193,7 +182,67 @@ class Peer {
       config += `H2 = ${s.h2}\n`;
       config += `H3 = ${s.h3}\n`;
       config += `H4 = ${s.h4}\n`;
-      
+      if (s.i1) config += `I1 = ${s.i1}\n`;
+      if (s.i2) config += `I2 = ${s.i2}\n`;
+      if (s.i3) config += `I3 = ${s.i3}\n`;
+      if (s.i4) config += `I4 = ${s.i4}\n`;
+      if (s.i5) config += `I5 = ${s.i5}\n`;
+    }
+
+    config += '\n[Peer]\n';
+    config += `PublicKey = ${interfaceData.publicKey}\n`;
+
+    if (this.presharedKey) {
+      config += `PresharedKey = ${this.presharedKey}\n`;
+    }
+
+    const hubEndpoint = process.env.WG_HOST || '';
+    if (hubEndpoint) {
+      config += `Endpoint = ${hubEndpoint}:${interfaceData.listenPort}\n`;
+    }
+
+    if (interfaceData.address) {
+      config += `AllowedIPs = ${interfaceData.address}\n`;
+    } else {
+      config += `AllowedIPs = 0.0.0.0/0, ::/0\n`;
+    }
+
+    config += `PersistentKeepalive = ${this.persistentKeepalive}\n`;
+
+    return config;
+  }
+
+  /**
+   * Шаблон конфига с инструкциями (когда ключи вводились вручную).
+   */
+  _generateTemplateConfig(interfaceData) {
+    let config = '';
+
+    config += '# ═══════════════════════════════════════════════════════════════\n';
+    config += `# Remote Configuration for: ${this.name}\n`;
+    config += `# Connect to: ${interfaceData.name}\n`;
+    config += `# Protocol: ${interfaceData.protocol === 'amneziawg-2.0' ? 'AmneziaWG 2.0' : 'WireGuard 1.0'}\n`;
+    config += '# ═══════════════════════════════════════════════════════════════\n\n';
+
+    config += '[Interface]\n';
+    config += '# IMPORTANT: Generate your own private key on remote side:\n';
+    config += '#   wg genkey > privatekey\n';
+    config += '#   cat privatekey | wg pubkey > publickey\n';
+    config += '# Then replace YOUR_PRIVATE_KEY with content of privatekey\n';
+    config += 'PrivateKey = YOUR_PRIVATE_KEY\n\n';
+    config += '# Listen port (choose any free UDP port)\n';
+    config += 'ListenPort = 51820\n\n';
+
+    if (this.remoteAddress) {
+      config += `Address = ${this.remoteAddress}\n\n`;
+    }
+
+    if (interfaceData.protocol === 'amneziawg-2.0' && interfaceData.settings) {
+      const s = interfaceData.settings;
+      config += '# AmneziaWG 2.0 Parameters (MUST match EXACTLY on both sides!)\n';
+      config += `Jc = ${s.jc}\nJmin = ${s.jmin}\nJmax = ${s.jmax}\n`;
+      config += `S1 = ${s.s1}\nS2 = ${s.s2}\nS3 = ${s.s3}\nS4 = ${s.s4}\n`;
+      config += `H1 = ${s.h1}\nH2 = ${s.h2}\nH3 = ${s.h3}\nH4 = ${s.h4}\n`;
       if (s.i1) config += `I1 = ${s.i1}\n`;
       if (s.i2) config += `I2 = ${s.i2}\n`;
       if (s.i3) config += `I3 = ${s.i3}\n`;
@@ -201,51 +250,28 @@ class Peer {
       if (s.i5) config += `I5 = ${s.i5}\n`;
       config += '\n';
     }
-    
-    // [Peer] - подключение к нашему интерфейсу
+
     config += '[Peer]\n';
-    config += `# Hub: ${interfaceData.name}\n`;
-    config += `PublicKey = ${interfaceData.publicKey}\n`;
-    config += '\n';
-    
-    // AllowedIPs - что маршрутизировать через туннель
-    // Можно указать конкретную подсеть интерфейса или 0.0.0.0/0
+    config += `PublicKey = ${interfaceData.publicKey}\n\n`;
+
+    const hubEndpoint = process.env.WG_HOST || 'YOUR_HUB_PUBLIC_IP';
+    config += `Endpoint = ${hubEndpoint}:${interfaceData.listenPort}\n`;
+
     if (interfaceData.address) {
-      config += `# Route traffic to hub's network\n`;
       config += `AllowedIPs = ${interfaceData.address}\n`;
     } else {
-      config += `# AllowedIPs = 0.0.0.0/0  # Route all traffic through hub\n`;
-      config += `AllowedIPs = 10.0.0.0/8  # Or specify networks\n`;
+      config += `AllowedIPs = 0.0.0.0/0\n`;
     }
-    config += '\n';
-    
-    // Endpoint
-    // Нужно знать публичный IP/домен hub'а
-    const hubEndpoint = process.env.WG_HOST || 'YOUR_HUB_PUBLIC_IP';
-    config += `# Endpoint of hub\n`;
-    config += `Endpoint = ${hubEndpoint}:${interfaceData.listenPort}\n`;
-    config += '\n';
-    config += 'PersistentKeepalive = 25\n';
-    
-    // Footer с инструкциями
-    config += '\n';
+
+    config += `PersistentKeepalive = ${this.persistentKeepalive}\n\n`;
+
     config += '# ═══════════════════════════════════════════════════════════════\n';
-    config += '# IMPORTANT: Update hub with your public key!\n';
+    config += '# 1. Generate keys: wg genkey | tee privatekey | wg pubkey > publickey\n';
+    config += '# 2. Replace YOUR_PRIVATE_KEY above\n';
+    config += '# 3. Add your public key to hub peer configuration\n';
+    config += `# 4. Run: ${interfaceData.protocol === 'amneziawg-2.0' ? 'awg-quick' : 'wg-quick'} up wg0\n`;
     config += '# ═══════════════════════════════════════════════════════════════\n';
-    config += '# 1. Generate keys on THIS (remote) side:\n';
-    config += '#    wg genkey | tee privatekey | wg pubkey > publickey\n';
-    config += '# 2. Replace YOUR_PRIVATE_KEY above with content from privatekey\n';
-    config += '# 3. Copy publickey and update peer configuration on hub\n';
-    config += '# 4. Save this file as /etc/wireguard/wg0.conf\n';
-    
-    if (interfaceData.protocol === 'amneziawg-2.0') {
-      config += '# 5. Run: awg-quick up wg0\n';
-    } else {
-      config += '# 5. Run: wg-quick up wg0\n';
-    }
-    
-    config += '# ═══════════════════════════════════════════════════════════════\n';
-    
+
     return config;
   }
 }
