@@ -11,7 +11,8 @@
 `src/www/css/app.css` — прекомпилированный статический файл. Новые Tailwind-классы **не работают**.
 Перед использованием любого класса проверить: `grep "класс" src/www/css/app.css`
 Если класса нет — использовать `style="..."` (inline CSS).
-Зафиксировано: `px-6`, `py-10`, `py-8` **отсутствуют** → нужен inline style.
+Зафиксировано отсутствующие: `px-6`, `py-10`, `py-8`, `min-h-full`, `items-start` → нужен inline style.
+Для модальных wrapper-div использовать: `style="display:flex; min-height:100%; align-items:flex-start; justify-content:center; padding:40px 24px;"`
 
 ---
 
