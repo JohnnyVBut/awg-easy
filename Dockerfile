@@ -30,14 +30,16 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
-# Install Linux packages
+# Install Linux packages (node comes from build stage, not apk)
 RUN apk add --no-cache \
     dpkg \
     dumb-init \
     iptables \
-    iptables-legacy \
-    nodejs \
-    npm
+    iptables-legacy
+
+# Copy Node 22 binary from build stage (overrides any Alpine-packaged node)
+COPY --from=build_node_modules /usr/local/bin/node /usr/local/bin/node
+COPY --from=build_node_modules /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 
 # Use iptables-legacy
 RUN update-alternatives --install /sbin/iptables iptables /sbin/iptables-legacy 10 --slave /sbin/iptables-restore iptables-restore /sbin/iptables-legacy-restore --slave /sbin/iptables-save iptables-save /sbin/iptables-legacy-save
