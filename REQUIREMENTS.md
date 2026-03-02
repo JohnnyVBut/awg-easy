@@ -1,6 +1,6 @@
 # AWG-Easy 2.0 — Requirements
 
-> Статус: **реализация в процессе** | Последнее обновление: 2026-03-02
+> Статус: **реализация в процессе** | Последнее обновление: 2026-03-02 (UI fixes)
 > Ветка: `feature/kernel-module` | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
 
 ---
@@ -298,3 +298,98 @@ PostDown = iptables-nft -D FORWARD -i <iface> -j ACCEPT; iptables-nft -D FORWARD
 
 ### WireGuard и broadcast
 WireGuard использует `tun` интерфейс (L3), broadcast не поддерживается. Маска `/32` для пиров — правильный выбор, подсеть в AllowedIPs используется только для крипторутинга, а не для L2 broadcast.
+
+---
+
+## 6. Frontend — ограничения и паттерны (обязательно к прочтению)
+
+### ⚠️ Tailwind CSS — статическая сборка (КРИТИЧНО)
+
+`src/www/css/app.css` — **прекомпилированный** Tailwind v3.4.10. В нём только те классы, которые были использованы на момент сборки. **Новые Tailwind-классы не появятся сами по себе** — нет postcss/JIT в runtime, нет watch-режима.
+
+**Правило:** если нужен новый CSS-класс которого нет в `app.css` — **использовать inline `style="..."`**.
+
+Проверить наличие класса:
+```bash
+grep "px-6\|py-10" src/www/css/app.css
+```
+
+Зафиксированные прецеденты:
+- `px-6`, `py-10`, `py-8` — **отсутствуют** в app.css → использовать `style="padding: ..."`
+- `px-4`, `sm:px-6` — присутствуют
+
+---
+
+### Паттерн модальных окон (единый для всех модалок)
+
+Все модалки должны использовать один паттерн — **scroll на overlay, не на panel**. Это обеспечивает правильный скролл вверх/вниз и видимые отступы от краёв.
+
+```html
+<!-- ✅ ПРАВИЛЬНО -->
+<div v-if="showModal"
+  class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+  @click.self="showModal = false">
+
+  <div class="flex min-h-full items-start justify-center" style="padding: 40px 24px;">
+  <div class="bg-white dark:bg-neutral-700 rounded-lg w-full" style="max-width: 520px;">
+
+    <!-- заголовок -->
+    <div class="p-6 pb-4 border-b dark:border-neutral-600">
+      <h2>...</h2>
+    </div>
+
+    <!-- контент (без overflow-y-auto, без flex-1) -->
+    <div class="p-6 pt-4">
+      ...
+    </div>
+
+    <!-- футер -->
+    <div class="p-6 pt-4 border-t dark:border-neutral-600">
+      <div class="flex gap-3 justify-end">...</div>
+    </div>
+
+  </div>
+  </div><!-- /flex wrapper -->
+</div>
+```
+
+```html
+<!-- ❌ НЕПРАВИЛЬНО — items-center + overflow-y-auto на одном div -->
+<div class="fixed inset-0 flex items-center justify-center overflow-y-auto ...">
+  <div class="max-h-[90vh] flex flex-col ...">
+    <div class="flex-1 overflow-y-auto ...">  <!-- внутренний скролл -->
+```
+
+**Почему неправильно:** `flex items-center` вычисляет центр по всему контенту, а не по viewport. При переполнении верх модала уходит за экран. Вниз скролл работает, вверх — нет.
+
+**Что запрещено в panel:** `max-h-[90vh]`, `flex flex-col` с ограниченной высотой, `flex-1 overflow-y-auto` внутри, `flex-shrink-0` на header/footer.
+
+---
+
+### Vue 2 — реактивность массивов
+
+Vue 2 не отслеживает изменения через индекс (`array[i] = x`) и через полную замену (`this.list = newList` — ненадёжно).
+
+```javascript
+// ✅ ПРАВИЛЬНО — splice для обновления одного элемента:
+this.tunnelInterfaces.splice(idx, 1, updatedItem);
+
+// ✅ ПРАВИЛЬНО — push для добавления:
+this.tunnelInterfaces.push(newItem);
+
+// ❌ НЕПРАВИЛЬНО:
+this.tunnelInterfaces[idx] = updatedItem;  // Vue 2 не увидит изменение
+```
+
+---
+
+### Структура файлов UI
+
+| Файл | Роль |
+|------|------|
+| `src/www/index.html` | Весь шаблон Vue (один файл, ~1700 строк) |
+| `src/www/js/app.js` | Vue instance: `data`, `methods`, `mounted` |
+| `src/www/js/api.js` | Все HTTP запросы к backend API |
+| `src/www/css/app.css` | Скомпилированный Tailwind (не редактировать вручную) |
+
+При добавлении новой вкладки: добавить кнопку в nav, добавить `v-if="activeTab === '...'"` секцию, добавить данные и методы в `app.js`, добавить API методы в `api.js`.
