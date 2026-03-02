@@ -90,6 +90,11 @@
             class="px-4 py-2 rounded-lg font-medium transition">
             Tunnel Interfaces
           </button>
+          <button @click="activeTab = 'settings'; loadSettings()"
+            :class="activeTab === 'settings' ? 'bg-purple-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+            class="px-4 py-2 rounded-lg font-medium transition">
+            Settings
+          </button>
         </div>
         <div v-if="latestRelease"
           class="bg-red-800 dark:bg-red-100 p-4 text-white dark:text-red-600 text-sm font-small mb-10 rounded-md shadow-lg"
@@ -1244,6 +1249,224 @@
             </div>
           </div>
           </div><!-- /flex min-h-full wrapper -->
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- Settings Tab                                                    -->
+        <!-- ================================================================ -->
+        <div v-if="activeTab === 'settings'" class="space-y-6 mb-10">
+
+          <!-- Global Settings -->
+          <div class="shadow-md rounded-lg bg-white dark:bg-neutral-700 overflow-hidden">
+            <div class="p-5 border-b dark:border-neutral-600">
+              <p class="text-xl font-medium dark:text-neutral-200">Global Settings</p>
+              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">Applied by default to all new peers</p>
+            </div>
+            <div class="p-5 space-y-4">
+              <div>
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">DNS servers</label>
+                <input v-model="globalSettings.dns" type="text" placeholder="1.1.1.1, 8.8.8.8"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono text-sm">
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Comma-separated. Used in client configs.</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Default PersistentKeepalive (seconds)</label>
+                <input v-model.number="globalSettings.defaultPersistentKeepalive" type="number" min="0" max="300"
+                  class="w-32 px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 text-sm">
+              </div>
+              <div>
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Default Client AllowedIPs</label>
+                <input v-model="globalSettings.defaultClientAllowedIPs" type="text" placeholder="0.0.0.0/0, ::/0"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono text-sm">
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">What the client routes through the VPN (full tunnel = 0.0.0.0/0, ::/0).</p>
+              </div>
+              <div class="flex items-center gap-3 pt-2">
+                <button @click="saveSettings"
+                  class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition text-sm font-medium">
+                  Save Settings
+                </button>
+                <span v-if="settingsSaved" class="text-sm text-green-600 dark:text-green-400">Saved!</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- AWG2 Templates -->
+          <div class="shadow-md rounded-lg bg-white dark:bg-neutral-700 overflow-hidden">
+            <div class="flex items-center p-5 border-b dark:border-neutral-600">
+              <div class="flex-grow">
+                <p class="text-xl font-medium dark:text-neutral-200">AWG2 Templates</p>
+                <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">Named parameter sets for AmneziaWG 2.0 instances. H1-H4 are re-randomised on every apply.</p>
+              </div>
+              <button @click="openTemplateCreate()"
+                class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition text-sm font-medium flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                </svg>
+                New Template
+              </button>
+            </div>
+
+            <!-- Empty state -->
+            <div v-if="!templates || templates.length === 0"
+              class="text-center text-gray-400 dark:text-neutral-500 py-10">
+              No templates yet. Create one to quickly fill AWG2 parameters.
+            </div>
+
+            <!-- Template list -->
+            <div v-for="tmpl in templates" :key="tmpl.id"
+              class="border-b last:border-b-0 dark:border-neutral-600 px-5 py-4 flex items-start gap-4">
+              <div class="flex-grow min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-medium dark:text-neutral-200">{{ tmpl.name }}</span>
+                  <span v-if="tmpl.isDefault"
+                    class="text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full font-medium">
+                    Default
+                  </span>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1 font-mono">
+                  Jc={{ tmpl.jc }} Jmin={{ tmpl.jmin }} Jmax={{ tmpl.jmax }}
+                  &nbsp;|&nbsp; S1={{ tmpl.s1 }} S2={{ tmpl.s2 }} S3={{ tmpl.s3 }} S4={{ tmpl.s4 }}
+                </p>
+                <p v-if="tmpl.i1" class="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 font-mono truncate">
+                  I1={{ tmpl.i1 }}
+                </p>
+              </div>
+              <div class="flex gap-2 flex-shrink-0">
+                <button v-if="!tmpl.isDefault" @click="setDefaultTemplate(tmpl.id)"
+                  class="px-3 py-1.5 text-xs border border-purple-400 text-purple-600 dark:text-purple-400 rounded hover:bg-purple-50 dark:hover:bg-purple-900 transition">
+                  Set Default
+                </button>
+                <button @click="openTemplateEdit(tmpl)"
+                  class="px-3 py-1.5 text-xs border dark:border-neutral-500 text-gray-600 dark:text-neutral-300 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 transition">
+                  Edit
+                </button>
+                <button @click="deleteTemplate(tmpl.id)"
+                  class="px-3 py-1.5 text-xs border border-red-300 text-red-600 dark:text-red-400 rounded hover:bg-red-50 dark:hover:bg-red-900 transition">
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Template Create / Edit Modal -->
+        <div v-if="showTemplateModal"
+          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto"
+          @click.self="showTemplateModal = false">
+
+          <div class="bg-white dark:bg-neutral-700 rounded-lg w-full max-h-[90vh] flex flex-col my-4" style="max-width:520px">
+            <div class="p-6 pb-4 border-b dark:border-neutral-600 flex-shrink-0">
+              <h2 class="text-xl font-medium dark:text-neutral-200">
+                {{ templateEditTarget ? 'Edit Template' : 'New AWG2 Template' }}
+              </h2>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6 pt-4 space-y-4">
+
+              <!-- Name + Default -->
+              <div class="flex gap-3 items-end">
+                <div class="flex-grow">
+                  <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Name <span class="text-red-500">*</span></label>
+                  <input v-model="templateForm.name" type="text" placeholder="e.g. My Obfuscation Profile"
+                    class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 text-sm">
+                </div>
+                <label class="flex items-center gap-2 mb-2 cursor-pointer whitespace-nowrap">
+                  <input type="checkbox" v-model="templateForm.isDefault" class="w-4 h-4">
+                  <span class="text-sm dark:text-neutral-300">Default</span>
+                </label>
+              </div>
+
+              <!-- Jc / Jmin / Jmax -->
+              <div>
+                <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Junk Parameters</p>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jc</label>
+                    <input v-model.number="templateForm.jc" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmin</label>
+                    <input v-model.number="templateForm.jmin" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmax</label>
+                    <input v-model.number="templateForm.jmax" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                </div>
+              </div>
+
+              <!-- S1-S4 -->
+              <div>
+                <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Size Parameters</p>
+                <div class="grid grid-cols-4 gap-3">
+                  <div v-for="k in ['s1','s2','s3','s4']" :key="k">
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">{{ k.toUpperCase() }}</label>
+                    <input v-model.number="templateForm[k]" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                  </div>
+                </div>
+              </div>
+
+              <!-- H1-H4 -->
+              <div>
+                <div class="flex items-center mb-2">
+                  <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 tracking-wide flex-grow">
+                    Hash Ranges (H1–H4)
+                  </p>
+                  <button @click="randomiseTemplateH()"
+                    class="text-xs text-purple-600 dark:text-purple-400 hover:underline">
+                    Randomise
+                  </button>
+                </div>
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mb-2">
+                  Format: <code class="font-mono">start-end</code> (e.g. <code class="font-mono">5000000-55000000</code>).
+                  Re-randomised on every template apply.
+                </p>
+                <div class="grid grid-cols-2 gap-3">
+                  <div v-for="k in ['h1','h2','h3','h4']" :key="k">
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">{{ k.toUpperCase() }}</label>
+                    <input v-model="templateForm[k]" type="text" placeholder="start-end"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                </div>
+              </div>
+
+              <!-- I1-I5 -->
+              <div>
+                <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">
+                  Imitation Parameters (I1–I5)
+                </p>
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mb-2">
+                  Optional. Full obfuscation: I1 starts with <code class="font-mono">&lt;r 2&gt; &lt;b 0x...&gt;</code>.
+                </p>
+                <div class="space-y-2">
+                  <div v-for="k in ['i1','i2','i3','i4','i5']" :key="k" class="flex items-center gap-2">
+                    <label class="text-xs font-medium dark:text-neutral-300 w-6 flex-shrink-0">{{ k.toUpperCase() }}</label>
+                    <input v-model="templateForm[k]" type="text" :placeholder="k === 'i1' ? '<r 2> <b 0x...>' : 'optional'"
+                      class="flex-1 px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /scroll area -->
+
+            <div class="p-6 pt-4 border-t dark:border-neutral-600 flex-shrink-0">
+              <div class="flex gap-3 justify-end">
+                <button @click="showTemplateModal = false"
+                  class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition text-sm">
+                  Cancel
+                </button>
+                <button @click="saveTemplate()"
+                  :disabled="!templateForm.name"
+                  class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded transition text-sm font-medium">
+                  {{ templateEditTarget ? 'Save Changes' : 'Create Template' }}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Create Peer Modal -->

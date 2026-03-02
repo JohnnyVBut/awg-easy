@@ -160,6 +160,25 @@ new Vue({
       },
     },
 
+    // Settings tab
+    globalSettings: {
+      dns: '1.1.1.1, 8.8.8.8',
+      defaultPersistentKeepalive: 25,
+      defaultClientAllowedIPs: '0.0.0.0/0, ::/0',
+    },
+    settingsSaved: false,
+    templates: [],
+    showTemplateModal: false,
+    templateEditTarget: null, // null = create, object = edit
+    templateForm: {
+      name: '',
+      isDefault: false,
+      jc: 6, jmin: 10, jmax: 50,
+      s1: 64, s2: 67, s3: 64, s4: 4,
+      h1: '', h2: '', h3: '', h4: '',
+      i1: '', i2: '', i3: '', i4: '', i5: '',
+    },
+
     uiShowCharts: localStorage.getItem('uiShowCharts') === '1',
     uiTheme: localStorage.theme || 'auto',
     prefersDarkScheme: window.matchMedia('(prefers-color-scheme: dark)'),
@@ -843,6 +862,100 @@ new Vue({
       } catch (err) {
         console.error('Download failed:', err);
         alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ============================================================
+    // Settings & Templates
+    // ============================================================
+
+    async loadSettings() {
+      try {
+        this.globalSettings = await this.api.getSettings();
+        const { templates } = await this.api.getTemplates();
+        this.templates = templates;
+      } catch (err) {
+        console.error('loadSettings failed:', err);
+      }
+    },
+
+    async saveSettings() {
+      try {
+        await this.api.updateSettings(this.globalSettings);
+        this.settingsSaved = true;
+        setTimeout(() => { this.settingsSaved = false; }, 2500);
+      } catch (err) {
+        alert(`Failed to save settings: ${err.message}`);
+      }
+    },
+
+    // H1-H4: non-overlapping random ranges in the uint32 space.
+    // 4 equal zones, each gets a ~50 M wide sub-range.
+    randomiseTemplateH() {
+      const RANGE_SIZE = 50_000_000;
+      const ZONE_SIZE = Math.floor((0xFFFFFFFF - 5) / 4);
+      const r = (zone) => {
+        const zs = 5 + zone * ZONE_SIZE;
+        const ze = zs + ZONE_SIZE - 1;
+        const start = zs + Math.floor(Math.random() * (ze - zs - RANGE_SIZE));
+        return `${start}-${start + RANGE_SIZE}`;
+      };
+      this.templateForm.h1 = r(0);
+      this.templateForm.h2 = r(1);
+      this.templateForm.h3 = r(2);
+      this.templateForm.h4 = r(3);
+    },
+
+    openTemplateCreate() {
+      this.templateForm = {
+        name: '',
+        isDefault: false,
+        jc: 6, jmin: 10, jmax: 50,
+        s1: 64, s2: 67, s3: 64, s4: 4,
+        h1: '', h2: '', h3: '', h4: '',
+        i1: '', i2: '', i3: '', i4: '', i5: '',
+      };
+      this.randomiseTemplateH();
+      this.templateEditTarget = null;
+      this.showTemplateModal = true;
+    },
+
+    openTemplateEdit(tmpl) {
+      this.templateForm = { ...tmpl };
+      this.templateEditTarget = tmpl;
+      this.showTemplateModal = true;
+    },
+
+    async saveTemplate() {
+      try {
+        if (this.templateEditTarget) {
+          await this.api.updateTemplate({ templateId: this.templateEditTarget.id, ...this.templateForm });
+        } else {
+          await this.api.createTemplate(this.templateForm);
+        }
+        this.showTemplateModal = false;
+        await this.loadSettings();
+      } catch (err) {
+        alert(`Failed to save template: ${err.message}`);
+      }
+    },
+
+    async setDefaultTemplate(templateId) {
+      try {
+        await this.api.setDefaultTemplate({ templateId });
+        await this.loadSettings();
+      } catch (err) {
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    async deleteTemplate(templateId) {
+      if (!confirm('Delete this template?')) return;
+      try {
+        await this.api.deleteTemplate({ templateId });
+        await this.loadSettings();
+      } catch (err) {
+        alert(`Failed to delete template: ${err.message}`);
       }
     },
 
