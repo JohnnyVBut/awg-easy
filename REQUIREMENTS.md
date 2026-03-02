@@ -1,6 +1,77 @@
 # AWG-Easy 2.0 — Requirements
 
-> Статус: **требования собраны, реализация не начата** | Последнее обновление: 2026-03-02
+> Статус: **реализация в процессе** | Последнее обновление: 2026-03-02
+> Ветка: `feature/kernel-module` | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
+
+---
+
+## Статус реализации
+
+### ✅ Готово
+
+#### Backend
+| Файл | Что сделано |
+|------|------------|
+| `src/lib/TunnelInterface.js` | Управление одним WG/AWG интерфейсом: генерация конфига, start/stop/restart, down→up при "already exists", reload (syncconf) |
+| `src/lib/InterfaceManager.js` | Singleton. Хранит все data-plane интерфейсы (Map). Авто-старт при перезапуске контейнера. CRUD + peer management |
+| `src/lib/Peer.js` | Модель пира. Генерация wg-конфига `[Peer]`. Генерация клиентского конфига (полный + шаблон). QR-ready |
+| `src/lib/Settings.js` | **НОВОЕ.** Singleton. Хранит глобальные настройки (dns, keepalive, allowedIPs) и AWG2 Templates в `/etc/wireguard/data/settings.json`. `applyTemplate()` возвращает параметры с рандомизированными H1-H4 |
+| `src/lib/Server.js` | API маршруты: tunnel-interfaces CRUD + start/stop/restart + peers CRUD + config/QR. **+ Settings API** (GET/PUT `/api/settings`) **+ Templates API** (CRUD + set-default + apply) |
+| `src/www/js/api.js` | Клиентские методы: settings, templates, tunnel-interfaces, peers |
+| `src/lib/WireGuard.js` | Старый wg0 интерфейс (для вкладки Clients — оставлен без изменений) |
+| PostUp/PostDown | `iptables-nft` с FORWARD ACCEPT + MASQUERADE. `Table = off` если `disableRoutes` |
+| Хранилище | Интерфейсы: `/etc/wireguard/data/interfaces/{id}.json`. Пиры: `/etc/wireguard/data/peers/{id}/{peerId}.json`. Настройки: `/etc/wireguard/data/settings.json` |
+
+#### UI (вкладки)
+| Вкладка | Статус | Примечание |
+|---------|--------|-----------|
+| **Clients** | ✅ Работает | Старая архитектура, не трогаем |
+| **WAN Tunnels** | ✅ Работает | Старая архитектура, deprecated |
+| **Tunnel Interfaces** | ✅ Частично | Базовые create/start/stop/delete + peer add/delete + QR/download |
+| **Settings** | ✅ **ТОЛЬКО ЧТО ДОБАВЛЕНО** | Global Settings форма + AWG2 Templates (список, create/edit/delete, set-default, modal с полной формой) |
+
+---
+
+### 🚧 Не реализовано (очерёдность)
+
+#### Следующий шаг — Admin Instance (backend + UI)
+- [ ] `src/lib/AdminInstance.js` — отдельный класс. Параметры берёт из env vars (`WG_ADMIN_ADDRESS`, `WG_PORT`, `JC`, `JMIN` и т.д.). Ключи генерирует при первом старте, сохраняет в `/etc/wireguard/data/admin.json`. Поднимается автоматически. Управление через UI: только добавление/удаление пиров
+- [ ] API: `GET /api/admin` (статус), `GET/POST/DELETE /api/admin/peers` (пиры), `GET /api/admin/peers/:id/config`, `GET /api/admin/peers/:id/qrcode.svg`
+- [ ] UI: вкладка **Admin** — статус интерфейса (read-only), список пиров с QR/download/delete
+
+#### Instances Tab (рефакторинг существующей Tunnel Interfaces)
+- [ ] **Edit modal** для интерфейса (все поля кроме privateKey). После сохранения — сообщение "Stop & Start to apply"
+- [ ] **Disable Routes** checkbox в форме create/edit → `Table = off` в конфиге
+- [ ] **Private key** как password-поле при создании (скрыт символами)
+- [ ] **Public key** с кнопкой Copy
+- [ ] **Load from template** dropdown в AWG2-форме — вызывает `POST /api/templates/:id/apply`, подставляет результат + рандомизирует H1-H4
+- [ ] Автозаполнение AWG2 из дефолтного шаблона при переключении на протокол AWG2
+
+#### Peers Tab (отдельная вкладка)
+- [ ] Отдельная вкладка **Peers** (сейчас peers встроены в Tunnel Interfaces)
+- [ ] Dropdown фильтр "All / конкретный Instance" в шапке
+- [ ] Enable/disable toggle per peer (persisted в JSON, disabled peer → не в конфиг)
+- [ ] Индикатор online/offline (handshake < 3 мин → online)
+- [ ] RX/TX трафик из `wg show` / `awg show` (polling)
+- [ ] Edit modal для пира
+- [ ] Backend: `GET /api/peers` (все пиры всех интерфейсов, с фильтром `?interfaceId=`)
+- [ ] Backend: `GET /api/tunnel-interfaces/:id/peers/stats` (handshake + трафик)
+
+#### Прочее
+- [ ] Автозаполнение Address пира (следующий свободный IP в подсети инстанса)
+- [ ] Валидация адреса пира (в подсети, не совпадает с адресом интерфейса / другими пирами)
+- [ ] Pre-shared key — авто-генерация при создании пира (уже генерируется в TunnelInterface.js, нужно убедиться что отображается в UI как "скрытый с кнопкой Copy")
+
+---
+
+### Технические решения (зафиксировано)
+
+- `iptables-nft` везде (не `iptables`) — Ubuntu 22.04 + nftables backend
+- При "already exists" на restart контейнера — down→up цикл
+- H1-H4 хранятся как диапазоны `start-end`, рандомизируются при каждом apply шаблона
+- Приватный ключ хранится на сервере (нужен для QR/download)
+- `--network host` — интерфейсы живут в ядре хоста между рестартами контейнера
+- Маска пира всегда `/32`, подсеть только для крипторутинга
 
 ---
 
