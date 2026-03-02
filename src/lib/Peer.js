@@ -169,8 +169,11 @@ class Peer {
     let config = '[Interface]\n';
     config += `PrivateKey = ${this.privateKey}\n`;
 
-    if (this.remoteAddress) {
-      config += `Address = ${this.remoteAddress}\n`;
+    // Address = IP пира с маской интерфейса (вычисляется, не хранится)
+    if (this.allowedIPs && interfaceData.address) {
+      const peerIp = this.allowedIPs.split('/')[0];
+      const ifaceMask = interfaceData.address.split('/')[1] || '24';
+      config += `Address = ${peerIp}/${ifaceMask}\n`;
     }
 
     // DNS — include for client peers (full-tunnel, peerType === 'client').
@@ -245,8 +248,11 @@ class Peer {
     config += '# Listen port (choose any free UDP port)\n';
     config += 'ListenPort = 51820\n\n';
 
-    if (this.remoteAddress) {
-      config += `Address = ${this.remoteAddress}\n`;
+    // Address = IP пира с маской интерфейса (вычисляется, не хранится)
+    if (this.allowedIPs && interfaceData.address) {
+      const peerIp = this.allowedIPs.split('/')[0];
+      const ifaceMask = interfaceData.address.split('/')[1] || '24';
+      config += `Address = ${peerIp}/${ifaceMask}\n`;
     }
 
     if (this.peerType === 'client' || !this.peerType) {

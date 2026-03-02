@@ -1039,7 +1039,6 @@
                     <div class="text-sm text-gray-600 dark:text-neutral-400 space-y-1">
                       <div><span class="font-medium">Allowed IPs:</span> {{ peer.allowedIPs }}</div>
                       <div v-if="peer.endpoint"><span class="font-medium">Endpoint:</span> {{ peer.endpoint }}</div>
-                      <div v-if="peer.remoteAddress"><span class="font-medium">Remote Address:</span> {{ peer.remoteAddress }}</div>
                       <div class="font-mono text-xs text-gray-400 dark:text-neutral-500 truncate">
                         Public Key: {{ peer.publicKey }}
                       </div>
@@ -1371,14 +1370,6 @@
                   :placeholder="peerCreate.peerType === 'client' ? 'default: 0.0.0.0/0, ::/0 (all traffic)' : 'default: hub network'"
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                 <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1">What the remote side routes through VPN (in client config). Leave empty for default.</p>
-              </div>
-
-              <div class="mb-4">
-                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Remote Tunnel Address (optional)</label>
-                <input v-model="peerCreate.remoteAddress"
-                  type="text"
-                  placeholder="e.g., 10.100.0.2/24"
-                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
               </div>
 
               <div class="mb-4">
