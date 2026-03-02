@@ -1088,11 +1088,11 @@
           @click.self="showInterfaceCreate = false">
 
           <div class="bg-white dark:bg-neutral-700 rounded-lg flex flex-col" style="max-width:450px; margin:0 auto;">
-            <div class="p-6 pb-4 border-b dark:border-neutral-600">
+            <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
               <h2 class="text-2xl font-medium dark:text-neutral-200">Create Interface</h2>
             </div>
 
-            <div class="p-6 pt-4">
+            <div style="padding:16px 24px 24px;">
               <div class="mb-4">
                 <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Interface Name</label>
                 <input v-model="interfaceCreate.name"
@@ -1235,7 +1235,7 @@
               </div>
             </div>
 
-            <div class="p-6 pt-4 border-t dark:border-neutral-600">
+            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
               <div class="flex gap-3 justify-end">
                 <button @click="showInterfaceCreate = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
@@ -1355,13 +1355,13 @@
           @click.self="showTemplateModal = false">
 
           <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:520px; margin:0 auto;">
-            <div class="p-6 pb-4 border-b dark:border-neutral-600">
+            <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
               <h2 class="text-xl font-medium dark:text-neutral-200">
                 {{ templateEditTarget ? 'Edit Template' : 'New AWG2 Template' }}
               </h2>
             </div>
 
-            <div class="p-6 pt-4 space-y-4">
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
 
               <!-- Name + Default -->
               <div class="flex gap-3 items-end">
@@ -1442,7 +1442,7 @@
                 <p class="text-xs text-gray-400 dark:text-neutral-500 mb-2">
                   Optional. Full obfuscation: I1 starts with <code class="font-mono">&lt;r 2&gt; &lt;b 0x...&gt;</code>.
                 </p>
-                <div class="space-y-2">
+                <div style="display:flex; flex-direction:column; gap:8px;">
                   <div v-for="k in ['i1','i2','i3','i4','i5']" :key="k" class="flex items-center gap-2">
                     <label class="text-xs font-medium dark:text-neutral-300 w-6 flex-shrink-0">{{ k.toUpperCase() }}</label>
                     <input v-model="templateForm[k]" type="text" :placeholder="k === 'i1' ? '<r 2> <b 0x...>' : 'optional'"
@@ -1453,7 +1453,7 @@
 
             </div><!-- /content area -->
 
-            <div class="p-6 pt-4 border-t dark:border-neutral-600">
+            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
               <div class="flex gap-3 justify-end">
                 <button @click="showTemplateModal = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition text-sm">
@@ -1476,14 +1476,14 @@
           @click.self="showPeerCreate = false">
 
           <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:450px; margin:0 auto;">
-            <div class="p-6 pb-4 border-b dark:border-neutral-600">
+            <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
               <h2 class="text-2xl font-medium dark:text-neutral-200">Add Peer</h2>
               <p v-if="selectedInterface" class="text-sm text-gray-500 dark:text-neutral-400">
                 Adding to {{ selectedInterface.name }} ({{ selectedInterface.id }})
               </p>
             </div>
 
-            <div class="p-6 pt-4">
+            <div style="padding:16px 24px 24px;">
 
               <!-- Переключатель режима -->
               <div class="mb-5 flex rounded-lg overflow-hidden border dark:border-neutral-500">
@@ -1605,7 +1605,7 @@
               </div>
             </div>
 
-            <div class="p-6 pt-4 border-t dark:border-neutral-600">
+            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
               <div class="flex gap-3 justify-end">
                 <button @click="showPeerCreate = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">

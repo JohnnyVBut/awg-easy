@@ -11,7 +11,14 @@
 `src/www/css/app.css` — прекомпилированный статический файл. Новые Tailwind-классы **не работают**.
 Перед использованием любого класса проверить: `grep "класс" src/www/css/app.css`
 Если класса нет — использовать `style="..."` (inline CSS).
-Зафиксировано отсутствующие: `px-6`, `py-10`, `py-8`, `min-h-full`, `items-start` → нужен inline style.
+Зафиксировано отсутствующие: `px-6`, `py-10`, `py-8`, `min-h-full`, `items-start`, **`p-6`**, **`border-t`**, **`border-neutral-*`**, **`space-y-2`**, **`space-y-4`** → нужен inline style.
+
+**Замены для `p-6` (= 24px):**
+- `p-6 pb-4` → `style="padding:24px 24px 16px;"` (header)
+- `p-6 pt-4` → `style="padding:16px 24px 24px;"` (body/footer)
+- `border-t dark:border-neutral-600` → `class="dark:border-neutral-600"` + `style="border-top-width:1px;"` (border-t отсутствует, цвет по умолчанию #e5e7eb, dark: класс переопределяет)
+- `space-y-4` → `style="display:flex; flex-direction:column; gap:16px;"`
+- `space-y-2` → `style="display:flex; flex-direction:column; gap:8px;"`
 
 ### Правильный паттерн для модалок — padding на оверлее:
 ```html
