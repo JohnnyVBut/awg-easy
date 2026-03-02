@@ -13,24 +13,25 @@
 Если класса нет — использовать `style="..."` (inline CSS).
 Зафиксировано отсутствующие: `px-6`, `py-10`, `py-8`, `min-h-full`, `items-start` → нужен inline style.
 
-### Правильный паттерн для модалок (без flex-wrapper, margin:auto):
+### Правильный паттерн для модалок — padding на оверлее:
 ```html
-<!-- ПРАВИЛЬНО: overlay + panel с margin:auto -->
+<!-- ПРАВИЛЬНО: padding на overlay + margin:0 auto на панели -->
 <div v-if="showModal"
   class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+  style="padding:40px 24px;"
   @click.self="showModal = false">
   <div class="bg-white dark:bg-neutral-700 rounded-lg"
-    style="max-width:520px; width:calc(100% - 48px); margin:40px auto;">
+    style="max-width:520px; margin:0 auto;">
     <!-- контент -->
   </div>
 </div>
 
-<!-- НЕПРАВИЛЬНО: flex wrapper + w-full (w-full = 100% flex-контента, margin не виден) -->
-<!-- <div style="display:flex; min-height:100%..."> -->
-<!--   <div class="... w-full" style="max-width:520px"> → НЕТ боковых отступов -->
-<!-- </div> -->
+<!-- НЕПРАВИЛЬНО — НЕ РАБОТАЕТ: -->
+<!-- 1. flex wrapper + w-full → нет боковых отступов -->
+<!-- 2. width:calc(100% - 48px) + margin:auto на панели → ненадёжно в fixed+overflow-y:auto контексте -->
 ```
-`width:calc(100% - 48px)` = 24px с каждой стороны. `margin:40px auto` = 40px сверху/снизу + горизонтальное центрирование.
+`padding:40px 24px` на оверлее = гарантированно 24px слева/справа, 40px сверху/снизу.
+`margin:0 auto` на панели = центрирование внутри контентной зоны оверлея.
 
 ---
 
