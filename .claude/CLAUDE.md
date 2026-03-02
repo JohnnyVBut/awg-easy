@@ -12,7 +12,25 @@
 Перед использованием любого класса проверить: `grep "класс" src/www/css/app.css`
 Если класса нет — использовать `style="..."` (inline CSS).
 Зафиксировано отсутствующие: `px-6`, `py-10`, `py-8`, `min-h-full`, `items-start` → нужен inline style.
-Для модальных wrapper-div использовать: `style="display:flex; min-height:100%; align-items:flex-start; justify-content:center; padding:40px 24px;"`
+
+### Правильный паттерн для модалок (без flex-wrapper, margin:auto):
+```html
+<!-- ПРАВИЛЬНО: overlay + panel с margin:auto -->
+<div v-if="showModal"
+  class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+  @click.self="showModal = false">
+  <div class="bg-white dark:bg-neutral-700 rounded-lg"
+    style="max-width:520px; width:calc(100% - 48px); margin:40px auto;">
+    <!-- контент -->
+  </div>
+</div>
+
+<!-- НЕПРАВИЛЬНО: flex wrapper + w-full (w-full = 100% flex-контента, margin не виден) -->
+<!-- <div style="display:flex; min-height:100%..."> -->
+<!--   <div class="... w-full" style="max-width:520px"> → НЕТ боковых отступов -->
+<!-- </div> -->
+```
+`width:calc(100% - 48px)` = 24px с каждой стороны. `margin:40px auto` = 40px сверху/снизу + горизонтальное центрирование.
 
 ---
 

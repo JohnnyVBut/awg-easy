@@ -1086,8 +1086,7 @@
           class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
           @click.self="showInterfaceCreate = false">
 
-          <div style="display:flex; min-height:100%; align-items:flex-start; justify-content:center; padding:40px 24px;">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg w-full flex flex-col" style="max-width: 450px;">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg flex flex-col" style="max-width:450px; width:calc(100% - 48px); margin:40px auto;">
             <div class="p-6 pb-4 border-b dark:border-neutral-600">
               <h2 class="text-2xl font-medium dark:text-neutral-200">Create Interface</h2>
             </div>
@@ -1248,7 +1247,6 @@
               </div>
             </div>
           </div>
-          </div><!-- /flex min-h-full wrapper -->
         </div>
 
         <!-- ================================================================ -->
@@ -1354,8 +1352,7 @@
           class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
           @click.self="showTemplateModal = false">
 
-          <div style="display:flex; min-height:100%; align-items:flex-start; justify-content:center; padding:40px 24px;">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg w-full" style="max-width:520px">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:520px; width:calc(100% - 48px); margin:40px auto;">
             <div class="p-6 pb-4 border-b dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">
                 {{ templateEditTarget ? 'Edit Template' : 'New AWG2 Template' }}
@@ -1468,7 +1465,6 @@
               </div>
             </div>
           </div>
-          </div><!-- /flex wrapper -->
         </div>
 
         <!-- Create Peer Modal -->
@@ -1476,8 +1472,7 @@
           class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
           @click.self="showPeerCreate = false">
 
-          <div style="display:flex; min-height:100%; align-items:flex-start; justify-content:center; padding:40px 24px;">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg w-full" style="max-width: 450px;">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:450px; width:calc(100% - 48px); margin:40px auto;">
             <div class="p-6 pb-4 border-b dark:border-neutral-600">
               <h2 class="text-2xl font-medium dark:text-neutral-200">Add Peer</h2>
               <p v-if="selectedInterface" class="text-sm text-gray-500 dark:text-neutral-400">
@@ -1620,7 +1615,6 @@
               </div>
             </div>
           </div>
-          </div><!-- /flex wrapper -->
         </div>
 
         <!-- Delete Dialog -->
