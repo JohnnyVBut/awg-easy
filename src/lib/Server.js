@@ -12,6 +12,7 @@ const expressSession = require('express-session');
 const debug = require('debug')('Server');
 const TunnelManager = require('./TunnelManager');
 const InterfaceManager = require('./InterfaceManager');
+const Settings = require('./Settings');
 
 const {
   createApp,
@@ -678,6 +679,124 @@ module.exports = class Server {
 
         setHeader(event, 'Content-Type', 'image/svg+xml');
         return svg;
+      }))
+
+      // ========================================================================
+      // Settings API
+      // ========================================================================
+
+      /**
+       * GET /api/settings
+       * Получить глобальные настройки
+       */
+      .get('/api/settings', defineEventHandler(async () => {
+        const settings = await Settings.getInstance();
+        return settings.getSettings();
+      }))
+
+      /**
+       * PUT /api/settings
+       * Обновить глобальные настройки
+       * Body: { dns?, defaultPersistentKeepalive?, defaultClientAllowedIPs? }
+       */
+      .put('/api/settings', defineEventHandler(async (event) => {
+        const updates = await readBody(event);
+        const settings = await Settings.getInstance();
+        const updated = await settings.updateSettings(updates);
+        debug('Settings updated');
+        return updated;
+      }))
+
+      // ========================================================================
+      // AWG2 Templates API
+      // ========================================================================
+
+      /**
+       * GET /api/templates
+       * Получить список шаблонов AWG2
+       */
+      .get('/api/templates', defineEventHandler(async () => {
+        const settings = await Settings.getInstance();
+        return { templates: settings.getTemplates() };
+      }))
+
+      /**
+       * POST /api/templates
+       * Создать новый шаблон
+       * Body: { name, isDefault?, jc, jmin, jmax, s1-s4, h1-h4, i1-i5 }
+       */
+      .post('/api/templates', defineEventHandler(async (event) => {
+        const body = await readBody(event);
+        if (!body.name) {
+          throw createError({ status: 400, message: 'Template name is required' });
+        }
+        const settings = await Settings.getInstance();
+        const template = await settings.createTemplate(body);
+        debug(`Template created: ${template.id}`);
+        return { template };
+      }))
+
+      /**
+       * GET /api/templates/:id
+       * Получить шаблон по ID
+       */
+      .get('/api/templates/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const settings = await Settings.getInstance();
+        const template = settings.getTemplate(id);
+        if (!template) {
+          throw createError({ status: 404, message: 'Template not found' });
+        }
+        return { template };
+      }))
+
+      /**
+       * PUT /api/templates/:id
+       * Обновить шаблон
+       */
+      .put('/api/templates/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const updates = await readBody(event);
+        const settings = await Settings.getInstance();
+        const template = await settings.updateTemplate(id, updates);
+        debug(`Template updated: ${id}`);
+        return { template };
+      }))
+
+      /**
+       * DELETE /api/templates/:id
+       * Удалить шаблон
+       */
+      .delete('/api/templates/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const settings = await Settings.getInstance();
+        await settings.deleteTemplate(id);
+        debug(`Template deleted: ${id}`);
+        return { success: true };
+      }))
+
+      /**
+       * POST /api/templates/:id/set-default
+       * Пометить шаблон как дефолтный
+       */
+      .post('/api/templates/:id/set-default', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const settings = await Settings.getInstance();
+        const template = await settings.setDefaultTemplate(id);
+        debug(`Template set as default: ${id}`);
+        return { template };
+      }))
+
+      /**
+       * POST /api/templates/:id/apply
+       * Получить AWG2 параметры шаблона с рандомизированными H1-H4
+       * Используется UI при выборе шаблона для нового Instance
+       */
+      .post('/api/templates/:id/apply', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const settings = await Settings.getInstance();
+        const awgSettings = settings.applyTemplate(id);
+        return { settings: awgSettings };
       }));
 
     const safePathJoin = (base, target) => {
@@ -795,6 +914,15 @@ module.exports = class Server {
         });
       }),
     );
+
+    // ========================================================================
+    // Initialize Settings (async initialization)
+    // ========================================================================
+    Settings.getInstance().then(() => {
+      debug('Settings initialized successfully');
+    }).catch((err) => {
+      debug('Error initializing Settings:', err);
+    });
 
     // ========================================================================
     // Initialize TunnelManager (async initialization)

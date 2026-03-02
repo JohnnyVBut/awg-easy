@@ -199,4 +199,164 @@ class API {
     });
   }
 
+  // ============================================================
+  // Settings API
+  // ============================================================
+
+  async getSettings() {
+    return this.call({
+      method: 'get',
+      path: '/settings',
+    });
+  }
+
+  async updateSettings(settings) {
+    return this.call({
+      method: 'put',
+      path: '/settings',
+      body: settings,
+    });
+  }
+
+  // ============================================================
+  // AWG2 Templates API
+  // ============================================================
+
+  async getTemplates() {
+    return this.call({
+      method: 'get',
+      path: '/templates',
+    });
+  }
+
+  async createTemplate(template) {
+    return this.call({
+      method: 'post',
+      path: '/templates',
+      body: template,
+    });
+  }
+
+  async updateTemplate({ templateId, ...updates }) {
+    return this.call({
+      method: 'put',
+      path: `/templates/${templateId}`,
+      body: updates,
+    });
+  }
+
+  async deleteTemplate({ templateId }) {
+    return this.call({
+      method: 'delete',
+      path: `/templates/${templateId}`,
+    });
+  }
+
+  async setDefaultTemplate({ templateId }) {
+    return this.call({
+      method: 'post',
+      path: `/templates/${templateId}/set-default`,
+    });
+  }
+
+  /**
+   * Get AWG2 settings from a template with freshly randomised H1-H4.
+   * Used when the user selects "Load from template" in the Instance form.
+   */
+  async applyTemplate({ templateId }) {
+    return this.call({
+      method: 'post',
+      path: `/templates/${templateId}/apply`,
+    });
+  }
+
+  // ============================================================
+  // Tunnel Interfaces API
+  // ============================================================
+
+  async getTunnelInterfaces() {
+    return this.call({
+      method: 'get',
+      path: '/tunnel-interfaces',
+    });
+  }
+
+  async createTunnelInterface(data) {
+    return this.call({
+      method: 'post',
+      path: '/tunnel-interfaces',
+      body: data,
+    });
+  }
+
+  async updateTunnelInterface({ interfaceId, ...updates }) {
+    return this.call({
+      method: 'patch',
+      path: `/tunnel-interfaces/${interfaceId}`,
+      body: updates,
+    });
+  }
+
+  async deleteTunnelInterface({ interfaceId }) {
+    return this.call({
+      method: 'delete',
+      path: `/tunnel-interfaces/${interfaceId}`,
+    });
+  }
+
+  async startTunnelInterface({ interfaceId }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/start`,
+    });
+  }
+
+  async stopTunnelInterface({ interfaceId }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/stop`,
+    });
+  }
+
+  async restartTunnelInterface({ interfaceId }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/restart`,
+    });
+  }
+
+  // ============================================================
+  // Peers API (for Tunnel Interfaces)
+  // ============================================================
+
+  async getTunnelInterfacePeers({ interfaceId }) {
+    return this.call({
+      method: 'get',
+      path: `/tunnel-interfaces/${interfaceId}/peers`,
+    });
+  }
+
+  async createTunnelInterfacePeer({ interfaceId, ...peerData }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/peers`,
+      body: peerData,
+    });
+  }
+
+  async updateTunnelInterfacePeer({ interfaceId, peerId, ...updates }) {
+    return this.call({
+      method: 'patch',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}`,
+      body: updates,
+    });
+  }
+
+  async deleteTunnelInterfacePeer({ interfaceId, peerId }) {
+    return this.call({
+      method: 'delete',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}`,
+    });
+  }
+
 }
