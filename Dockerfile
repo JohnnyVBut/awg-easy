@@ -1,6 +1,5 @@
-# As a workaround we have to build on nodejs 18
-# nodejs 20 hangs on build with armv6/armv7
-FROM docker.io/library/node:18-alpine AS build_node_modules
+# Node 22 LTS (x86_64). On armv6/armv7 older Node versions may be needed.
+FROM docker.io/library/node:22-alpine AS build_node_modules
 
 # Copy Web UI
 COPY src /app
