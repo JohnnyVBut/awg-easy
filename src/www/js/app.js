@@ -691,6 +691,19 @@ new Vue({
       }
     },
 
+    // Обновить один интерфейс в массиве реактивно (Vue 2 splice).
+    // Вызывается после start/stop/restart — данные берём из ответа API,
+    // чтобы не делать лишний GET и не зависеть от состояния сети.
+    _applyInterfaceUpdate(updatedIface) {
+      const idx = this.tunnelInterfaces.findIndex(i => i.id === updatedIface.id);
+      if (idx !== -1) {
+        this.tunnelInterfaces.splice(idx, 1, updatedIface);
+      } else {
+        // Интерфейс появился впервые (например после create + immediate start)
+        this.tunnelInterfaces.push(updatedIface);
+      }
+    },
+
     async startTunnelInterface(iface) {
       if (this.loadingInterfaceId) return; // предотвратить двойной клик
       this.loadingInterfaceId = iface.id;
@@ -699,11 +712,15 @@ new Vue({
           method: 'POST',
           credentials: 'include',
         });
-        if (!res.ok) throw new Error(res.statusText);
-        await this.loadTunnelInterfaces();
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || res.statusText);
+        }
+        const data = await res.json();
+        if (data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Start failed:', err);
-        alert(`Failed: ${err.message}`);
+        alert(`Start failed: ${err.message}`);
       } finally {
         this.loadingInterfaceId = null;
       }
@@ -717,11 +734,15 @@ new Vue({
           method: 'POST',
           credentials: 'include',
         });
-        if (!res.ok) throw new Error(res.statusText);
-        await this.loadTunnelInterfaces();
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || res.statusText);
+        }
+        const data = await res.json();
+        if (data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Stop failed:', err);
-        alert(`Failed: ${err.message}`);
+        alert(`Stop failed: ${err.message}`);
       } finally {
         this.loadingInterfaceId = null;
       }
@@ -735,11 +756,15 @@ new Vue({
           method: 'POST',
           credentials: 'include',
         });
-        if (!res.ok) throw new Error(res.statusText);
-        await this.loadTunnelInterfaces();
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || res.statusText);
+        }
+        const data = await res.json();
+        if (data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Restart failed:', err);
-        alert(`Failed: ${err.message}`);
+        alert(`Restart failed: ${err.message}`);
       } finally {
         this.loadingInterfaceId = null;
       }
