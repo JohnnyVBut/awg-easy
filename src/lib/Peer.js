@@ -30,17 +30,30 @@ class Peer {
     this.endpoint = data.endpoint || '';
     this.allowedIPs = data.allowedIPs;           // AllowedIPs на стороне хаба (что хаб маршрутизирует к пиру)
     this.clientAllowedIPs = data.clientAllowedIPs || ''; // AllowedIPs в клиентском конфиге
-    this.peerType = data.peerType || 'site';     // 'client' (мобильный/динамический IP) | 'site' (фиксированный IP)
+    this.peerType = data.peerType || 'client';   // default 'client'
     this.persistentKeepalive = data.persistentKeepalive || 25;
-    this.remoteAddress = data.remoteAddress || '';
     this.enabled = data.enabled !== false; // default true
     this.createdAt = data.createdAt || new Date().toISOString();
-    
+    this.updatedAt = data.updatedAt || this.createdAt;
+
+    // Expire & one-time link fields
+    this.expiredAt = data.expiredAt || null;      // null = не истекает
+    this.oneTimeLink = data.oneTimeLink || null;
+
+    // Runtime fields (set by getStatus(), NOT persisted)
+    this.transferRx = 0;
+    this.transferTx = 0;
+    this.latestHandshakeAt = null;
+    this.runtimeEndpoint = null;
+
     debug(`Peer created: ${this.id} (${this.name}) for interface ${this.interfaceId}`);
   }
 
   /**
    * Конвертировать в JSON для сохранения
+   */
+  /**
+   * Persistent data — written to disk.
    */
   toJSON() {
     return {
@@ -55,10 +68,25 @@ class Peer {
       clientAllowedIPs: this.clientAllowedIPs,
       peerType: this.peerType,
       persistentKeepalive: this.persistentKeepalive,
-      remoteAddress: this.remoteAddress,
       enabled: this.enabled,
       createdAt: this.createdAt,
-      hasGeneratedKeys: !!this.privateKey, // для UI: знать что QR доступен
+      updatedAt: this.updatedAt,
+      expiredAt: this.expiredAt,
+      oneTimeLink: this.oneTimeLink,
+      downloadableConfig: !!this.privateKey,
+    };
+  }
+
+  /**
+   * API response — includes persistent data + runtime stats.
+   */
+  toAPIJSON() {
+    return {
+      ...this.toJSON(),
+      transferRx: this.transferRx,
+      transferTx: this.transferTx,
+      latestHandshakeAt: this.latestHandshakeAt,
+      runtimeEndpoint: this.runtimeEndpoint,
     };
   }
 
@@ -176,12 +204,9 @@ class Peer {
       config += `Address = ${peerIp}/${ifaceMask}\n`;
     }
 
-    // DNS — include for client peers (full-tunnel, peerType === 'client').
-    // Site-to-site peers handle DNS on their own network.
-    if (this.peerType === 'client' || !this.peerType) {
-      const dns = process.env.WG_DEFAULT_DNS || '1.1.1.1, 8.8.8.8';
-      config += `DNS = ${dns}\n`;
-    }
+    // DNS from global settings (passed via interfaceData) or env fallback
+    const dns = interfaceData.dns || process.env.WG_DEFAULT_DNS || '1.1.1.1, 8.8.8.8';
+    config += `DNS = ${dns}\n`;
 
     if (interfaceData.protocol === 'amneziawg-2.0' && interfaceData.settings) {
       const s = interfaceData.settings;
@@ -215,11 +240,10 @@ class Peer {
       config += `Endpoint = ${hubEndpoint}:${interfaceData.listenPort}\n`;
     }
 
-    // AllowedIPs в клиентском конфиге:
-    // - client-пир: весь трафик через VPN (или кастомное значение)
-    // - site-пир: только сеть хаба
+    // AllowedIPs в клиентском конфиге: peer-specific → global default → fallback
     const clientAllowedIPs = this.clientAllowedIPs
-      || (this.peerType === 'client' ? '0.0.0.0/0, ::/0' : interfaceData.address || '0.0.0.0/0, ::/0');
+      || interfaceData.defaultClientAllowedIPs
+      || '0.0.0.0/0, ::/0';
     config += `AllowedIPs = ${clientAllowedIPs}\n`;
 
     config += `PersistentKeepalive = ${this.persistentKeepalive}\n`;
@@ -255,10 +279,8 @@ class Peer {
       config += `Address = ${peerIp}/${ifaceMask}\n`;
     }
 
-    if (this.peerType === 'client' || !this.peerType) {
-      const dns = process.env.WG_DEFAULT_DNS || '1.1.1.1, 8.8.8.8';
-      config += `DNS = ${dns}\n`;
-    }
+    const dns = interfaceData.dns || process.env.WG_DEFAULT_DNS || '1.1.1.1, 8.8.8.8';
+    config += `DNS = ${dns}\n`;
     config += '\n';
 
     if (interfaceData.protocol === 'amneziawg-2.0' && interfaceData.settings) {
@@ -282,7 +304,8 @@ class Peer {
     config += `Endpoint = ${hubEndpoint}:${interfaceData.listenPort}\n`;
 
     const clientAllowedIPs = this.clientAllowedIPs
-      || (this.peerType === 'client' ? '0.0.0.0/0, ::/0' : interfaceData.address || '0.0.0.0/0');
+      || interfaceData.defaultClientAllowedIPs
+      || '0.0.0.0/0, ::/0';
     config += `AllowedIPs = ${clientAllowedIPs}\n`;
 
     config += `PersistentKeepalive = ${this.persistentKeepalive}\n\n`;

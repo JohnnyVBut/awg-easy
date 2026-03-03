@@ -103,6 +103,7 @@ class InterfaceManager {
    * @param {string} options.address - Tunnel address (например "10.100.0.1/24")
    * @param {number} options.listenPort - Порт (опционально, auto-assign)
    * @param {Object} options.settings - AWG параметры (если AWG 2.0)
+   * @param {boolean} options.disableRoutes - Table = off (disable routes)
    */
   async createInterface(options) {
     debug(`Creating interface: ${options.name}`);
@@ -139,6 +140,7 @@ class InterfaceManager {
       listenPort,
       address: options.address || '',
       settings: options.settings || {},
+      disableRoutes: options.disableRoutes || false,
       enabled: false,
       createdAt: new Date().toISOString(),
       peerIds: [],
@@ -325,14 +327,22 @@ class InterfaceManager {
     if (!iface) {
       throw new Error(`Interface ${interfaceId} not found`);
     }
-    
+
     const peer = iface.getPeer(peerId);
     if (!peer) {
       throw new Error(`Peer ${peerId} not found`);
     }
-    
-    // Генерировать конфиг для удалённой стороны
-    return peer.generateRemoteConfig(iface.data);
+
+    // Pass global settings (DNS, clientAllowedIPs) alongside interface data
+    const Settings = require('./Settings');
+    const settings = await Settings.getInstance();
+    const peerDefaults = settings.getPeerDefaults();
+
+    return peer.generateRemoteConfig({
+      ...iface.data,
+      dns: peerDefaults.dns,
+      defaultClientAllowedIPs: peerDefaults.clientAllowedIPs,
+    });
   }
 }
 

@@ -359,4 +359,64 @@ class API {
     });
   }
 
+  async enablePeer({ interfaceId, peerId }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/enable`,
+    });
+  }
+
+  async disablePeer({ interfaceId, peerId }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/disable`,
+    });
+  }
+
+  async updatePeerName({ interfaceId, peerId, name }) {
+    return this.call({
+      method: 'put',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/name`,
+      body: { name },
+    });
+  }
+
+  async updatePeerAddress({ interfaceId, peerId, address }) {
+    return this.call({
+      method: 'put',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/address`,
+      body: { address },
+    });
+  }
+
+  async updatePeerExpireDate({ interfaceId, peerId, expireDate }) {
+    return this.call({
+      method: 'put',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/expireDate`,
+      body: { expireDate },
+    });
+  }
+
+  async generatePeerOneTimeLink({ interfaceId, peerId }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/generateOneTimeLink`,
+    });
+  }
+
+  async backupTunnelInterface({ interfaceId }) {
+    return this.call({
+      method: 'get',
+      path: `/tunnel-interfaces/${interfaceId}/backup`,
+    });
+  }
+
+  async restoreTunnelInterface({ interfaceId, file }) {
+    return this.call({
+      method: 'put',
+      path: `/tunnel-interfaces/${interfaceId}/restore`,
+      body: { file },
+    });
+  }
+
 }

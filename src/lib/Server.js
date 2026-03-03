@@ -163,15 +163,36 @@ module.exports = class Server {
           });
         }
         const clientOneTimeLink = getRouterParam(event, 'clientOneTimeLink');
+
+        // Check admin tunnel clients first
         const clients = await WireGuard.getClients();
         const client = clients.find((client) => client.oneTimeLink === clientOneTimeLink);
-        if (!client) return;
-        const clientId = client.id;
-        const config = await WireGuard.getClientConfiguration({ clientId });
-        await WireGuard.eraseOneTimeLink({ clientId });
-        setHeader(event, 'Content-Disposition', `attachment; filename="${clientOneTimeLink}.conf"`);
-        setHeader(event, 'Content-Type', 'text/plain');
-        return config;
+        if (client) {
+          const clientId = client.id;
+          const config = await WireGuard.getClientConfiguration({ clientId });
+          await WireGuard.eraseOneTimeLink({ clientId });
+          setHeader(event, 'Content-Disposition', `attachment; filename="${clientOneTimeLink}.conf"`);
+          setHeader(event, 'Content-Type', 'text/plain');
+          return config;
+        }
+
+        // Check tunnel interface peers
+        const manager = await InterfaceManager.getInstance();
+        for (const iface of manager.getAllInterfaces()) {
+          for (const peer of iface.getAllPeers()) {
+            if (peer.oneTimeLink === clientOneTimeLink) {
+              const config = peer.generateRemoteConfig(iface.data);
+              // Erase one-time link after use
+              await iface.updatePeer(peer.id, { oneTimeLink: null });
+              setHeader(event, 'Content-Disposition', `attachment; filename="${clientOneTimeLink}.conf"`);
+              setHeader(event, 'Content-Type', 'text/plain');
+              return config;
+            }
+          }
+        }
+
+        // Not found
+        throw createError({ status: 404, message: 'Link not found or expired' });
       }))
       .post('/api/session', defineEventHandler(async (event) => {
         const { password, remember } = await readBody(event);
@@ -456,7 +477,7 @@ module.exports = class Server {
        * Создать новый интерфейс
        */
       .post('/api/tunnel-interfaces', defineEventHandler(async (event) => {
-        const { name, protocol, address, listenPort, settings } = await readBody(event);
+        const { name, protocol, address, listenPort, settings, disableRoutes } = await readBody(event);
 
         if (!name) {
           throw createError({ status: 400, message: 'Name is required' });
@@ -467,7 +488,7 @@ module.exports = class Server {
         }
 
         const manager = await InterfaceManager.getInstance();
-        const iface = await manager.createInterface({ name, protocol, address, listenPort, settings });
+        const iface = await manager.createInterface({ name, protocol, address, listenPort, settings, disableRoutes });
 
         debug(`Interface created: ${iface.id}`);
         return { interface: iface.toJSON() };
@@ -567,32 +588,58 @@ module.exports = class Server {
       .get('/api/tunnel-interfaces/:id/peers', defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id');
         const manager = await InterfaceManager.getInstance();
-        const peers = manager.getPeers(id);
+        const iface = manager.getInterface(id);
+        if (!iface) {
+          throw createError({ status: 404, message: 'Interface not found' });
+        }
 
-        return { peers: peers.map(peer => peer.toJSON()) };
+        // Fetch live transfer stats before returning
+        await iface.getStatus();
+        const peers = iface.getAllPeers();
+
+        return { peers: peers.map(peer => peer.toAPIJSON()) };
       }))
 
       /**
        * POST /api/tunnel-interfaces/:id/peers
-       * Добавить peer к интерфейсу
+       * Добавить peer к интерфейсу.
+       * Supports autoAllocateIP for one-click creation.
        */
       .post('/api/tunnel-interfaces/:id/peers', defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id');
-        const { name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive,
-                generateKeys, peerType, clientAllowedIPs } = await readBody(event);
+        const body = await readBody(event);
 
-        if (!name || !allowedIPs) {
-          throw createError({ status: 400, message: 'name and allowedIPs are required' });
+        const { name, autoAllocateIP } = body;
+
+        if (!name) {
+          throw createError({ status: 400, message: 'name is required' });
         }
-        if (!generateKeys && !publicKey) {
+        if (!autoAllocateIP && !body.allowedIPs) {
+          throw createError({ status: 400, message: 'allowedIPs is required (or use autoAllocateIP)' });
+        }
+        if (!autoAllocateIP && !body.generateKeys && !body.publicKey) {
           throw createError({ status: 400, message: 'publicKey is required when not using generateKeys' });
         }
 
+        // Get defaults from global settings
+        const settings = await Settings.getInstance();
+        const defaults = settings.getPeerDefaults();
+
+        const peerData = {
+          name,
+          generateKeys: body.generateKeys || !!autoAllocateIP,
+          autoAllocateIP: !!autoAllocateIP,
+          publicKey: body.publicKey,
+          endpoint: body.endpoint || '',
+          allowedIPs: body.allowedIPs,
+          clientAllowedIPs: body.clientAllowedIPs || defaults.clientAllowedIPs,
+          persistentKeepalive: body.persistentKeepalive || defaults.persistentKeepalive,
+          peerType: body.peerType || 'client',
+          expiredAt: body.expiredDate ? new Date(body.expiredDate).toISOString() : null,
+        };
+
         const manager = await InterfaceManager.getInstance();
-        const peer = await manager.addPeer(id, {
-          name, publicKey, endpoint, allowedIPs, remoteAddress, persistentKeepalive,
-          generateKeys, peerType, clientAllowedIPs,
-        });
+        const peer = await manager.addPeer(id, peerData);
 
         debug(`Peer added: ${peer.id} to ${id}`);
         return { peer: peer.toJSON() };
@@ -679,6 +726,138 @@ module.exports = class Server {
 
         setHeader(event, 'Content-Type', 'image/svg+xml');
         return svg;
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces/:id/peers/:peerId/enable
+       */
+      .post('/api/tunnel-interfaces/:id/peers/:peerId/enable', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = await manager.updatePeer(id, peerId, { enabled: true });
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces/:id/peers/:peerId/disable
+       */
+      .post('/api/tunnel-interfaces/:id/peers/:peerId/disable', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = await manager.updatePeer(id, peerId, { enabled: false });
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * PUT /api/tunnel-interfaces/:id/peers/:peerId/name
+       */
+      .put('/api/tunnel-interfaces/:id/peers/:peerId/name', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+        const { name } = await readBody(event);
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = await manager.updatePeer(id, peerId, { name, updatedAt: new Date().toISOString() });
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * PUT /api/tunnel-interfaces/:id/peers/:peerId/address
+       */
+      .put('/api/tunnel-interfaces/:id/peers/:peerId/address', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+        const { address } = await readBody(event);
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = await manager.updatePeer(id, peerId, { allowedIPs: address, updatedAt: new Date().toISOString() });
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * PUT /api/tunnel-interfaces/:id/peers/:peerId/expireDate
+       */
+      .put('/api/tunnel-interfaces/:id/peers/:peerId/expireDate', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+        const { expireDate } = await readBody(event);
+
+        const manager = await InterfaceManager.getInstance();
+        const expiredAt = expireDate ? new Date(expireDate).toISOString() : null;
+        const peer = await manager.updatePeer(id, peerId, { expiredAt, updatedAt: new Date().toISOString() });
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * POST /api/tunnel-interfaces/:id/peers/:peerId/generateOneTimeLink
+       */
+      .post('/api/tunnel-interfaces/:id/peers/:peerId/generateOneTimeLink', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        const oneTimeLink = [crypto.randomBytes(16).toString('hex')].join('');
+        const peer = await manager.updatePeer(id, peerId, { oneTimeLink });
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * GET /api/tunnel-interfaces/:id/backup
+       * Download interface + peers as JSON
+       */
+      .get('/api/tunnel-interfaces/:id/backup', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const iface = manager.getInterface(id);
+        if (!iface) {
+          throw createError({ status: 404, message: 'Interface not found' });
+        }
+
+        const backup = {
+          interface: iface.data,
+          peers: iface.getAllPeers().map(p => p.toJSON()),
+        };
+
+        setHeader(event, 'Content-Disposition', `attachment; filename="${id}.json"`);
+        setHeader(event, 'Content-Type', 'application/json');
+        return backup;
+      }))
+
+      /**
+       * PUT /api/tunnel-interfaces/:id/restore
+       * Restore interface peers from JSON backup
+       */
+      .put('/api/tunnel-interfaces/:id/restore', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const { file } = await readBody(event);
+
+        if (!file || !file.peers) {
+          throw createError({ status: 400, message: 'Invalid backup file (missing peers array)' });
+        }
+
+        const manager = await InterfaceManager.getInstance();
+        const iface = manager.getInterface(id);
+        if (!iface) {
+          throw createError({ status: 404, message: 'Interface not found' });
+        }
+
+        // Remove all existing peers
+        for (const peerId of Array.from(iface.peers.keys())) {
+          await iface.removePeer(peerId);
+        }
+
+        // Add peers from backup
+        for (const peerData of file.peers) {
+          delete peerData.interfaceId; // Will be set by addPeer
+          await iface.addPeer(peerData);
+        }
+
+        debug(`Interface ${id} restored with ${file.peers.length} peers`);
+        return { interface: iface.toJSON() };
       }))
 
       // ========================================================================

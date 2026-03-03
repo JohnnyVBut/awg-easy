@@ -119,13 +119,15 @@ new Vue({
     selectedInterface: null,
     selectedInterfacePeers: [],
     showInterfaceCreate: false,
-    showPeerCreate: false,
-    loadingInterfaceId: null, // ID интерфейса, над которым выполняется операция
+    showPeerCreate: false, // manual peer create modal
+    showQuickPeerCreate: false, // quick peer create dialog
+    loadingInterfaceId: null,
     interfaceCreate: {
       name: '',
       protocol: 'wireguard-1.0',
       address: '',
       listenPort: '',
+      disableRoutes: false,
       settings: {
         jc: 6, jmin: 10, jmax: 50,
         s1: 64, s2: 67, s3: 64, s4: 4,
@@ -134,8 +136,7 @@ new Vue({
       },
     },
     peerCreate: {
-      mode: 'generate', // 'generate' | 'manual'
-      peerType: 'client', // 'client' (mobile/dynamic IP) | 'site' (fixed IP/subnet)
+      mode: 'generate',
       name: '',
       publicKey: '',
       endpoint: '',
@@ -143,6 +144,20 @@ new Vue({
       clientAllowedIPs: '',
       persistentKeepalive: 25,
     },
+
+    // Quick peer create (one-click)
+    peerCreateName: '',
+    peerCreateExpiredDate: '',
+
+    // Peer management (inline editing, admin-tunnel style)
+    peersPersist: {},
+    peerDelete: null, // peer for delete confirmation modal
+    peerEditNameId: null,
+    peerEditName: null,
+    peerEditAddressId: null,
+    peerEditAddress: null,
+    peerEditExpireDateId: null,
+    peerEditExpireDate: null,
     // Settings
     globalSettings: {
       dns: '1.1.1.1, 8.8.8.8',
@@ -489,6 +504,7 @@ new Vue({
           protocol: this.interfaceCreate.protocol,
           address: this.interfaceCreate.address || undefined,
           listenPort: this.interfaceCreate.listenPort ? parseInt(this.interfaceCreate.listenPort, 10) : undefined,
+          disableRoutes: this.interfaceCreate.disableRoutes || false,
         };
 
         if (this.interfaceCreate.protocol === 'amneziawg-2.0') {
@@ -510,7 +526,7 @@ new Vue({
         const newIface = await res.json();
         this.showInterfaceCreate = false;
         this.interfaceCreate = {
-          name: '', protocol: 'wireguard-1.0', address: '', listenPort: '',
+          name: '', protocol: 'wireguard-1.0', address: '', listenPort: '', disableRoutes: false,
           settings: { jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4, h1: '', h2: '', h3: '', h4: '', i1: '', i2: '', i3: '', i4: '', i5: '' },
         };
 
@@ -656,7 +672,6 @@ new Vue({
         const payload = {
           name: this.peerCreate.name,
           allowedIPs: this.peerCreate.allowedIPs,
-          peerType: this.peerCreate.peerType,
           clientAllowedIPs: this.peerCreate.clientAllowedIPs || undefined,
           endpoint: this.peerCreate.endpoint || undefined,
           persistentKeepalive: this.peerCreate.persistentKeepalive || 25,
@@ -682,9 +697,9 @@ new Vue({
         const peerId = data.peer && data.peer.id;
 
         this.showPeerCreate = false;
-        this.peerCreate = { mode: 'generate', peerType: 'client', name: '', publicKey: '', endpoint: '', allowedIPs: '', clientAllowedIPs: '', persistentKeepalive: 25 };
+        this.peerCreate = { mode: 'generate', name: '', publicKey: '', endpoint: '', allowedIPs: '', clientAllowedIPs: '', persistentKeepalive: 25 };
 
-        await this.loadInterfacePeers(interfaceId);
+        await this.refreshPeers();
         await this.loadTunnelInterfaces();
 
         // Если ключи сгенерированы сервером — сразу показать QR код
@@ -718,7 +733,7 @@ new Vue({
 
     async downloadPeerConfig(peer) {
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${this.selectedInterface.id}/peers/${peer.id}/config`, {
+        const res = await fetch(`/api/tunnel-interfaces/${this.activeInterfaceId}/peers/${peer.id}/config`, {
           credentials: 'include',
         });
         if (!res.ok) throw new Error(res.statusText);
@@ -734,6 +749,231 @@ new Vue({
         window.URL.revokeObjectURL(url);
       } catch (err) {
         console.error('Download failed:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ========================================================================
+    // Quick peer create (one-click, admin-tunnel style)
+    // ========================================================================
+
+    async createQuickPeer() {
+      if (!this.activeInterfaceId) return;
+      const name = this.peerCreateName;
+      if (!name) return;
+
+      try {
+        const payload = {
+          name,
+          autoAllocateIP: true,
+          generateKeys: true,
+          expiredDate: this.peerCreateExpiredDate || undefined,
+        };
+
+        const res = await this.api.createTunnelInterfacePeer({
+          interfaceId: this.activeInterfaceId,
+          ...payload,
+        });
+
+        const peerId = res.peer && res.peer.id;
+        this.showQuickPeerCreate = false;
+        this.peerCreateName = '';
+        this.peerCreateExpiredDate = '';
+
+        await this.refreshPeers();
+        await this.loadTunnelInterfaces();
+
+        // Show QR immediately
+        if (peerId) {
+          this.qrcode = `./api/tunnel-interfaces/${this.activeInterfaceId}/peers/${peerId}/qrcode.svg`;
+        }
+      } catch (err) {
+        console.error('Failed to create peer:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ========================================================================
+    // Peer management methods (admin-tunnel style)
+    // ========================================================================
+
+    async enablePeer(peer) {
+      try {
+        await this.api.enablePeer({ interfaceId: this.activeInterfaceId, peerId: peer.id });
+        await this.refreshPeers();
+      } catch (err) {
+        alert(err.message || err.toString());
+      }
+    },
+
+    async disablePeer(peer) {
+      try {
+        await this.api.disablePeer({ interfaceId: this.activeInterfaceId, peerId: peer.id });
+        await this.refreshPeers();
+      } catch (err) {
+        alert(err.message || err.toString());
+      }
+    },
+
+    async updatePeerName(peer, name) {
+      try {
+        await this.api.updatePeerName({ interfaceId: this.activeInterfaceId, peerId: peer.id, name });
+        await this.refreshPeers();
+      } catch (err) {
+        alert(err.message || err.toString());
+      }
+    },
+
+    async updatePeerAddress(peer, address) {
+      try {
+        await this.api.updatePeerAddress({ interfaceId: this.activeInterfaceId, peerId: peer.id, address });
+        await this.refreshPeers();
+      } catch (err) {
+        alert(err.message || err.toString());
+      }
+    },
+
+    async updatePeerExpireDate(peer, expireDate) {
+      try {
+        await this.api.updatePeerExpireDate({ interfaceId: this.activeInterfaceId, peerId: peer.id, expireDate });
+        await this.refreshPeers();
+      } catch (err) {
+        alert(err.message || err.toString());
+      }
+    },
+
+    async showPeerOneTimeLink(peer) {
+      try {
+        await this.api.generatePeerOneTimeLink({ interfaceId: this.activeInterfaceId, peerId: peer.id });
+        await this.refreshPeers();
+      } catch (err) {
+        alert(err.message || err.toString());
+      }
+    },
+
+    async confirmDeletePeer() {
+      if (!this.peerDelete) return;
+      try {
+        await this.api.deleteTunnelInterfacePeer({
+          interfaceId: this.activeInterfaceId,
+          peerId: this.peerDelete.id,
+        });
+        this.peerDelete = null;
+        await this.refreshPeers();
+        await this.loadTunnelInterfaces();
+      } catch (err) {
+        alert(err.message || err.toString());
+      }
+    },
+
+    /**
+     * Refresh peers with transfer stats (called periodically like admin tunnel's refresh()).
+     */
+    async refreshPeers({ updateCharts = false } = {}) {
+      if (!this.authenticated || !this.activeInterfaceId) return;
+
+      try {
+        const res = await this.api.getTunnelInterfacePeers({ interfaceId: this.activeInterfaceId });
+        const peers = (res.peers || []).map(peer => {
+          // Parse dates
+          peer.createdAt = peer.createdAt ? new Date(peer.createdAt) : null;
+          peer.updatedAt = peer.updatedAt ? new Date(peer.updatedAt) : null;
+          peer.expiredAt = peer.expiredAt ? new Date(peer.expiredAt) : null;
+          peer.latestHandshakeAt = peer.latestHandshakeAt ? new Date(peer.latestHandshakeAt) : null;
+
+          // Avatar
+          if (peer.name && this.avatarSettings.dicebear) {
+            peer.avatar = `https://api.dicebear.com/9.x/${this.avatarSettings.dicebear}/svg?seed=${sha256(peer.name.toLowerCase().trim())}`;
+          }
+
+          // Transfer stats persistence (delta calculation for charts)
+          if (!this.peersPersist[peer.id]) {
+            this.peersPersist[peer.id] = {};
+            this.peersPersist[peer.id].transferRxHistory = Array(50).fill(0);
+            this.peersPersist[peer.id].transferRxPrevious = peer.transferRx || 0;
+            this.peersPersist[peer.id].transferTxHistory = Array(50).fill(0);
+            this.peersPersist[peer.id].transferTxPrevious = peer.transferTx || 0;
+          }
+
+          const pp = this.peersPersist[peer.id];
+          pp.transferRxCurrent = (peer.transferRx || 0) - pp.transferRxPrevious;
+          pp.transferRxPrevious = peer.transferRx || 0;
+          pp.transferTxCurrent = (peer.transferTx || 0) - pp.transferTxPrevious;
+          pp.transferTxPrevious = peer.transferTx || 0;
+
+          if (updateCharts) {
+            pp.transferRxHistory.push(pp.transferRxCurrent);
+            pp.transferRxHistory.shift();
+            pp.transferTxHistory.push(pp.transferTxCurrent);
+            pp.transferTxHistory.shift();
+
+            pp.transferTxSeries = [{ name: 'Tx', data: pp.transferTxHistory }];
+            pp.transferRxSeries = [{ name: 'Rx', data: pp.transferRxHistory }];
+
+            peer.transferTxHistory = pp.transferTxHistory;
+            peer.transferRxHistory = pp.transferRxHistory;
+            peer.transferMax = Math.max(...peer.transferTxHistory, ...peer.transferRxHistory);
+            peer.transferTxSeries = pp.transferTxSeries;
+            peer.transferRxSeries = pp.transferRxSeries;
+          }
+
+          peer.transferTxCurrent = pp.transferTxCurrent;
+          peer.transferRxCurrent = pp.transferRxCurrent;
+          peer.hoverTx = pp.hoverTx;
+          peer.hoverRx = pp.hoverRx;
+
+          return peer;
+        });
+
+        this.selectedInterfacePeers = peers;
+      } catch (err) {
+        console.error('refreshPeers failed:', err);
+      }
+    },
+
+    async backupInterface() {
+      if (!this.activeInterfaceId) return;
+      try {
+        const data = await this.api.backupTunnelInterface({ interfaceId: this.activeInterfaceId });
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${this.activeInterfaceId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(`Backup failed: ${err.message}`);
+      }
+    },
+
+    restoreInterface(e) {
+      if (!this.activeInterfaceId) return;
+      const fileInput = e.currentTarget.files.item(0);
+      if (!fileInput) return;
+      fileInput.text()
+        .then((content) => {
+          const file = JSON.parse(content);
+          return this.api.restoreTunnelInterface({ interfaceId: this.activeInterfaceId, file });
+        })
+        .then(() => {
+          alert('Configuration restored!');
+          this.refreshPeers();
+          this.loadTunnelInterfaces();
+        })
+        .catch((err) => alert(`Restore failed: ${err.message}`));
+    },
+
+    async toggleDisableRoutes(iface) {
+      try {
+        await this.api.updateTunnelInterface({
+          interfaceId: iface.id,
+          disableRoutes: !iface.disableRoutes,
+        });
+        await this.loadTunnelInterfaces();
+      } catch (err) {
         alert(`Failed: ${err.message}`);
       }
     },
@@ -900,6 +1140,9 @@ new Vue({
       this.refresh({
         updateCharts: this.updateCharts,
       }).catch(console.error);
+      this.refreshPeers({
+        updateCharts: this.updateCharts,
+      }).catch(console.error);
     }, 1000);
 
     this.api.getuiTrafficStats()
@@ -985,7 +1228,7 @@ new Vue({
     activeInterfaceId(newId) {
       if (newId) {
         this.selectedInterface = this.currentInterface;
-        this.loadInterfacePeers(newId);
+        this.refreshPeers({ updateCharts: false });
       } else {
         this.selectedInterface = null;
         this.selectedInterfacePeers = [];

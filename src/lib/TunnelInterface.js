@@ -23,6 +23,7 @@ class TunnelInterface {
       listenPort: data.listenPort,
       address: data.address || '',        // Tunnel address (например 10.100.0.1/24)
       settings: data.settings || {},      // AWG параметры
+      disableRoutes: data.disableRoutes || false, // Table = off (для кастомного роутинга)
       enabled: data.enabled !== false,
       createdAt: data.createdAt || new Date().toISOString(),
       peerIds: data.peerIds || [],        // Массив ID peers
@@ -97,6 +98,12 @@ class TunnelInterface {
    * Если peerData.generateKeys === true — сервер генерирует ключи автоматически.
    */
   async addPeer(peerData) {
+    // Auto-allocate IP if requested
+    if (peerData.autoAllocateIP) {
+      peerData.allowedIPs = this._getNextAvailableIP();
+      delete peerData.autoAllocateIP;
+    }
+
     // Генерация ключей если запрошена
     if (peerData.generateKeys) {
       const privateKey = (await Util.exec('wg genkey')).trim();
@@ -251,6 +258,54 @@ class TunnelInterface {
     return `${s.join('.')}/${prefix}`;
   }
 
+  /**
+   * Find next available IP in the interface subnet.
+   * Scans from network+1 to broadcast-1, skipping the interface IP and all used peer IPs.
+   * Returns IP in "X.X.X.X/32" format.
+   */
+  _getNextAvailableIP() {
+    if (!this.data.address) {
+      throw new Error('Interface has no address configured');
+    }
+
+    const [ifaceIp, prefix] = this.data.address.split('/');
+    const prefixLen = parseInt(prefix, 10);
+
+    const ipToInt = (ip) => {
+      const p = ip.split('.').map(Number);
+      return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+    };
+
+    const intToIp = (int) => {
+      return `${(int >>> 24) & 0xff}.${(int >>> 16) & 0xff}.${(int >>> 8) & 0xff}.${int & 0xff}`;
+    };
+
+    const ifaceInt = ipToInt(ifaceIp);
+    const maskInt = prefixLen === 0 ? 0 : (0xffffffff << (32 - prefixLen)) >>> 0;
+    const networkInt = (ifaceInt & maskInt) >>> 0;
+    const broadcastInt = (networkInt | ((~maskInt) >>> 0)) >>> 0;
+
+    // Collect all used IPs (interface + all peers)
+    const usedIPs = new Set();
+    usedIPs.add(ifaceInt);
+
+    for (const peer of this.peers.values()) {
+      if (peer.allowedIPs) {
+        const peerIpStr = peer.allowedIPs.split(',')[0].trim().split('/')[0];
+        usedIPs.add(ipToInt(peerIpStr));
+      }
+    }
+
+    // Scan from network+1 to broadcast-1
+    for (let i = networkInt + 1; i < broadcastInt; i++) {
+      if (!usedIPs.has(i >>> 0)) {
+        return `${intToIp(i)}/32`;
+      }
+    }
+
+    throw new Error('No available IP addresses in subnet');
+  }
+
   generateWgConfig() {
     let config = '';
 
@@ -259,6 +314,12 @@ class TunnelInterface {
     config += `# ${this.data.name}\n`;
     config += `PrivateKey = ${this.data.privateKey}\n`;
     config += `ListenPort = ${this.data.listenPort}\n`;
+
+    // Disable Routes: Table = off prevents wg-quick from adding routes to the routing table.
+    // Useful for custom routing / PBR setups.
+    if (this.data.disableRoutes) {
+      config += `Table = off\n`;
+    }
 
     if (this.data.address) {
       config += `Address = ${this.data.address}\n`;
@@ -400,6 +461,39 @@ class TunnelInterface {
   }
 
   /**
+   * Fetch live status from WireGuard: transfer stats, handshake, endpoint.
+   * Sets runtime fields on Peer instances (not persisted to disk).
+   */
+  async getStatus() {
+    if (!this.data.enabled) {
+      return;
+    }
+
+    try {
+      const dump = await Util.exec(`${this._syncBin} show ${this.id} dump`, { log: false });
+      const lines = dump.trim().split('\n').slice(1); // skip first line (interface info)
+
+      for (const line of lines) {
+        const [publicKey, , endpoint, , latestHandshakeAt, transferRx, transferTx] = line.split('\t');
+
+        const peer = Array.from(this.peers.values()).find(p => p.publicKey === publicKey);
+        if (!peer) continue;
+
+        peer.latestHandshakeAt = latestHandshakeAt === '0'
+          ? null
+          : new Date(Number(`${latestHandshakeAt}000`));
+        peer.transferRx = Number(transferRx);
+        peer.transferTx = Number(transferTx);
+        if (endpoint && endpoint !== '(none)') {
+          peer.runtimeEndpoint = endpoint;
+        }
+      }
+    } catch (err) {
+      debug(`getStatus failed for ${this.id}: ${err.message}`);
+    }
+  }
+
+  /**
    * Удалить интерфейс
    */
   async delete() {
@@ -437,6 +531,7 @@ class TunnelInterface {
       listenPort: this.data.listenPort,
       address: this.data.address,
       publicKey: this.data.publicKey,
+      disableRoutes: this.data.disableRoutes,
       enabled: this.data.enabled,
       createdAt: this.data.createdAt,
       peerCount: this.peers.size,
