@@ -1112,6 +1112,17 @@ module.exports = class Server {
       debug('Error initializing TunnelManager:', err);
     });
 
+    // ========================================================================
+    // Initialize InterfaceManager (async: loads + auto-starts enabled interfaces)
+    // Must be called explicitly at startup — getInstance() is lazy otherwise,
+    // so user tunnel interfaces would only start after the first API request.
+    // ========================================================================
+    InterfaceManager.getInstance().then(() => {
+      debug('InterfaceManager initialized successfully');
+    }).catch((err) => {
+      debug('Error initializing InterfaceManager:', err);
+    });
+
     createServer(toNodeListener(app)).listen(PORT, WEBUI_HOST);
     debug(`Listening on http://${WEBUI_HOST}:${PORT}`);
 

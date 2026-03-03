@@ -447,16 +447,64 @@ class TunnelInterface {
   }
 
   /**
-   * Перезагрузить конфиг без остановки (hot reload)
-   * Использует awg syncconf для AWG и wg syncconf для WireGuard.
+   * Generate a config suitable for `wg syncconf` / `awg syncconf`.
+   * Strips wg-quick-specific directives: Address, Table, PostUp, PostDown, DNS, MTU.
+   * These are understood by wg-quick/awg-quick but NOT by the kernel (syncconf).
+   * Disabled peers are excluded (toWgConfig() returns '' for them).
+   */
+  _generateSyncConfig() {
+    let config = '[Interface]\n';
+    config += `PrivateKey = ${this.data.privateKey}\n`;
+    config += `ListenPort = ${this.data.listenPort}\n`;
+
+    // AWG 2.0 kernel params (native to the amneziawg module, accepted by awg syncconf)
+    if (this.data.protocol === 'amneziawg-2.0' && this.data.settings) {
+      const s = this.data.settings;
+      config += `Jc = ${s.jc}\n`;
+      config += `Jmin = ${s.jmin}\n`;
+      config += `Jmax = ${s.jmax}\n`;
+      config += `S1 = ${s.s1}\n`;
+      config += `S2 = ${s.s2}\n`;
+      config += `S3 = ${s.s3}\n`;
+      config += `S4 = ${s.s4}\n`;
+      config += `H1 = ${s.h1}\n`;
+      config += `H2 = ${s.h2}\n`;
+      config += `H3 = ${s.h3}\n`;
+      config += `H4 = ${s.h4}\n`;
+      if (s.i1) config += `I1 = ${s.i1}\n`;
+      if (s.i2) config += `I2 = ${s.i2}\n`;
+      if (s.i3) config += `I3 = ${s.i3}\n`;
+      if (s.i4) config += `I4 = ${s.i4}\n`;
+      if (s.i5) config += `I5 = ${s.i5}\n`;
+    }
+
+    // Peers — toWgConfig() returns '' for disabled peers (they're excluded from kernel config)
+    for (const peer of this.peers.values()) {
+      config += peer.toWgConfig();
+    }
+
+    return config;
+  }
+
+  /**
+   * Перезагрузить конфиг без остановки (hot reload).
+   * Пишет stripped-конфиг в tmpfile вместо process substitution <(awg-quick strip ...).
+   * Process substitution может вызвать deadlock в ядре: awg syncconf удерживает lock
+   * на WireGuard device, а awg-quick strip на некоторых реализациях вызывает awg showconf,
+   * который тоже пытается захватить тот же lock → kernel deadlock → зависание хоста.
    */
   async reload() {
+    const tmpFile = `/tmp/${this.id}-syncconf.conf`;
     try {
-      await Util.exec(`${this._syncBin} syncconf ${this.id} <(${this._quickBin} strip ${this.id})`);
+      // Пишем stripped конфиг в tmpfile — без wg-quick директив (Address, PostUp, PostDown, Table)
+      await fs.writeFile(tmpFile, this._generateSyncConfig(), { mode: 0o600 });
+      await Util.exec(`${this._syncBin} syncconf ${this.id} ${tmpFile}`);
       debug(`Interface ${this.id} reloaded (hot)`);
     } catch (err) {
       debug(`Hot reload failed, restarting:`, err.message);
       await this.restart();
+    } finally {
+      await fs.unlink(tmpFile).catch(() => {});
     }
   }
 
