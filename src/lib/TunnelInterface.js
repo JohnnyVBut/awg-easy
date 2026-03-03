@@ -30,7 +30,11 @@ class TunnelInterface {
     };
     
     this.peers = new Map(); // peerId -> Peer instance
-    
+
+    // Serialises reload() calls so they never run concurrently on the same interface.
+    // Concurrent awg/wg syncconf on the same device causes a kernel deadlock.
+    this._reloadMutex = Promise.resolve();
+
     // Пути
     this.dataDir = '/etc/wireguard/data';
     this.interfaceFile = `${this.dataDir}/interfaces/${this.id}.json`;
@@ -157,36 +161,44 @@ class TunnelInterface {
   }
 
   /**
-   * Обновить peer
+   * Обновить peer.
+   * Reload выполняется ТОЛЬКО если изменились поля, влияющие на WireGuard конфиг.
+   * Metadata-поля (name, expireDate, oneTimeLink, updatedAt) не требуют reload —
+   * это предотвращает лишние системные вызовы и снижает вероятность kernel hang.
    */
   async updatePeer(peerId, updates) {
     const peer = this.peers.get(peerId);
     if (!peer) {
       throw new Error(`Peer ${peerId} not found`);
     }
-    
+
     // Обновить данные
     Object.assign(peer, updates);
-    
+
     // Валидация
     const errors = peer.validate();
     if (errors.length > 0) {
       throw new Error(`Peer validation failed: ${errors.join(', ')}`);
     }
-    
-    // Сохранить
+
+    // Сохранить на диск
     const peerFile = path.join(this.peersDir, `${peer.id}.json`);
     await fs.writeFile(peerFile, JSON.stringify(peer.toJSON(), null, 2));
-    
-    // Регенерировать конфиг
-    await this.regenerateConfig();
-    
-    // Перезагрузить
-    if (this.data.enabled) {
-      await this.reload();
+
+    // Поля, которые реально меняют WireGuard конфиг (попадают в [Peer] секцию)
+    const WG_CONFIG_FIELDS = ['enabled', 'publicKey', 'presharedKey', 'allowedIPs', 'endpoint', 'persistentKeepalive'];
+    const needsWgReload = WG_CONFIG_FIELDS.some(field => field in updates);
+
+    if (needsWgReload) {
+      // Регенерировать wg-quick конфиг файл
+      await this.regenerateConfig();
+      // Применить изменения в ядро (сериализованно через mutex)
+      if (this.data.enabled) {
+        await this.reload();
+      }
     }
-    
-    debug(`Peer ${peerId} updated`);
+
+    debug(`Peer ${peerId} updated (wgReload=${needsWgReload})`);
     return peer;
   }
 
@@ -488,21 +500,41 @@ class TunnelInterface {
 
   /**
    * Перезагрузить конфиг без остановки (hot reload).
-   * Пишет stripped-конфиг в tmpfile вместо process substitution <(awg-quick strip ...).
-   * Process substitution может вызвать deadlock в ядре: awg syncconf удерживает lock
-   * на WireGuard device, а awg-quick strip на некоторых реализациях вызывает awg showconf,
-   * который тоже пытается захватить тот же lock → kernel deadlock → зависание хоста.
+   *
+   * Два ключевых решения для предотвращения kernel deadlock:
+   *
+   * 1. MUTEX: конкурентные вызовы reload() выстраиваются в очередь.
+   *    Два одновременных `awg syncconf` на одном устройстве = kernel deadlock.
+   *
+   * 2. TMPFILE вместо process substitution <(awg-quick strip ...):
+   *    Process substitution запускает awg-quick strip ПАРАЛЛЕЛЬНО с awg syncconf.
+   *    Если awg-quick strip вызывает awg showconf — оба процесса конкурируют за
+   *    kernel device lock → deadlock. С tmpfile шаги строго последовательны.
+   *
+   * Fallback restart() НАМЕРЕННО убран: если syncconf висит в D-state в ядре,
+   * вызов awg-quick down/up тоже повиснет. Лучше оставить текущее состояние
+   * и дать системе работать — конфиг восстановится при следующем рестарте контейнера.
    */
   async reload() {
+    // Chain onto the mutex so concurrent calls run sequentially, never in parallel
+    this._reloadMutex = this._reloadMutex
+      .then(() => this._doReload())
+      .catch((err) => {
+        debug(`reload mutex chain error (ignored): ${err.message}`);
+      });
+    return this._reloadMutex;
+  }
+
+  async _doReload() {
     const tmpFile = `/tmp/${this.id}-syncconf.conf`;
     try {
-      // Пишем stripped конфиг в tmpfile — без wg-quick директив (Address, PostUp, PostDown, Table)
       await fs.writeFile(tmpFile, this._generateSyncConfig(), { mode: 0o600 });
       await Util.exec(`${this._syncBin} syncconf ${this.id} ${tmpFile}`);
       debug(`Interface ${this.id} reloaded (hot)`);
     } catch (err) {
-      debug(`Hot reload failed, restarting:`, err.message);
-      await this.restart();
+      // НЕ вызываем restart() — это может тоже повиснуть в kernel D-state.
+      // Логируем и продолжаем — интерфейс продолжит работу со старым kernel-конфигом.
+      debug(`Hot reload failed (${err.message}) — skipping restart to avoid kernel hang`);
     } finally {
       await fs.unlink(tmpFile).catch(() => {});
     }

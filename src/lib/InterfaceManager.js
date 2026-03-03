@@ -346,18 +346,24 @@ class InterfaceManager {
   }
 }
 
-// Singleton instance
+// Singleton instance + its init promise.
+// We store the promise separately so that concurrent callers ALL await the same
+// init() run instead of each seeing instance != null and returning a half-initialised
+// object (race condition: instance is set before await instance.init() resolves).
 let instance = null;
+let instanceReady = null;
 
 module.exports = {
   /**
-   * Получить singleton instance
+   * Получить singleton instance.
+   * Все конкурентные вызовы ждут одного и того же promise инициализации.
    */
   getInstance: async () => {
     if (!instance) {
       instance = new InterfaceManager();
-      await instance.init();
+      instanceReady = instance.init(); // сохраняем promise до await
     }
+    await instanceReady; // ждём завершения init() (включая auto-start)
     return instance;
   },
   
