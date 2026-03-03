@@ -493,16 +493,31 @@ class TunnelInterface {
   }
 
   /**
-   * Атомарно удалить один peer из работающего ядра.
+   * Убрать peer из работающего ядра.
+   *
+   * ВАЖНО: `awg set peer <pubkey> remove` виснет в ядре на второй вызов по паттерну
+   * add → remove → add → remove (баг AWG kernel module).
+   * Поэтому вместо `set peer remove` делаем полный рестарт интерфейса:
+   *   awg-quick down wg10 + awg-quick up wg10
+   * Конфиг на диске уже регенерирован без disabled-пира, поэтому после up
+   * отключённый пир в ядро не попадёт.
+   *
+   * Рестарт сериализован через _reloadMutex — не допускаем параллельных down/up.
    */
-  async _kernelRemovePeer(peerId, publicKey) {
+  async _kernelRemovePeer(peerId, _publicKey) {
     if (!this.data.enabled) return;
-    try {
-      await Util.exec(`${this._syncBin} set ${this.id} peer ${publicKey} remove`);
-      debug(`Peer ${peerId} removed from kernel (${this.id})`);
-    } catch (err) {
-      debug(`_kernelRemovePeer failed for ${peerId}: ${err.message}`);
-    }
+    // Chain onto the mutex so concurrent disable requests don't race
+    this._reloadMutex = this._reloadMutex
+      .then(async () => {
+        try {
+          await this.restart(); // down + up; config already excludes disabled peer
+          debug(`Interface ${this.id} restarted to disable peer ${peerId}`);
+        } catch (err) {
+          debug(`_kernelRemovePeer restart failed for ${peerId}: ${err.message}`);
+        }
+      })
+      .catch(() => {});
+    return this._reloadMutex;
   }
 
   /**
