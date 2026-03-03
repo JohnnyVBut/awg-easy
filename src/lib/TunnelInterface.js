@@ -148,14 +148,14 @@ class TunnelInterface {
     this.data.peerIds.push(peer.id);
     await this.save();
     
-    // Регенерировать конфиг
+    // Регенерировать конфиг на диске
     await this.regenerateConfig();
-    
-    // Перезагрузить интерфейс если запущен
+
+    // Применить в ядро атомарно (без syncconf — чтобы не трогать H1-H4)
     if (this.data.enabled) {
-      await this.reload();
+      await this._kernelSetPeer(peer);
     }
-    
+
     debug(`Peer ${peer.id} added to ${this.id}`);
     return peer;
   }
@@ -190,11 +190,15 @@ class TunnelInterface {
     const needsWgReload = WG_CONFIG_FIELDS.some(field => field in updates);
 
     if (needsWgReload) {
-      // Регенерировать wg-quick конфиг файл
+      // Регенерировать wg-quick конфиг файл на диске
       await this.regenerateConfig();
-      // Применить изменения в ядро (сериализованно через mutex)
+      // Применить изменения в ядро атомарно (один peer — без syncconf)
       if (this.data.enabled) {
-        await this.reload();
+        if (peer.enabled) {
+          await this._kernelSetPeer(peer);
+        } else {
+          await this._kernelRemovePeer(peer.id, peer.publicKey);
+        }
       }
     }
 
@@ -210,26 +214,29 @@ class TunnelInterface {
     if (!peer) {
       throw new Error(`Peer ${peerId} not found`);
     }
-    
+
+    // Сохраняем publicKey до удаления из Map (нужен для kernel remove)
+    const { publicKey } = peer;
+
     // Удалить файл
     const peerFile = path.join(this.peersDir, `${peer.id}.json`);
     await fs.unlink(peerFile);
-    
+
     // Удалить из Map
     this.peers.delete(peerId);
-    
+
     // Обновить список
     this.data.peerIds = this.data.peerIds.filter(id => id !== peerId);
     await this.save();
-    
-    // Регенерировать конфиг
+
+    // Регенерировать конфиг на диске
     await this.regenerateConfig();
-    
-    // Перезагрузить
+
+    // Удалить из ядра атомарно
     if (this.data.enabled) {
-      await this.reload();
+      await this._kernelRemovePeer(peerId, publicKey);
     }
-    
+
     debug(`Peer ${peerId} removed`);
   }
 
@@ -456,6 +463,46 @@ class TunnelInterface {
   async restart() {
     await this.stop();
     await this.start();
+  }
+
+  /**
+   * Атомарно добавить/обновить один peer в работающем ядре.
+   * Использует `wg set peer` / `awg set peer` — не трогает [Interface] параметры
+   * (H1-H4, Jc, ListenPort и т.д.), только конкретный [Peer].
+   * Это безопаснее чем syncconf: нет риска kernel deadlock.
+   */
+  async _kernelSetPeer(peer) {
+    if (!this.data.enabled) return;
+    const pskFile = peer.presharedKey ? `/tmp/${this.id}-psk-${peer.id}` : null;
+    try {
+      if (pskFile) {
+        await fs.writeFile(pskFile, peer.presharedKey + '\n', { mode: 0o600 });
+      }
+      let cmd = `${this._syncBin} set ${this.id} peer ${peer.publicKey}`;
+      if (pskFile) cmd += ` preshared-key ${pskFile}`;
+      if (peer.allowedIPs) cmd += ` allowed-ips ${peer.allowedIPs}`;
+      if (peer.endpoint) cmd += ` endpoint ${peer.endpoint}`;
+      if (peer.persistentKeepalive > 0) cmd += ` persistent-keepalive ${peer.persistentKeepalive}`;
+      await Util.exec(cmd);
+      debug(`Peer ${peer.id} set in kernel (${this.id})`);
+    } catch (err) {
+      debug(`_kernelSetPeer failed for ${peer.id}: ${err.message}`);
+    } finally {
+      if (pskFile) await fs.unlink(pskFile).catch(() => {});
+    }
+  }
+
+  /**
+   * Атомарно удалить один peer из работающего ядра.
+   */
+  async _kernelRemovePeer(peerId, publicKey) {
+    if (!this.data.enabled) return;
+    try {
+      await Util.exec(`${this._syncBin} set ${this.id} peer ${publicKey} remove`);
+      debug(`Peer ${peerId} removed from kernel (${this.id})`);
+    } catch (err) {
+      debug(`_kernelRemovePeer failed for ${peerId}: ${err.message}`);
+    }
   }
 
   /**

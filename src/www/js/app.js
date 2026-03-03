@@ -358,7 +358,10 @@ new Vue({
           const session = await this.api.getSession();
           this.authenticated = session.authenticated;
           this.requiresPassword = session.requiresPassword;
-          return this.refresh();
+          await this.refresh();
+          // loadTunnelInterfaces is called in mounted() but may have got 401
+          // (unauthenticated) before login. Re-load now that we have a session.
+          this.loadTunnelInterfaces();
         })
         .catch((err) => {
           alert(err.message || err.toString());
