@@ -22,13 +22,18 @@
 | PostUp/PostDown | `iptables-nft` с FORWARD ACCEPT + MASQUERADE. `Table = off` если `disableRoutes` |
 | Хранилище | Интерфейсы: `/etc/wireguard/data/interfaces/{id}.json`. Пиры: `/etc/wireguard/data/peers/{id}/{peerId}.json`. Настройки: `/etc/wireguard/data/settings.json` |
 
-#### UI (вкладки)
-| Вкладка | Статус | Примечание |
-|---------|--------|-----------|
-| **Clients** | ✅ Работает | Старая архитектура, не трогаем |
-| **WAN Tunnels** | ✅ Работает | Старая архитектура, deprecated |
-| **Tunnel Interfaces** | ✅ Частично | Базовые create/start/stop/delete + peer add/delete + QR/download |
-| **Settings** | ✅ **ТОЛЬКО ЧТО ДОБАВЛЕНО** | Global Settings форма + AWG2 Templates (список, create/edit/delete, set-default, modal с полной формой) |
+#### UI (sidebar навигация)
+| Страница | Ключ `activePage` | Статус | Примечание |
+|----------|------------------|--------|-----------|
+| **Interfaces** | `'interfaces'` | ✅ Работает | Динамические вкладки, per-interface view (info + peers) |
+| **Gateways** | `'gateways'` | ⏳ Placeholder | "Coming soon" |
+| **Routing** | `'routing'` | ⏳ Placeholder | "Coming soon" |
+| **Firewall / NAT** | `'firewall'` | ⏳ Placeholder | "Coming soon" |
+| **Settings** | `'settings'` | ✅ Работает | Global Settings + AWG2 Templates |
+| **Administration** | `'administration'` | ✅ Работает | Admin Tunnel (бывший Clients tab) |
+
+*WAN Tunnels* — полностью удалены (код, HTML, данные, методы).
+*Горизонтальные табы* — заменены боковым меню (sidebar).
 
 ---
 
@@ -79,12 +84,14 @@
 
 При первом запуске контейнера автоматически создаётся один системный интерфейс — **Admin Instance**. Все остальные интерфейсы создаются пользователем вручную через UI. Admin Instance и пользовательские интерфейсы разделены — в UI они отображаются в разных секциях и не смешиваются.
 
-### Структура UI (вкладки)
+### Структура UI (sidebar навигация)
 
-- **Admin** — системный интерфейс + его пиры
-- **Instances** — data plane интерфейсы (создание, старт/стоп, редактирование)
-- **Peers** — все пиры по всем инстансам, с фильтрацией
+- **Interfaces** — data plane интерфейсы: динамические вкладки, per-interface view (info card + peers list)
+- **Gateways** — (coming soon)
+- **Routing** — (coming soon)
+- **Firewall / NAT** — (coming soon)
 - **Settings** — глобальные настройки и AWG2 Templates
+- **Administration** — Admin Tunnel (бывший Clients), системный интерфейс + его пиры
 
 ---
 
@@ -387,9 +394,9 @@ this.tunnelInterfaces[idx] = updatedItem;  // Vue 2 не увидит измен
 
 | Файл | Роль |
 |------|------|
-| `src/www/index.html` | Весь шаблон Vue (один файл, ~1700 строк) |
-| `src/www/js/app.js` | Vue instance: `data`, `methods`, `mounted` |
+| `src/www/index.html` | Весь шаблон Vue (один файл, ~1400 строк). Sidebar + `<main>` content area. |
+| `src/www/js/app.js` | Vue instance: `data`, `methods`, `computed`, `watch`, `mounted` |
 | `src/www/js/api.js` | Все HTTP запросы к backend API |
-| `src/www/css/app.css` | Скомпилированный Tailwind (не редактировать вручную) |
+| `src/www/css/app.css` | Скомпилированный Tailwind (не редактировать вручную, многие классы отсутствуют) |
 
-При добавлении новой вкладки: добавить кнопку в nav, добавить `v-if="activeTab === '...'"` секцию, добавить данные и методы в `app.js`, добавить API методы в `api.js`.
+При добавлении новой страницы: добавить элемент в `sidebarMenu[]`, добавить `v-if="activePage === '...'"` секцию в `<main>`, добавить данные и методы в `app.js`, добавить API методы в `api.js`.

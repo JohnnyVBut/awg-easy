@@ -11,7 +11,7 @@
 `src/www/css/app.css` — прекомпилированный статический файл. Новые Tailwind-классы **не работают**.
 Перед использованием любого класса проверить: `grep "класс" src/www/css/app.css`
 Если класса нет — использовать `style="..."` (inline CSS).
-Зафиксировано отсутствующие: `px-6`, `py-10`, `py-8`, `min-h-full`, `items-start`, **`p-6`**, **`border-t`**, **`border-neutral-*`**, **`space-y-2`**, **`space-y-4`** → нужен inline style.
+Зафиксировано отсутствующие: `px-6`, `py-10`, `py-8`, `min-h-full`, `items-start`, **`p-6`**, **`border-t`**, **`border-neutral-*`**, **`space-y-2`**, **`space-y-4`**, **`space-y-6`**, **`hover:bg-*`** → нужен inline style.
 
 **Замены для `p-6` (= 24px):**
 - `p-6 pb-4` → `style="padding:24px 24px 16px;"` (header)
@@ -248,15 +248,19 @@ GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 
 ---
 
-## Статус UI вкладок
+## UI Навигация — Sidebar + Per-Page Routing
 
-| Вкладка | Ключ `activeTab` | Цвет | Статус |
-|---------|-----------------|------|--------|
-| Clients | `'clients'` | blue | ✅ старая архитектура |
-| WAN Tunnels | `'wanTunnels'` | blue | ✅ deprecated |
-| Tunnel Interfaces | `'tunnelInterfaces'` | green | ✅ частично |
-| Settings | `'settings'` | purple | ✅ готово |
-| Admin | `'admin'` | — | ❌ не реализовано |
+**Архитектура:** Боковое меню (sidebar) + `activePage` переключает контент `<main>`.
+Старые горизонтальные табы (`activeTab`) удалены. WAN Tunnels удалены полностью.
+
+| Страница | Ключ `activePage` | Статус |
+|----------|------------------|--------|
+| Interfaces | `'interfaces'` | ✅ динамические вкладки, per-interface view (info + peers) |
+| Gateways | `'gateways'` | ⏳ placeholder ("Coming soon") |
+| Routing | `'routing'` | ⏳ placeholder ("Coming soon") |
+| Firewall / NAT | `'firewall'` | ⏳ placeholder ("Coming soon") |
+| Settings | `'settings'` | ✅ Global Settings + AWG2 Templates |
+| Administration | `'administration'` | ✅ Admin Tunnel (бывший Clients tab) |
 
 ---
 
@@ -279,26 +283,35 @@ GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 
 ## Checkpoint (текущее состояние)
 
-**Последний коммит:** `aa4feda`
 **Ветка:** `feature/kernel-module`
-**Что работает:** Settings tab + AWG2 Templates + Tunnel Interfaces (create/start/stop/restart с реактивным UI обновлением)
-**Что не реализовано:** Admin tab, Instances edit modal, Peers tab
+**Что работает:**
+- Sidebar навигация (6 пунктов)
+- Interfaces page: dynamic tabs + per-interface view (info card + peers list)
+- Settings page: Global Settings + AWG2 Templates
+- Administration page: Admin Tunnel (бывший Clients)
+- Placeholder pages: Gateways, Routing, Firewall/NAT
+- WAN Tunnels: полностью удалены
+
+**Что не реализовано:**
+- Admin Instance backend (AdminInstance.js)
+- Interfaces edit modal
+- Peer enable/disable, online status, RX/TX
+- Gateways/Routing/Firewall backend
 
 ## Следующие задачи (по приоритету)
 
 ### 1. Admin Instance
 - `src/lib/AdminInstance.js` — env vars → ключи → поднять при старте
 - API: `GET /api/admin`, `GET/POST/DELETE /api/admin/peers`, config + QR
-- UI: вкладка **Admin** (read-only статус, список пиров)
+- UI: Administration page → Admin Tunnel (read-only статус, список пиров)
 
-### 2. Instances Tab улучшения
+### 2. Interfaces улучшения
 - Edit modal (name/address/protocol/settings)
-- Disable Routes checkbox
 - Load from template dropdown + авто-заполнение AWG2
 - Public key display + Copy button
 
-### 3. Peers Tab
-- Отдельная вкладка, filter по интерфейсу
+### 3. Peers улучшения
 - Enable/disable toggle, online/offline (latestHandshake), RX/TX
+- Peer edit modal
 
 Полный список → `REQUIREMENTS.md` раздел "🚧 Не реализовано".
