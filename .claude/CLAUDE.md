@@ -190,20 +190,28 @@ add→remove→add→remove (баг AWG kernel module, подтверждён т
 WireGuard 1.0 (`wg set peer remove`) этим не страдает.
 
 ```javascript
-// ПРАВИЛЬНО:
+// ПРАВИЛЬНО (текущее состояние):
 async _kernelRemovePeer(peerId, publicKey) {
   if (!this.data.enabled) return;
   if (this.data.protocol === 'amneziawg-2.0') {
     // awg set peer remove deadlocks on add→remove→add→remove (AWG kernel bug).
-    // syncconf is safe: atomically replaces peer list, no remove syscall.
+    // syncconf is safer: deadlocks later (~5+ iterations vs ~3).
     await this.reload();
   } else {
     await Util.exec(`${this._syncBin} set ${this.id} peer ${publicKey} remove`);
   }
 }
-// НЕПРАВИЛЬНО: awg set peer remove для AWG2 — зависнет через несколько on/off
-// НЕПРАВИЛЬНО: restart() — флапает интерфейс и сбрасывает всю статистику
 ```
+
+**⚠️ ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ AWG2:**
+Любая remove→add→remove операция с AWG ядром в конечном счёте дедлочится — это
+фундаментальный баг в AWG kernel module. `awg syncconf` задерживает дедлок
+(~5+ итераций) но не устраняет полностью. `awg set peer remove` дедлочится быстрее (~3).
+WireGuard 1.0 этим не страдает совсем.
+
+**Единственный надёжный фикс:** `restart()` (down+up) — гарантированно работает,
+но флапает интерфейс и сбрасывает всю статистику пиров.
+**Принятое решение:** текущий подход (syncconf) достаточен — пиры выключают редко.
 
 ---
 
