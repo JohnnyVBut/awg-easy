@@ -510,20 +510,31 @@ class TunnelInterface {
   }
 
   /**
-   * Убрать peer из работающего ядра через `wg set peer remove` / `awg set peer remove`.
+   * Убрать peer из работающего ядра.
    *
-   * Известный баг AWG kernel module: при паттерне add→remove→add→remove
-   * через ~3 итерации команда уходит в D-state (uninterruptible sleep) ядра.
-   * WG 1.0 этой проблемы не имеет.
+   * `awg set peer remove` и `awg syncconf` оба дедлочатся в AWG kernel module
+   * при паттерне add→remove→add→remove (~3 и ~5 итераций соответственно).
+   * WireGuard 1.0 этой проблемы не имеет.
+   *
+   * Решение: полный restart() интерфейса (down + up).
+   * Конфиг на диске уже регенерирован без disabled-пира — после up
+   * отключённый пир в ядро не попадёт.
+   * Минус: сбрасывается peer-статистика (rx/tx, handshake).
+   * Рестарт сериализован через _reloadMutex.
    */
-  async _kernelRemovePeer(peerId, publicKey) {
+  async _kernelRemovePeer(peerId, _publicKey) {
     if (!this.data.enabled) return;
-    try {
-      await Util.exec(`${this._syncBin} set ${this.id} peer ${publicKey} remove`);
-      debug(`Peer ${peerId} removed from kernel (${this.id})`);
-    } catch (err) {
-      debug(`_kernelRemovePeer failed for ${peerId}: ${err.message}`);
-    }
+    this._reloadMutex = this._reloadMutex
+      .then(async () => {
+        try {
+          await this.restart();
+          debug(`Interface ${this.id} restarted to remove peer ${peerId}`);
+        } catch (err) {
+          debug(`_kernelRemovePeer restart failed for ${peerId}: ${err.message}`);
+        }
+      })
+      .catch(() => {});
+    return this._reloadMutex;
   }
 
   /**
