@@ -426,6 +426,15 @@ class TunnelInterface {
         debug(`Interface ${this.id} already exists — cycling down/up to apply PostUp`);
         await Util.exec(`${this._quickBin} down ${this.id}`);
         await Util.exec(`${this._quickBin} up ${this.id}`);
+      } else if (err.message && err.message.includes('Address in use')) {
+        // IP-адрес занят мусорным маршрутом от предыдущего wg-интерфейса.
+        // --network host: интерфейсы переживают контейнеры, маршруты могут остаться
+        // даже после удаления интерфейса. Сбрасываем маршрут и поднимаем снова.
+        debug(`Interface ${this.id} address in use — flushing stale routes and retrying`);
+        const subnet = this.data.address.replace(/\.\d+\/\d+$/, '.0') + '/' + this.data.address.split('/')[1];
+        await Util.exec(`ip route del ${subnet} 2>/dev/null || true`);
+        await Util.exec(`ip route del ${subnet} table local 2>/dev/null || true`);
+        await Util.exec(`${this._quickBin} up ${this.id}`);
       } else {
         throw err;
       }
