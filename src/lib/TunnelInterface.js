@@ -346,7 +346,7 @@ class TunnelInterface {
       // PostUp/PostDown are executed by wg-quick / awg-quick on interface up/down.
       const subnet = this._cidrToSubnet(this.data.address);
       config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
-      config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE\n`;
+      config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE 2>/dev/null || true\n`;
     }
 
     // AWG параметры
@@ -453,9 +453,17 @@ class TunnelInterface {
     try {
       await Util.exec(`${this._quickBin} down ${this.id}`);
     } catch (err) {
-      // Игнорируем если интерфейс уже был остановлен
-      if (!err.message.includes('is not a WireGuard interface') &&
-          !err.message.includes('is not an AmneziaWG interface')) {
+      // Игнорируем безопасные ошибки при down:
+      // - интерфейс уже остановлен (нормально)
+      // - iptables-правила не найдены при PostDown (PostUp мог не выполниться
+      //   или правила уже удалены; интерфейс всё равно снят через ip link delete)
+      const ignored = [
+        'is not a WireGuard interface',
+        'is not an AmneziaWG interface',
+        'iptables: Bad rule',
+        'does a matching rule exist',
+      ];
+      if (!ignored.some(s => err.message.includes(s))) {
         throw err;
       }
     }
