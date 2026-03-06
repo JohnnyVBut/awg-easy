@@ -510,27 +510,19 @@ class TunnelInterface {
   }
 
   /**
-   * Убрать peer из работающего ядра.
+   * Убрать peer из работающего ядра через `wg set peer remove` / `awg set peer remove`.
    *
-   * WireGuard 1.0: `wg set peer <pubkey> remove` — атомарная операция, дедлоков нет.
-   *
-   * AmneziaWG 2.0: `awg set peer remove` имеет баг в ядре — зависает на паттерне
-   *   add → remove → add → remove (подтверждено тестами).
-   * Решение: `awg syncconf` через reload() — атомарно заменяет весь список пиров,
-   *   disabled-пир уже исключён из конфига (regenerateConfig() вызван до нас).
-   *   Mutex в reload() предотвращает конкурентные syncconf.
-   *   Интерфейс не рестартует → статистика сохраняется.
+   * Известный баг AWG kernel module: при паттерне add→remove→add→remove
+   * через ~3 итерации команда уходит в D-state (uninterruptible sleep) ядра.
+   * WG 1.0 этой проблемы не имеет.
    */
   async _kernelRemovePeer(peerId, publicKey) {
     if (!this.data.enabled) return;
-    if (this.data.protocol === 'amneziawg-2.0') {
-      // awg set peer remove deadlocks on add→remove→add→remove cycle (AWG kernel bug).
-      // syncconf is safe: atomically replaces peer list, no remove syscall involved.
-      await this.reload();
-      debug(`Peer ${peerId} removed from kernel via syncconf (${this.id})`);
-    } else {
+    try {
       await Util.exec(`${this._syncBin} set ${this.id} peer ${publicKey} remove`);
-      debug(`Peer ${peerId} removed from kernel via set (${this.id})`);
+      debug(`Peer ${peerId} removed from kernel (${this.id})`);
+    } catch (err) {
+      debug(`_kernelRemovePeer failed for ${peerId}: ${err.message}`);
     }
   }
 
