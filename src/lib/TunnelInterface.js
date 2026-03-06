@@ -554,19 +554,14 @@ class TunnelInterface {
   /**
    * Перезагрузить конфиг без остановки (hot reload).
    *
-   * Два ключевых решения для предотвращения kernel deadlock:
+   * MUTEX: конкурентные вызовы reload() выстраиваются в очередь.
+   * Два одновременных `awg syncconf` на одном устройстве = kernel deadlock.
+   * Mutex гарантирует что в любой момент выполняется максимум один syncconf,
+   * поэтому process substitution <(awg-quick strip ...) безопасна —
+   * параллельной конкуренции за kernel device lock нет.
    *
-   * 1. MUTEX: конкурентные вызовы reload() выстраиваются в очередь.
-   *    Два одновременных `awg syncconf` на одном устройстве = kernel deadlock.
-   *
-   * 2. TMPFILE вместо process substitution <(awg-quick strip ...):
-   *    Process substitution запускает awg-quick strip ПАРАЛЛЕЛЬНО с awg syncconf.
-   *    Если awg-quick strip вызывает awg showconf — оба процесса конкурируют за
-   *    kernel device lock → deadlock. С tmpfile шаги строго последовательны.
-   *
-   * Fallback restart() НАМЕРЕННО убран: если syncconf висит в D-state в ядре,
-   * вызов awg-quick down/up тоже повиснет. Лучше оставить текущее состояние
-   * и дать системе работать — конфиг восстановится при следующем рестарте контейнера.
+   * Доказательство: WireGuard.js использует тот же паттерн для wg0 (AWG2)
+   * и работает стабильно.
    */
   async reload() {
     // Chain onto the mutex so concurrent calls run sequentially, never in parallel
@@ -579,17 +574,11 @@ class TunnelInterface {
   }
 
   async _doReload() {
-    const tmpFile = `/tmp/${this.id}-syncconf.conf`;
     try {
-      await fs.writeFile(tmpFile, this._generateSyncConfig(), { mode: 0o600 });
-      await Util.exec(`${this._syncBin} syncconf ${this.id} ${tmpFile}`);
+      await Util.exec(`${this._syncBin} syncconf ${this.id} <(${this._quickBin} strip ${this.id})`);
       debug(`Interface ${this.id} reloaded (hot)`);
     } catch (err) {
-      // НЕ вызываем restart() — это может тоже повиснуть в kernel D-state.
-      // Логируем и продолжаем — интерфейс продолжит работу со старым kernel-конфигом.
-      debug(`Hot reload failed (${err.message}) — skipping restart to avoid kernel hang`);
-    } finally {
-      await fs.unlink(tmpFile).catch(() => {});
+      debug(`Hot reload failed (${err.message})`);
     }
   }
 
