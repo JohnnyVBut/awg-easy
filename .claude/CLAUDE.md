@@ -183,6 +183,28 @@ get _syncBin()  { return this.data.protocol === 'amneziawg-2.0' ? 'awg' : 'wg'; 
 // НЕПРАВИЛЬНО: захардкодить только wg-quick или только awg-quick
 ```
 
+### FIX-8: _kernelRemovePeer — AWG2 использует syncconf, не set peer remove
+**Файл:** `src/lib/TunnelInterface.js` → метод `_kernelRemovePeer()`
+**Причина:** `awg set peer <pubkey> remove` зависает в ядре на паттерне
+add→remove→add→remove (баг AWG kernel module, подтверждён тестами).
+WireGuard 1.0 (`wg set peer remove`) этим не страдает.
+
+```javascript
+// ПРАВИЛЬНО:
+async _kernelRemovePeer(peerId, publicKey) {
+  if (!this.data.enabled) return;
+  if (this.data.protocol === 'amneziawg-2.0') {
+    // awg set peer remove deadlocks on add→remove→add→remove (AWG kernel bug).
+    // syncconf is safe: atomically replaces peer list, no remove syscall.
+    await this.reload();
+  } else {
+    await Util.exec(`${this._syncBin} set ${this.id} peer ${publicKey} remove`);
+  }
+}
+// НЕПРАВИЛЬНО: awg set peer remove для AWG2 — зависнет через несколько on/off
+// НЕПРАВИЛЬНО: restart() — флапает интерфейс и сбрасывает всю статистику
+```
+
 ---
 
 ## Архитектура проекта
@@ -374,9 +396,9 @@ async _doReload() {
 
 ## Следующие задачи (по приоритету)
 
-### 0. [В ПРОЦЕССЕ] native-approach рефакторинг
-- ✅ `_kernelRemovePeer` → `awg set peer remove` (без рестарта)
-- ⬜ `_doReload()` → process substitution вместо tmpfile (см. раздел выше)
+### 0. [✅ ГОТОВО] native-approach рефакторинг
+- ✅ `_kernelRemovePeer` → `awg set peer remove` (без рестарта, без потери статистики)
+- ✅ `_doReload()` → process substitution вместо tmpfile (как WireGuard.js, mutex гарантирует безопасность)
 
 ### 1. Admin Instance
 - `src/lib/AdminInstance.js` — env vars → ключи → поднять при старте
