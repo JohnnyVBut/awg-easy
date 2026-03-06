@@ -44,8 +44,9 @@
 
 ## Правила работы
 
-- Ветка: `feature/kernel-module` | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
-- Коммитить и пушить **только в `feature/kernel-module`**, не в worktree-ветки
+- Активная ветка: **`feature/native-approach`** | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
+- Базовая ветка: `feature/new-design` (из неё создана `feature/native-approach`)
+- Коммитить и пушить только в активную ветку, не в worktree-ветки
 - После каждого пуша напоминать команды деплоя на сервере
 - Каждый коммит — подробное сообщение (что, почему, какие файлы)
 - После завершения задачи обновлять `REQUIREMENTS.md` (статус) и этот файл
@@ -53,7 +54,7 @@
 ## Деплой на сервере
 
 ```bash
-git pull origin feature/kernel-module
+git pull origin feature/native-approach
 ./build.sh
 docker compose down && docker compose up -d
 ```
@@ -266,24 +267,97 @@ GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 
 ## Что сделано (хронология коммитов)
 
-| Коммит | Что |
-|--------|-----|
-| `de31c42` | fix: iptables-nft + FORWARD ACCEPT в PostUp/PostDown |
-| `8892179` | fix: регенерация конфига + down→up при "already exists" |
-| `359984e` | fix: H1-H4 как non-overlapping ranges |
-| `63a7a18` | refactor: убран remoteAddress, Address вычисляется из AllowedIPs |
-| `b4fc216` | docs: REQUIREMENTS.md |
-| `e029c52` | docs: добавлены разделы Peers и Settings в REQUIREMENTS |
-| `c83b983` | feat: Settings.js + Settings/Templates API |
-| `7482fc2` | feat(ui): вкладка Settings (Global Settings + AWG2 Templates) |
-| `b872903` | docs: обновлён статус в REQUIREMENTS.md |
-| `aa4feda` | fix(ui): reactive status update after start/stop/restart |
+| Коммит | Ветка | Что |
+|--------|-------|-----|
+| `de31c42` | feature/kernel-module | fix: iptables-nft + FORWARD ACCEPT в PostUp/PostDown |
+| `8892179` | feature/kernel-module | fix: регенерация конфига + down→up при "already exists" |
+| `359984e` | feature/kernel-module | fix: H1-H4 как non-overlapping ranges |
+| `63a7a18` | feature/kernel-module | refactor: убран remoteAddress, Address вычисляется из AllowedIPs |
+| `c83b983` | feature/kernel-module | feat: Settings.js + Settings/Templates API |
+| `7482fc2` | feature/kernel-module | feat(ui): вкладка Settings (Global Settings + AWG2 Templates) |
+| `aa4feda` | feature/kernel-module | fix(ui): reactive status update after start/stop/restart |
+| `7cfee9d` | feature/new-design | fix: AWG kernel deadlock — restart() вместо set peer remove |
+| `139e7fa` | feature/new-design | revert: _kernelRemovePeer вернули к awg set peer remove |
+
+---
+
+## 🔬 ИССЛЕДОВАНИЕ — feature/native-approach
+
+### Контекст (почему создана ветка)
+
+**Наблюдение:** `WireGuard.js` (admin-туннель wg0) использует AWG2-параметры (Jc, Jmin, H1-H4)
+и вызывает `wg syncconf wg0 <(wg-quick strip wg0)` — process substitution.
+На сервере `wg-quick` = `awg-quick` (бинарник AWG, не стандартный WG).
+Это означает что admin-туннель фактически делает:
+```bash
+awg syncconf wg0 <(awg-quick strip wg0)
+```
+...и **работает стабильно** (логи показывают завершение за ~30ms без зависаний).
+
+**Вывод:** В `TunnelInterface.js` был добавлен tmpfile-подход как страховка от deadlock'а,
+но `WireGuard.js` доказывает что process substitution с AWG2 работает нормально.
+Mutex в `TunnelInterface.js` уже сериализует вызовы `reload()` → конкурентности нет →
+deadlock невозможен → tmpfile был избыточной мерой.
+
+### Что уже сделано в feature/native-approach
+
+- ✅ `_kernelRemovePeer()` — откат к `awg set peer remove` (коммит `139e7fa` перенесён)
+  - **Было:** `this.restart()` (полный down/up, сбрасывал всю статистику, флапал интерфейс)
+  - **Стало:** `${this._syncBin} set ${this.id} peer ${publicKey} remove` (атомарно, без флапа)
+
+### Что нужно сделать в feature/native-approach
+
+#### Задача 1: `_doReload()` — заменить tmpfile на process substitution
+
+**Файл:** `src/lib/TunnelInterface.js` → метод `_doReload()` (~строки 572-585)
+
+**Текущий код (tmpfile):**
+```javascript
+async _doReload() {
+  const tmpFile = `/tmp/${this.id}-syncconf.conf`;
+  try {
+    await fs.writeFile(tmpFile, this._generateSyncConfig(), { mode: 0o600 });
+    await Util.exec(`${this._syncBin} syncconf ${this.id} ${tmpFile}`);
+    debug(`Interface ${this.id} reloaded (hot)`);
+  } catch (err) {
+    debug(`Hot reload failed (${err.message}) — skipping restart to avoid kernel hang`);
+  } finally {
+    await fs.unlink(tmpFile).catch(() => {});
+  }
+}
+```
+
+**Целевой код (process substitution, как в WireGuard.js):**
+```javascript
+async _doReload() {
+  try {
+    await Util.exec(`${this._syncBin} syncconf ${this.id} <(${this._quickBin} strip ${this.id})`);
+    debug(`Interface ${this.id} reloaded (hot)`);
+  } catch (err) {
+    debug(`Hot reload failed (${err.message}) — skipping restart to avoid kernel hang`);
+  }
+}
+```
+
+**Почему безопасно:**
+- `_reloadMutex` уже сериализует все вызовы `reload()` → одновременно всегда максимум один `syncconf`
+- Process substitution внутри одной команды не создаёт конкуренции при отсутствии параллельных вызовов
+- WireGuard.js доказывает что это работает для AWG2
+
+**Также:** метод `_generateSyncConfig()` можно оставить (он используется для записи wg-quick конфига при `start()`), но `_doReload()` больше не должен писать tmpfile.
+
+#### После выполнения задачи — проверить на сервере:
+1. Включить/выключить пир несколько раз подряд
+2. Убедиться что статистика остальных пиров не сбрасывается
+3. Убедиться что интерфейс не флапает (нет down/up в логах)
+4. Убедиться что `wg show wg10` отражает актуальный список пиров
 
 ---
 
 ## Checkpoint (текущее состояние)
 
-**Ветка:** `feature/kernel-module`
+**Активная ветка:** `feature/native-approach` (создана из `feature/new-design`)
+
 **Что работает:**
 - Sidebar навигация (6 пунктов)
 - Interfaces page: dynamic tabs + per-interface view (info card + peers list)
@@ -299,6 +373,10 @@ GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 - Gateways/Routing/Firewall backend
 
 ## Следующие задачи (по приоритету)
+
+### 0. [В ПРОЦЕССЕ] native-approach рефакторинг
+- ✅ `_kernelRemovePeer` → `awg set peer remove` (без рестарта)
+- ⬜ `_doReload()` → process substitution вместо tmpfile (см. раздел выше)
 
 ### 1. Admin Instance
 - `src/lib/AdminInstance.js` — env vars → ключи → поднять при старте
