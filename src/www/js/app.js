@@ -984,30 +984,34 @@ new Vue({
     // ============================================================
 
     /**
-     * Download an interconnect peer's parameters as JSON.
-     * The remote side imports this file to configure their end of the tunnel.
+     * Export THIS interface's parameters as JSON for the remote side to import.
+     *
+     * Workflow: this side clicks "Export My Params" → sends file to remote side →
+     * remote side clicks "Import JSON" → peer for us is created automatically.
+     *
+     * File contains: name, publicKey, endpoint, address, protocol, AWG2 settings.
+     * Remote side derives AllowedIPs subnet from our address (10.x.x.1/24 → 10.x.x.0/24).
      */
-    async exportInterconnectPeerJSON(peer) {
+    async exportMyInterfaceParams(iface) {
       try {
-        const params = await this.api.exportPeerJSON({
-          interfaceId: this.activeInterfaceId,
-          peerId: peer.id,
-        });
+        const params = await this.api.exportInterfaceParams({ interfaceId: iface.id });
         const blob = new Blob([JSON.stringify(params, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `peer-${peer.name.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`;
+        a.download = `${iface.id}-params.json`;
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        alert(`Failed to export peer JSON: ${err.message}`);
+        alert(`Failed to export interface params: ${err.message}`);
       }
     },
 
     /**
-     * Import an interconnect peer from a JSON file exported by the remote side.
-     * Opens a file picker, reads the JSON, and creates the peer via API.
+     * Import remote side's interface params → create an interconnect peer for them.
+     *
+     * Workflow: remote side sends their export file → we click "Import JSON" →
+     * peer is created automatically with their publicKey, endpoint, and derived AllowedIPs.
      */
     importInterconnectPeerJSON() {
       if (!this.activeInterfaceId) return;
@@ -1022,7 +1026,8 @@ new Vue({
           const data = JSON.parse(text);
           await this.api.importPeerJSON({ interfaceId: this.activeInterfaceId, ...data });
           await this.refreshPeers();
-          alert('Peer imported successfully!');
+          await this.loadTunnelInterfaces();
+          alert('Peer imported! The tunnel should come up shortly after both sides are configured.');
         } catch (err) {
           alert(`Failed to import peer: ${err.message}`);
         }

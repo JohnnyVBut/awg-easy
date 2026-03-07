@@ -721,6 +721,59 @@ class TunnelInterface {
   }
 
   /**
+   * Экспортировать параметры своего интерфейса для передачи удалённой стороне.
+   * Удалённая сторона импортирует этот JSON → создаёт пир для нас.
+   *
+   * Формат совместим с importInterfaceParams() — связка export/import.
+   *
+   * Возвращает:
+   *   name         — friendly name интерфейса
+   *   publicKey    — наш публичный ключ (удалённая сторона пишет его в [Peer])
+   *   endpoint     — WG_HOST:listenPort (куда удалённая сторона подключается)
+   *   address      — адрес нашего интерфейса (10.x.x.1/24), из него выводится subnet для AllowedIPs
+   *   protocol     — 'wireguard-1.0' | 'amneziawg-2.0'
+   *   settings     — AWG2 параметры (только если protocol === 'amneziawg-2.0')
+   */
+  exportInterfaceParams() {
+    const wgHost = process.env.WG_HOST || '';
+    const endpoint = wgHost ? `${wgHost}:${this.data.listenPort}` : '';
+    const result = {
+      name: this.data.name || this.id,
+      publicKey: this.data.publicKey,
+      endpoint,
+      address: this.data.address,
+      protocol: this.data.protocol,
+    };
+    if (this.data.protocol === 'amneziawg-2.0' && this.data.settings) {
+      result.settings = this.data.settings;
+    }
+    return result;
+  }
+
+  /**
+   * Вычислить подсеть из адреса интерфейса.
+   * '10.100.0.1/24' → '10.100.0.0/24'
+   * Используется при импорте параметров удалённого интерфейса для задания AllowedIPs.
+   */
+  static deriveSubnet(address) {
+    if (!address) return null;
+    const [ip, prefix] = address.split('/');
+    const prefixLen = parseInt(prefix || '24', 10);
+    const parts = ip.split('.').map(Number);
+    // Обнуляем хостовую часть согласно длине префикса
+    const mask = (0xFFFFFFFF << (32 - prefixLen)) >>> 0;
+    const ipInt = (parts[0] << 24 | parts[1] << 16 | parts[2] << 8 | parts[3]) >>> 0;
+    const netInt = (ipInt & mask) >>> 0;
+    const net = [
+      (netInt >>> 24) & 0xFF,
+      (netInt >>> 16) & 0xFF,
+      (netInt >>> 8) & 0xFF,
+      netInt & 0xFF,
+    ];
+    return `${net.join('.')}/${prefixLen}`;
+  }
+
+  /**
    * Удалить интерфейс
    */
   async delete() {

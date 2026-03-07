@@ -659,6 +659,13 @@
                     style="border: 1px solid currentColor;">
                     Delete
                   </button>
+                  <!-- Export My Params: скачать JSON и отдать удалённой стороне -->
+                  <button @click="exportMyInterfaceParams(currentInterface)"
+                    class="px-3 py-1 text-sm text-blue-600 dark:text-blue-400 rounded transition"
+                    style="border: 1px solid currentColor;"
+                    title="Export this interface's public key + endpoint as JSON — send to remote side so they can Import JSON and create a peer for us">
+                    Export My Params
+                  </button>
                 </div>
               </div>
             </div>
@@ -903,16 +910,6 @@
                         class="align-middle bg-gray-100 dark:bg-neutral-600 dark:text-neutral-300 p-2 rounded transition hover:bg-red-800 dark:hover:bg-red-800 hover:text-white dark:hover:text-white">
                         <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                      </button>
-
-                      <!-- Export JSON (interconnect peers only) -->
-                      <button v-if="peer.peerType === 'interconnect'"
-                        @click="exportInterconnectPeerJSON(peer)"
-                        title="Export peer parameters as JSON (for remote side to import)"
-                        class="align-middle bg-gray-100 dark:bg-neutral-600 dark:text-neutral-300 p-2 rounded transition hover:bg-blue-600 dark:hover:bg-blue-600 hover:text-white dark:hover:text-white">
-                        <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                         </svg>
                       </button>
 

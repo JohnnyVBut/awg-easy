@@ -12,6 +12,7 @@ const expressSession = require('express-session');
 const debug = require('debug')('Server');
 const TunnelManager = require('./TunnelManager');
 const InterfaceManager = require('./InterfaceManager');
+const TunnelInterface = require('./TunnelInterface');
 const Settings = require('./Settings');
 
 const {
@@ -661,18 +662,38 @@ module.exports = class Server {
        * Отличие от POST /peers: тип всегда 'interconnect', generateKeys=false, autoAllocateIP=false.
        * Ключи не генерируются — они уже содержатся в импортируемом JSON.
        */
+      /**
+       * POST /api/tunnel-interfaces/:id/peers/import-json
+       *
+       * Поддерживает два формата:
+       *
+       * 1. Interface-params format (экспорт exportInterfaceParams):
+       *    { name, publicKey, endpoint, address, protocol, settings? }
+       *    → allowedIPs вычисляется как подсеть из address (10.x.x.1/24 → 10.x.x.0/24)
+       *    → peerType всегда 'interconnect'
+       *
+       * 2. Peer-params format (старый формат, обратная совместимость):
+       *    { name, publicKey, endpoint, allowedIPs, ... }
+       *    → allowedIPs берётся напрямую
+       */
       .post('/api/tunnel-interfaces/:id/peers/import-json', defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id');
         const body = await readBody(event);
 
         if (!body.publicKey) {
-          throw createError({ status: 400, message: 'publicKey is required in import JSON' });
-        }
-        if (!body.allowedIPs) {
-          throw createError({ status: 400, message: 'allowedIPs is required in import JSON' });
+          throw createError({ status: 400, message: 'publicKey is required' });
         }
         if (!body.name) {
           throw createError({ status: 400, message: 'name is required' });
+        }
+
+        // Определяем allowedIPs: из address (interface format) или напрямую (peer format)
+        let allowedIPs = body.allowedIPs;
+        if (!allowedIPs && body.address) {
+          allowedIPs = TunnelInterface.deriveSubnet(body.address);
+        }
+        if (!allowedIPs) {
+          throw createError({ status: 400, message: 'allowedIPs or address is required' });
         }
 
         const peerData = {
@@ -681,7 +702,7 @@ module.exports = class Server {
           publicKey: body.publicKey,
           presharedKey: body.presharedKey || '',
           endpoint: body.endpoint || '',
-          allowedIPs: body.allowedIPs,
+          allowedIPs,
           clientAllowedIPs: body.clientAllowedIPs || '0.0.0.0/0',
           persistentKeepalive: body.persistentKeepalive || 25,
           generateKeys: false,
@@ -917,6 +938,25 @@ module.exports = class Server {
         }
 
         return params;
+      }))
+
+      /**
+       * GET /api/tunnel-interfaces/:id/export-params
+       * Экспортировать параметры своего интерфейса для передачи удалённой стороне.
+       *
+       * Удалённая сторона импортирует этот JSON через POST /peers/import-json
+       * и автоматически создаёт пир для нас.
+       *
+       * Возвращает: name, publicKey, endpoint (WG_HOST:port), address, protocol, settings (AWG2 only)
+       */
+      .get('/api/tunnel-interfaces/:id/export-params', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const iface = manager.getInterface(id);
+        if (!iface) {
+          throw createError({ status: 404, message: 'Interface not found' });
+        }
+        return iface.exportInterfaceParams();
       }))
 
       /**

@@ -445,6 +445,18 @@ class API {
     });
   }
 
+  /**
+   * Экспортировать параметры своего интерфейса для передачи удалённой стороне.
+   * Удалённая сторона импортирует JSON через importPeerJSON() → создаёт пир для нас.
+   * Возвращает: name, publicKey, endpoint, address, protocol, settings (AWG2 only).
+   */
+  async exportInterfaceParams({ interfaceId }) {
+    return this.call({
+      method: 'get',
+      path: `/tunnel-interfaces/${interfaceId}/export-params`,
+    });
+  }
+
   async backupTunnelInterface({ interfaceId }) {
     return this.call({
       method: 'get',
