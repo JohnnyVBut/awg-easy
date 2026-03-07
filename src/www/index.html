@@ -763,6 +763,10 @@
                             :ref="'peer-' + peer.id + '-name'"
                             class="rounded px-1 border-2 dark:bg-neutral-700 border-gray-100 dark:border-neutral-600 focus:border-gray-200 dark:focus:border-neutral-500 dark:placeholder:text-neutral-500 outline-none w-30" />
                           <span v-show="peerEditNameId !== peer.id" class="border-t-2 border-b-2 border-transparent">{{peer.name}}</span>
+                          <span v-if="peer.peerType === 'interconnect' && peerEditNameId !== peer.id"
+                            style="margin-left:6px;font-size:0.65rem;padding:1px 6px;background:rgba(59,130,246,0.12);color:#2563eb;border-radius:4px;font-weight:600;vertical-align:middle;display:inline-block;letter-spacing:0.02em;">
+                            S2S
+                          </span>
                           <span v-show="peerEditNameId !== peer.id"
                             @click="peerEditName = peer.name; peerEditNameId = peer.id; setTimeout(() => $refs['peer-' + peer.id + '-name'][0].select(), 1);"
                             class="cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
@@ -808,6 +812,12 @@
                           <span class="text-gray-400 dark:text-neutral-500 whitespace-nowrap" v-if="peer.latestHandshakeAt"
                             :title="'Last seen: ' + dateTime(new Date(peer.latestHandshakeAt))">
                             {{!uiTrafficStats ? " · " : ""}}{{new Date(peer.latestHandshakeAt) | timeago}}
+                          </span>
+                          <!-- Runtime endpoint (S2S peers only) -->
+                          <span v-if="peer.peerType === 'interconnect' && peer.runtimeEndpoint"
+                            class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
+                            :title="'Connected from: ' + peer.runtimeEndpoint">
+                            · {{peer.runtimeEndpoint}}
                           </span>
                         </div>
                         <!-- One-time link -->
