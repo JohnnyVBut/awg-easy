@@ -943,11 +943,14 @@
               </div>
 
               <div class="mb-4">
-                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Tunnel Address (optional)</label>
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">
+                  Tunnel Address <span class="text-red-500">*</span>
+                </label>
                 <input v-model="interfaceCreate.address"
                   type="text"
                   placeholder="e.g., 10.100.0.1/24"
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Required. Used for peer IP allocation and NAT rules.</p>
               </div>
 
               <div class="mb-4">
@@ -973,10 +976,19 @@
               <div v-if="interfaceCreate.protocol === 'amneziawg-2.0'" class="mb-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded">
                 <h3 class="font-medium dark:text-neutral-200 mb-3">AmneziaWG 2.0 Parameters</h3>
 
-                <button @click="useInterfaceDefaults" type="button"
-                  class="mb-3 px-3 py-1 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded transition">
-                  Use Defaults
-                </button>
+                <!-- Profile selector: выбор шаблона обфускации -->
+                <div class="mb-3">
+                  <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Obfuscation Profile</label>
+                  <select v-model="interfaceCreate.selectedTemplateId"
+                    @change="onInterfaceTemplateSelect(interfaceCreate.selectedTemplateId)"
+                    class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                    <option value="">— Manual entry —</option>
+                    <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
+                  </select>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    Select a saved profile to fill parameters automatically, or enter manually below.
+                  </p>
+                </div>
 
                 <div class="grid grid-cols-3 gap-3 mb-3">
                   <div>

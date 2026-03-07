@@ -128,6 +128,7 @@ new Vue({
       address: '',
       listenPort: '',
       disableRoutes: false,
+      selectedTemplateId: '',   // UI-only: выбранный профиль обфускации (не отправляется в API)
       settings: {
         jc: 6, jmin: 10, jmax: 50,
         s1: 64, s2: 67, s3: 64, s4: 4,
@@ -494,10 +495,16 @@ new Vue({
           return;
         }
 
+        // Tunnel Address обязателен — нужен для авто-IP пиров и PostUp/PostDown
+        if (!this.interfaceCreate.address || !this.interfaceCreate.address.includes('/')) {
+          alert('Please enter Tunnel Address in CIDR format (e.g. 10.100.0.1/24)');
+          return;
+        }
+
         if (this.interfaceCreate.protocol === 'amneziawg-2.0') {
           if (!this.interfaceCreate.settings.h1 || !this.interfaceCreate.settings.h2 ||
               !this.interfaceCreate.settings.h3 || !this.interfaceCreate.settings.h4) {
-            alert('Please set H1-H4 parameters for AWG 2.0');
+            alert('Please set H1-H4 parameters for AWG 2.0 (select a profile or enter manually)');
             return;
           }
         }
@@ -505,7 +512,7 @@ new Vue({
         const payload = {
           name: this.interfaceCreate.name,
           protocol: this.interfaceCreate.protocol,
-          address: this.interfaceCreate.address || undefined,
+          address: this.interfaceCreate.address,
           listenPort: this.interfaceCreate.listenPort ? parseInt(this.interfaceCreate.listenPort, 10) : undefined,
           disableRoutes: this.interfaceCreate.disableRoutes || false,
         };
@@ -530,6 +537,7 @@ new Vue({
         this.showInterfaceCreate = false;
         this.interfaceCreate = {
           name: '', protocol: 'wireguard-1.0', address: '', listenPort: '', disableRoutes: false,
+          selectedTemplateId: '',
           settings: { jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4, h1: '', h2: '', h3: '', h4: '', i1: '', i2: '', i3: '', i4: '', i5: '' },
         };
 
@@ -1130,27 +1138,23 @@ new Vue({
       input.click();
     },
 
-    useInterfaceDefaults() {
-      // H1-H4: non-overlapping ranges in the uint32 space (5 … 0xFFFFFFFF).
-      // The space is split into 4 equal zones so ranges are guaranteed to
-      // never overlap. Within each zone a random sub-range of ~50 M values
-      // is chosen. Format "start-end" — awg-quick picks a fresh random value
-      // inside the range on every handshake, making the protocol harder to
-      // fingerprint compared to a fixed uint32.
-      const RANGE_SIZE = 50_000_000;
-      const ZONE_SIZE  = Math.floor((0xFFFFFFFF - 5) / 4);
-      const randHRange = (zone) => {
-        const zoneStart = 5 + zone * ZONE_SIZE;
-        const zoneEnd   = zoneStart + ZONE_SIZE - 1;
-        const start = zoneStart + Math.floor(Math.random() * (zoneEnd - zoneStart - RANGE_SIZE));
-        return `${start}-${start + RANGE_SIZE}`;
-      };
+    /**
+     * Заполнить AWG2 поля формы из выбранного шаблона профиля обфускации.
+     * Вызывается при смене значения в дропдауне "Obfuscation Profile".
+     * Если templateId пустой ("-- Manual entry --") — поля НЕ сбрасываются,
+     * пользователь продолжает вводить вручную.
+     */
+    onInterfaceTemplateSelect(templateId) {
+      if (!templateId) return; // manual entry — не трогаем поля
+      const tmpl = (this.templates || []).find(t => t.id === templateId);
+      if (!tmpl) return;
       this.interfaceCreate.settings = {
-        jc: 6, jmin: 10, jmax: 50, s1: 64, s2: 67, s3: 64, s4: 4,
-        h1: randHRange(0), h2: randHRange(1), h3: randHRange(2), h4: randHRange(3),
-        i1: '', i2: '', i3: '', i4: '', i5: '',
+        jc: tmpl.jc,    jmin: tmpl.jmin,  jmax: tmpl.jmax,
+        s1: tmpl.s1,    s2: tmpl.s2,      s3: tmpl.s3,   s4: tmpl.s4,
+        h1: tmpl.h1,    h2: tmpl.h2,      h3: tmpl.h3,   h4: tmpl.h4,
+        i1: tmpl.i1 || '', i2: tmpl.i2 || '', i3: tmpl.i3 || '',
+        i4: tmpl.i4 || '', i5: tmpl.i5 || '',
       };
-      alert('Defaults applied!');
     },
   },
   filters: {
