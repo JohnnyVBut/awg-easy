@@ -767,29 +767,6 @@ class TunnelInterface {
   }
 
   /**
-   * Вычислить подсеть из адреса интерфейса.
-   * '10.100.0.1/24' → '10.100.0.0/24'
-   * Используется при импорте параметров удалённого интерфейса для задания AllowedIPs.
-   */
-  static deriveSubnet(address) {
-    if (!address) return null;
-    const [ip, prefix] = address.split('/');
-    const prefixLen = parseInt(prefix || '24', 10);
-    const parts = ip.split('.').map(Number);
-    // Обнуляем хостовую часть согласно длине префикса
-    const mask = (0xFFFFFFFF << (32 - prefixLen)) >>> 0;
-    const ipInt = (parts[0] << 24 | parts[1] << 16 | parts[2] << 8 | parts[3]) >>> 0;
-    const netInt = (ipInt & mask) >>> 0;
-    const net = [
-      (netInt >>> 24) & 0xFF,
-      (netInt >>> 16) & 0xFF,
-      (netInt >>> 8) & 0xFF,
-      netInt & 0xFF,
-    ];
-    return `${net.join('.')}/${prefixLen}`;
-  }
-
-  /**
    * Удалить интерфейс
    */
   async delete() {

@@ -12,7 +12,6 @@ const expressSession = require('express-session');
 const debug = require('debug')('Server');
 const TunnelManager = require('./TunnelManager');
 const InterfaceManager = require('./InterfaceManager');
-const TunnelInterface = require('./TunnelInterface');
 const Settings = require('./Settings');
 
 const {
@@ -654,7 +653,7 @@ module.exports = class Server {
        *
        * Поддерживает два формата:
        *   Interface-params: { name, publicKey, endpoint, address, [presharedKey], protocol }
-       *     → allowedIPs вычисляется как подсеть из address (10.x.x.1/24 → 10.x.x.0/24)
+       *     → allowedIPs вычисляется как адрес хоста /32 из address (10.x.x.1/24 → 10.x.x.1/32)
        *   Peer-params (обратная совместимость): { name, publicKey, endpoint, allowedIPs }
        *
        * PSK:
@@ -674,9 +673,12 @@ module.exports = class Server {
         }
 
         // Определяем allowedIPs: из address (interface format) или напрямую (peer format)
+        // Для interconnect пира используем адрес хоста /32, а не подсеть —
+        // крипто-маршрутизация нужна только до конкретного пира, а не до всей подсети.
         let allowedIPs = body.allowedIPs;
         if (!allowedIPs && body.address) {
-          allowedIPs = TunnelInterface.deriveSubnet(body.address);
+          const ip = body.address.split('/')[0];
+          allowedIPs = `${ip}/32`;
         }
         if (!allowedIPs) {
           throw createError({ status: 400, message: 'allowedIPs or address is required' });
