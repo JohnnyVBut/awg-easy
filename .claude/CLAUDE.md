@@ -66,15 +66,20 @@ docker compose down && docker compose up -d
 Это фиксы которые были добавлены после обнаружения реальных багов.
 При редактировании соответствующих файлов — **убедиться что эти строки на месте**.
 
-### FIX-1: iptables-nft (не iptables) + FORWARD в обоих направлениях
-**Файл:** `src/lib/TunnelInterface.js` → метод `generateWgConfig()` (~строки 268-269)
-**Причина:** Ubuntu 22.04 использует nftables. `iptables` не работает. FORWARD нужен -i И -o.
+### FIX-1: iptables-nft + FORWARD в обоих направлениях + NAT только если disableRoutes=false
+**Файл:** `src/lib/TunnelInterface.js` → метод `generateWgConfig()`
+**Причина:** Ubuntu 22.04 использует nftables. FORWARD нужен -i И -o. NAT только для клиентских интерфейсов.
 
 ```javascript
-// ПРАВИЛЬНО:
+// ПРАВИЛЬНО (disableRoutes=false — клиентский интерфейс):
 config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
-config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE\n`;
-// НЕПРАВИЛЬНО: iptables (без -nft), или только -i без -o
+config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE 2>/dev/null || true\n`;
+
+// ПРАВИЛЬНО (disableRoutes=true — interconnect интерфейс, без NAT):
+config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT\n`;
+config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true\n`;
+
+// НЕПРАВИЛЬНО: iptables (без -nft), только -i без -o, или MASQUERADE при disableRoutes=true
 ```
 
 ### FIX-2: Конфиг регенерируется перед каждым start() + down→up при "already exists"

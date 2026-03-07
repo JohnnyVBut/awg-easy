@@ -342,11 +342,19 @@ class TunnelInterface {
 
     if (this.data.address) {
       config += `Address = ${this.data.address}\n`;
-      // NAT: masquerade VPN client traffic so it can reach the internet.
-      // PostUp/PostDown are executed by wg-quick / awg-quick on interface up/down.
-      const subnet = this._cidrToSubnet(this.data.address);
-      config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
-      config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE 2>/dev/null || true\n`;
+
+      if (this.data.disableRoutes) {
+        // Interconnect / P2P interface: no NAT, no masquerade.
+        // Only FORWARD ACCEPT so routed traffic can pass through the tunnel.
+        // NAT is intentionally omitted — routing is managed externally (PBR).
+        config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT\n`;
+        config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true\n`;
+      } else {
+        // Client interface: NAT masquerade so clients can reach the internet.
+        const subnet = this._cidrToSubnet(this.data.address);
+        config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
+        config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE 2>/dev/null || true\n`;
+      }
     }
 
     // AWG параметры
