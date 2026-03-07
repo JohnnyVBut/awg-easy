@@ -107,6 +107,14 @@ class Settings {
       throw new Error('Template name is required');
     }
 
+    // Имя шаблона должно быть уникальным
+    const duplicate = this.data.templates.find(
+      (t) => t.name.trim().toLowerCase() === templateData.name.trim().toLowerCase()
+    );
+    if (duplicate) {
+      throw new Error(`Template with name "${templateData.name}" already exists`);
+    }
+
     const hRanges = generateRandomHRanges();
 
     const template = {
@@ -146,6 +154,17 @@ class Settings {
   async updateTemplate(id, updates) {
     const idx = this.data.templates.findIndex((t) => t.id === id);
     if (idx === -1) throw new Error('Template not found');
+
+    // Если имя меняется — проверить уникальность среди ДРУГИХ шаблонов
+    if (updates.name !== undefined) {
+      const duplicate = this.data.templates.find(
+        (t) => t.id !== id &&
+               t.name.trim().toLowerCase() === updates.name.trim().toLowerCase()
+      );
+      if (duplicate) {
+        throw new Error(`Template with name "${updates.name}" already exists`);
+      }
+    }
 
     if (updates.isDefault) {
       for (const t of this.data.templates) t.isDefault = false;
