@@ -260,7 +260,8 @@ class API {
   }
 
   /**
-   * Get AWG2 settings from a template with freshly randomised H1-H4.
+   * Get AWG2 settings from a template.
+   * H1-H4 are copied as-is (ranges). The AWG protocol randomises within the range per handshake.
    * Used when the user selects "Load from template" in the Instance form.
    */
   async applyTemplate({ templateId }) {
@@ -401,6 +402,46 @@ class API {
     return this.call({
       method: 'post',
       path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/generateOneTimeLink`,
+    });
+  }
+
+  /**
+   * Экспортировать параметры Interconnect пира в JSON.
+   * Возвращает объект для передачи удалённой стороне (та импортирует через importPeerJSON).
+   * Доступен только для пиров с peerType === 'interconnect'.
+   * Поля: name, publicKey, presharedKey, endpoint, persistentKeepalive, allowedIPs, clientAllowedIPs.
+   */
+  async exportPeerJSON({ interfaceId, peerId }) {
+    return this.call({
+      method: 'get',
+      path: `/tunnel-interfaces/${interfaceId}/peers/${peerId}/export-json`,
+    });
+  }
+
+  /**
+   * Создать Interconnect пир из JSON экспортированного другой стороной.
+   * peerData — объект полученный от exportPeerJSON() удалённой стороны.
+   * peerType автоматически устанавливается в 'interconnect'.
+   * Ключи не генерируются — они содержатся в импортируемом JSON.
+   */
+  async importPeerJSON({ interfaceId, ...peerData }) {
+    return this.call({
+      method: 'post',
+      path: `/tunnel-interfaces/${interfaceId}/peers/import-json`,
+      body: peerData,
+    });
+  }
+
+  /**
+   * Экспортировать AWG2 параметры обфускации интерфейса.
+   * Возвращает объект с Jc, Jmin, Jmax, S1-S4, H1-H4, I1-I5.
+   * Формат совместим с createTemplate() — можно сохранить как профиль.
+   * Ошибка 400 если интерфейс не AWG2.
+   */
+  async exportObfuscationParams({ interfaceId }) {
+    return this.call({
+      method: 'get',
+      path: `/tunnel-interfaces/${interfaceId}/export-obfuscation`,
     });
   }
 
