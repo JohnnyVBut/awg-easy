@@ -191,7 +191,7 @@ class Settings {
   }
 
   /**
-   * Returns the default template's AWG2 settings with fresh H1-H4 ranges.
+   * Returns the default template's AWG2 settings copied as-is (including H1-H4 ranges).
    * Returns null if no default template exists.
    */
   applyDefaultTemplate() {
@@ -201,7 +201,7 @@ class Settings {
   }
 
   /**
-   * Returns a named template's AWG2 settings with fresh H1-H4 ranges.
+   * Returns a named template's AWG2 settings copied as-is (including H1-H4 ranges).
    */
   applyTemplate(id) {
     const tmpl = this.getTemplate(id);
@@ -210,7 +210,10 @@ class Settings {
   }
 
   _applyTemplate(tmpl) {
-    const hRanges = generateRandomHRanges();
+    // H1-H4 are copied exactly from the template.
+    // Both sides of the tunnel MUST use identical ranges — the AWG protocol
+    // itself picks a random value within the range on each handshake.
+    // Do NOT randomise here.
     return {
       jc: tmpl.jc,
       jmin: tmpl.jmin,
@@ -219,11 +222,10 @@ class Settings {
       s2: tmpl.s2,
       s3: tmpl.s3,
       s4: tmpl.s4,
-      // H1-H4 are always freshly randomised on every apply
-      h1: hRanges.h1,
-      h2: hRanges.h2,
-      h3: hRanges.h3,
-      h4: hRanges.h4,
+      h1: tmpl.h1,
+      h2: tmpl.h2,
+      h3: tmpl.h3,
+      h4: tmpl.h4,
       i1: tmpl.i1,
       i2: tmpl.i2,
       i3: tmpl.i3,
