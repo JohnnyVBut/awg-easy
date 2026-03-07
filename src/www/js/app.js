@@ -137,7 +137,8 @@ new Vue({
       },
     },
     peerCreate: {
-      mode: 'generate',
+      mode: 'generate',     // 'generate' | 'manual'
+      peerType: 'client',   // 'client' | 'interconnect'
       name: '',
       publicKey: '',
       endpoint: '',
@@ -664,57 +665,58 @@ new Vue({
     },
 
     async createPeer() {
-      if (!this.selectedInterface) {
-        alert('Please select an interface first');
+      if (!this.activeInterfaceId) {
+        alert('No interface selected');
         return;
       }
+
+      const { mode, peerType, name, publicKey, endpoint, allowedIPs, clientAllowedIPs, persistentKeepalive } = this.peerCreate;
+
+      // Validation
+      if (!name || name.trim() === '') {
+        alert('Please enter a peer name');
+        return;
+      }
+      if (mode === 'manual' && !publicKey) {
+        alert('Please enter the public key');
+        return;
+      }
+      // Interconnect requires explicit AllowedIPs (it routes a subnet, not just /32)
+      if (peerType === 'interconnect' && !allowedIPs) {
+        alert('Please enter Allowed IPs for the interconnect peer (e.g., 192.168.2.0/24)');
+        return;
+      }
+
+      // For client+generate with no allowedIPs → auto-allocate /32 from interface subnet
+      const autoAllocate = mode === 'generate' && peerType === 'client' && !allowedIPs;
+
+      const payload = {
+        name,
+        peerType,
+        ...(mode === 'generate' ? { generateKeys: true } : { publicKey }),
+        ...(autoAllocate ? { autoAllocateIP: true } : { allowedIPs }),
+        clientAllowedIPs: clientAllowedIPs || undefined,
+        endpoint: endpoint || undefined,
+        persistentKeepalive: persistentKeepalive || 25,
+      };
+
       try {
-        const isGenerate = this.peerCreate.mode === 'generate';
-
-        if (!this.peerCreate.name || !this.peerCreate.allowedIPs) {
-          alert('Please fill name and allowed IPs');
-          return;
-        }
-        if (!isGenerate && !this.peerCreate.publicKey) {
-          alert('Please enter the public key');
-          return;
-        }
-
-        const payload = {
-          name: this.peerCreate.name,
-          allowedIPs: this.peerCreate.allowedIPs,
-          clientAllowedIPs: this.peerCreate.clientAllowedIPs || undefined,
-          endpoint: this.peerCreate.endpoint || undefined,
-          persistentKeepalive: this.peerCreate.persistentKeepalive || 25,
-          ...(isGenerate
-            ? { generateKeys: true }
-            : { publicKey: this.peerCreate.publicKey }),
-        };
-
-        const res = await fetch(`/api/tunnel-interfaces/${this.selectedInterface.id}/peers`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(payload),
+        const res = await this.api.createTunnelInterfacePeer({
+          interfaceId: this.activeInterfaceId,
+          ...payload,
         });
 
-        if (!res.ok) {
-          const error = await res.json();
-          throw new Error(error.message || res.statusText);
-        }
-
-        const data = await res.json();
-        const interfaceId = this.selectedInterface.id;
-        const peerId = data.peer && data.peer.id;
+        const interfaceId = this.activeInterfaceId;
+        const peerId = res.peer && res.peer.id;
 
         this.showPeerCreate = false;
-        this.peerCreate = { mode: 'generate', name: '', publicKey: '', endpoint: '', allowedIPs: '', clientAllowedIPs: '', persistentKeepalive: 25 };
+        this.peerCreate = { mode: 'generate', peerType: 'client', name: '', publicKey: '', endpoint: '', allowedIPs: '', clientAllowedIPs: '', persistentKeepalive: 25 };
 
         await this.refreshPeers();
         await this.loadTunnelInterfaces();
 
-        // Если ключи сгенерированы сервером — сразу показать QR код
-        if (isGenerate && peerId) {
+        // Show QR immediately for client peers with server-generated keys
+        if (mode === 'generate' && peerType === 'client' && peerId) {
           this.qrcode = `./api/tunnel-interfaces/${interfaceId}/peers/${peerId}/qrcode.svg`;
         } else {
           alert('Peer created!');

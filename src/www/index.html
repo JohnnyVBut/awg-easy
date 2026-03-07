@@ -1397,7 +1397,31 @@
 
             <div style="padding:16px 24px 24px;">
 
-              <!-- Переключатель режима -->
+              <!-- Peer Type toggle -->
+              <div class="mb-4 flex rounded-lg overflow-hidden border dark:border-neutral-500">
+                <button @click="peerCreate.peerType = 'client'"
+                  :class="peerCreate.peerType === 'client'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white dark:bg-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-500'"
+                  class="flex-1 py-2 px-3 text-sm font-medium transition flex items-center justify-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                  </svg>
+                  Client
+                </button>
+                <button @click="peerCreate.peerType = 'interconnect'"
+                  :class="peerCreate.peerType === 'interconnect'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white dark:bg-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-500'"
+                  class="flex-1 py-2 px-3 text-sm font-medium transition flex items-center justify-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                  </svg>
+                  Interconnect
+                </button>
+              </div>
+
+              <!-- Key mode toggle -->
               <div class="mb-5 flex rounded-lg overflow-hidden border dark:border-neutral-500">
                 <button @click="peerCreate.mode = 'generate'"
                   :class="peerCreate.mode === 'generate'
@@ -1429,13 +1453,14 @@
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
               </div>
 
-              <!-- Generate mode: информационный блок -->
+              <!-- Generate mode: info box (text varies by peer type) -->
               <div v-if="peerCreate.mode === 'generate'"
                 class="mb-4 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-300 flex items-start gap-2">
                 <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                 </svg>
-                <span>Keys will be generated automatically. QR code will appear right after creation — scan it with AmneziaWG.</span>
+                <span v-if="peerCreate.peerType === 'client'">Keys and IP will be generated automatically. QR code will appear right after creation — scan it with AmneziaWG.</span>
+                <span v-else>Keys will be generated on the server. After creation, download the config to configure the remote side manually.</span>
               </div>
 
               <!-- Manual mode: поле Public Key -->
@@ -1447,14 +1472,22 @@
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono text-sm">
               </div>
 
-              <div class="mb-4">
-                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Allowed IPs (required)</label>
+              <!-- AllowedIPs: required for interconnect, optional for client+generate -->
+              <div class="mb-4" v-if="peerCreate.peerType === 'interconnect' || peerCreate.mode === 'manual'">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">
+                  Allowed IPs
+                  <span v-if="peerCreate.peerType === 'interconnect'" class="text-red-500">*</span>
+                  <span v-else class="text-gray-400 dark:text-neutral-500 font-normal">(optional)</span>
+                </label>
                 <input v-model="peerCreate.allowedIPs"
                   type="text"
-                  placeholder="e.g., 10.100.0.2/32 (peer VPN IP)"
+                  :placeholder="peerCreate.peerType === 'interconnect' ? 'e.g., 192.168.2.0/24 (remote subnet)' : 'e.g., 10.100.0.2/32 (leave empty for auto-assign)'"
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
-                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1">
-                  Hub will route traffic to this peer's VPN IP (usually /32)
+                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1" v-if="peerCreate.peerType === 'interconnect'">
+                  Hub will route traffic for this subnet through the interconnect tunnel.
+                </p>
+                <p class="text-xs text-gray-500 dark:text-neutral-400 mt-1" v-else>
+                  Hub will route traffic to this peer's VPN IP. Leave empty to auto-assign a /32 address.
                 </p>
               </div>
 
@@ -1465,8 +1498,11 @@
                 </label>
                 <input v-model="peerCreate.endpoint"
                   type="text"
-                  placeholder="e.g., office-a.example.com:51820"
+                  :placeholder="peerCreate.peerType === 'interconnect' ? 'e.g., office-b.example.com:51820' : 'e.g., peer.example.com:51820'"
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                <p v-if="peerCreate.peerType === 'interconnect'" class="text-xs text-gray-500 dark:text-neutral-400 mt-1">
+                  Remote side address. Leave empty if the remote side initiates the connection.
+                </p>
               </div>
 
               <div class="mb-4">
@@ -1495,7 +1531,10 @@
                 </button>
                 <button @click="createPeer"
                   class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition">
-                  {{ peerCreate.mode === 'generate' ? 'Generate & Show QR' : 'Add Peer' }}
+                  <span v-if="peerCreate.peerType === 'client' && peerCreate.mode === 'generate'">Generate & Show QR</span>
+                  <span v-else-if="peerCreate.peerType === 'client'">Add Client Peer</span>
+                  <span v-else-if="peerCreate.mode === 'generate'">Generate Keys & Create</span>
+                  <span v-else>Add Interconnect Peer</span>
                 </button>
               </div>
             </div>
