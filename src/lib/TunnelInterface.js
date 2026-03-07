@@ -724,19 +724,33 @@ class TunnelInterface {
    * Экспортировать параметры своего интерфейса для передачи удалённой стороне.
    * Удалённая сторона импортирует этот JSON → создаёт пир для нас.
    *
-   * Формат совместим с importInterfaceParams() — связка export/import.
-   *
    * Возвращает:
-   *   name         — friendly name интерфейса
-   *   publicKey    — наш публичный ключ (удалённая сторона пишет его в [Peer])
-   *   endpoint     — WG_HOST:listenPort (куда удалённая сторона подключается)
-   *   address      — адрес нашего интерфейса (10.x.x.1/24), из него выводится subnet для AllowedIPs
-   *   protocol     — 'wireguard-1.0' | 'amneziawg-2.0'
-   *   settings     — AWG2 параметры (только если protocol === 'amneziawg-2.0')
+   *   name          — friendly name интерфейса
+   *   publicKey     — наш публичный ключ (удалённая сторона пишет его в [Peer])
+   *   endpoint      — WG_HOST:listenPort (куда удалённая сторона подключается)
+   *   address       — адрес нашего интерфейса (10.x.x.1/24), из него выводится subnet для AllowedIPs
+   *   protocol      — 'wireguard-1.0' | 'amneziawg-2.0'
+   *   presharedKey  — PSK из interconnect-пира к удалённой стороне (если существует один такой пир).
+   *                   Это позволяет PSK "перетечь" от второго импорта обратно к первому:
+   *                     1. A экспортирует (PSK ещё нет) → B импортирует → B генерирует PSK
+   *                     2. B экспортирует (PSK из пира к A) → A импортирует → A использует тот же PSK
+   *                   Оба пира в итоге используют один PSK ✓
+   *
+   * AWG2 settings намеренно НЕ включены: синхронизация настроек делается через шаблоны,
+   * а не через обмен peer-параметрами.
    */
   exportInterfaceParams() {
     const wgHost = process.env.WG_HOST || '';
     const endpoint = wgHost ? `${wgHost}:${this.data.listenPort}` : '';
+
+    // Найти PSK из interconnect-пира (если ровно один — берём его PSK)
+    const interconnectPeers = [...this.peers.values()]
+      .filter((p) => p.peerType === 'interconnect' && p.presharedKey)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const presharedKey = interconnectPeers.length > 0
+      ? interconnectPeers[0].presharedKey
+      : null;
+
     const result = {
       name: this.data.name || this.id,
       publicKey: this.data.publicKey,
@@ -744,9 +758,11 @@ class TunnelInterface {
       address: this.data.address,
       protocol: this.data.protocol,
     };
-    if (this.data.protocol === 'amneziawg-2.0' && this.data.settings) {
-      result.settings = this.data.settings;
+
+    if (presharedKey) {
+      result.presharedKey = presharedKey;
     }
+
     return result;
   }
 

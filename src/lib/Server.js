@@ -648,33 +648,19 @@ module.exports = class Server {
 
       /**
        * POST /api/tunnel-interfaces/:id/peers/import-json
-       * Создать Interconnect peer из JSON-файла экспортированного другой стороной.
        *
-       * Body (JSON экспортированный с другой стороны):
-       *   name            — имя пира (можно переименовать)
-       *   publicKey       — публичный ключ удалённой стороны
-       *   presharedKey    — PSK (должен совпадать на обеих сторонах)
-       *   endpoint        — удалённый endpoint (host:port)
-       *   persistentKeepalive — keepalive
-       *   allowedIPs      — туннельный IP удалённой стороны /32 (AllowedIPs в нашем конфиге)
-       *   clientAllowedIPs — что мы будем маршрутизировать через этот пир
-       *
-       * Отличие от POST /peers: тип всегда 'interconnect', generateKeys=false, autoAllocateIP=false.
-       * Ключи не генерируются — они уже содержатся в импортируемом JSON.
-       */
-      /**
-       * POST /api/tunnel-interfaces/:id/peers/import-json
+       * Создать interconnect peer из JSON экспортированного удалённой стороной
+       * (через GET /export-params). Тип всегда 'interconnect', ключи не генерируются.
        *
        * Поддерживает два формата:
+       *   Interface-params: { name, publicKey, endpoint, address, [presharedKey], protocol }
+       *     → allowedIPs вычисляется как подсеть из address (10.x.x.1/24 → 10.x.x.0/24)
+       *   Peer-params (обратная совместимость): { name, publicKey, endpoint, allowedIPs }
        *
-       * 1. Interface-params format (экспорт exportInterfaceParams):
-       *    { name, publicKey, endpoint, address, protocol, settings? }
-       *    → allowedIPs вычисляется как подсеть из address (10.x.x.1/24 → 10.x.x.0/24)
-       *    → peerType всегда 'interconnect'
-       *
-       * 2. Peer-params format (старый формат, обратная совместимость):
-       *    { name, publicKey, endpoint, allowedIPs, ... }
-       *    → allowedIPs берётся напрямую
+       * PSK:
+       *   - Если файл содержит presharedKey (импорт от стороны B) — используем его.
+       *   - Если PSK не пришёл (импорт от стороны A, первый шаг) — генерируем новый.
+       *   PSK хранится в пире и включается в последующий exportInterfaceParams() этой стороны.
        */
       .post('/api/tunnel-interfaces/:id/peers/import-json', defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id');
@@ -696,11 +682,14 @@ module.exports = class Server {
           throw createError({ status: 400, message: 'allowedIPs or address is required' });
         }
 
+        // PSK: использовать из файла (если пришёл) или сгенерировать новый
+        const presharedKey = body.presharedKey || crypto.randomBytes(32).toString('base64');
+
         const peerData = {
           name: body.name,
           peerType: 'interconnect',
           publicKey: body.publicKey,
-          presharedKey: body.presharedKey || '',
+          presharedKey,
           endpoint: body.endpoint || '',
           allowedIPs,
           clientAllowedIPs: body.clientAllowedIPs || '0.0.0.0/0',
@@ -712,7 +701,7 @@ module.exports = class Server {
         const manager = await InterfaceManager.getInstance();
         const peer = await manager.addPeer(id, peerData);
 
-        debug(`Peer imported from JSON: ${peer.id} to ${id}`);
+        debug(`Peer imported from JSON: ${peer.id} to ${id}, PSK ${body.presharedKey ? 'from file' : 'generated'}`);
         return { peer: peer.toJSON() };
       }))
 

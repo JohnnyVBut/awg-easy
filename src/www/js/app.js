@@ -1024,10 +1024,18 @@ new Vue({
         try {
           const text = await file.text();
           const data = JSON.parse(text);
-          await this.api.importPeerJSON({ interfaceId: this.activeInterfaceId, ...data });
+          const res = await this.api.importPeerJSON({ interfaceId: this.activeInterfaceId, ...data });
           await this.refreshPeers();
           await this.loadTunnelInterfaces();
-          alert('Peer imported! The tunnel should come up shortly after both sides are configured.');
+
+          // Если PSK был в файле — он уже согласован. Если мы его сгенерили —
+          // нужно передать его другой стороне через Export My Params.
+          const pskWasInFile = !!data.presharedKey;
+          if (pskWasInFile) {
+            alert('Peer imported! PSK taken from the file — both sides are in sync.\nThe tunnel should come up after both sides complete the exchange.');
+          } else {
+            alert('Peer imported! A PresharedKey was generated for this connection.\nNext step: click "Export My Params" and send the file to the remote side — it will include the PSK so they can use it when they Import JSON.');
+          }
         } catch (err) {
           alert(`Failed to import peer: ${err.message}`);
         }
