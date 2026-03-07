@@ -1075,6 +1075,61 @@ new Vue({
       }
     },
 
+    /**
+     * Экспортировать профиль обфускации в JSON файл.
+     * Скачивает файл с AWG2 параметрами шаблона.
+     * Формат: { name, jc, jmin, jmax, s1-s4, h1-h4, i1-i5 }.
+     * Поля meta (id, isDefault, createdAt) не включаются — они специфичны для этого сервера.
+     */
+    exportTemplateJSON(tmpl) {
+      const params = {
+        name: tmpl.name,
+        jc: tmpl.jc, jmin: tmpl.jmin, jmax: tmpl.jmax,
+        s1: tmpl.s1, s2: tmpl.s2, s3: tmpl.s3, s4: tmpl.s4,
+        h1: tmpl.h1, h2: tmpl.h2, h3: tmpl.h3, h4: tmpl.h4,
+        i1: tmpl.i1 || null, i2: tmpl.i2 || null, i3: tmpl.i3 || null,
+        i4: tmpl.i4 || null, i5: tmpl.i5 || null,
+      };
+      const blob = new Blob([JSON.stringify(params, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `awg2-profile-${tmpl.name.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    /**
+     * Импортировать профиль обфускации из JSON файла.
+     * Открывает выбор файла → читает JSON → создаёт новый шаблон через API.
+     * Если в JSON нет поля name — запрашивает имя у пользователя.
+     * Формат файла должен содержать AWG2 параметры (jc, jmin, ..., h1-h4).
+     */
+    importTemplateJSON() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,application/json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          // Если имени нет в файле — просим пользователя
+          if (!data.name) {
+            const name = prompt('Enter a name for this profile:', file.name.replace(/\.json$/i, ''));
+            if (!name) return;
+            data.name = name;
+          }
+          await this.api.createTemplate(data);
+          await this.loadSettings();
+        } catch (err) {
+          alert(`Failed to import profile: ${err.message}`);
+        }
+      };
+      input.click();
+    },
+
     useInterfaceDefaults() {
       // H1-H4: non-overlapping ranges in the uint32 space (5 … 0xFFFFFFFF).
       // The space is split into 4 equal zones so ranges are guaranteed to
