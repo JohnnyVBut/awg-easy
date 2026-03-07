@@ -1188,6 +1188,9 @@ new Vue({
         });
         // Load tunnel interfaces at startup (default page)
         this.loadTunnelInterfaces();
+        // Load settings + templates at startup so they are available
+        // on any page (e.g. "Obfuscation Profile" dropdown in Create Interface modal).
+        this.loadSettings();
       })
       .catch((err) => {
         alert(err.message || err.toString());
