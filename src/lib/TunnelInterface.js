@@ -650,6 +650,77 @@ class TunnelInterface {
   }
 
   /**
+   * Экспорт параметров peer для передачи удалённой стороне (interconnect flow).
+   *
+   * Формат совместим с importPeerFromJSON() на другой стороне.
+   * Поля:
+   *   name            — friendly name этого пира (для идентификации на удалённой стороне)
+   *   publicKey       — публичный ключ экспортирующей стороны
+   *   presharedKey    — PSK (должен совпадать на обеих сторонах, координируется вручную)
+   *   endpoint        — публичный IP/хост + порт этого интерфейса (WG_HOST:listenPort)
+   *   persistentKeepalive — keepalive
+   *   allowedIPs      — туннельный IP этой стороны /32 (станет AllowedIPs у remote peer)
+   *   clientAllowedIPs — что remote сторона будет маршрутизировать через нас
+   *
+   * @param {string} peerId - ID peer который экспортируем
+   * @returns {Object} JSON-совместимый объект
+   */
+  exportPeerParams(peerId) {
+    const peer = this.peers.get(peerId);
+    if (!peer) {
+      throw new Error(`Peer ${peerId} not found`);
+    }
+
+    const wgHost = process.env.WG_HOST || '';
+    const endpoint = wgHost ? `${wgHost}:${this.data.listenPort}` : '';
+
+    return {
+      name: peer.name,
+      publicKey: peer.publicKey,
+      presharedKey: peer.presharedKey || '',
+      endpoint,
+      persistentKeepalive: peer.persistentKeepalive,
+      allowedIPs: peer.allowedIPs,           // Туннельный IP этой стороны /32
+      clientAllowedIPs: peer.clientAllowedIPs || '0.0.0.0/0', // Что remote будет маршрутизировать через нас
+    };
+  }
+
+  /**
+   * Экспорт параметров обфускации AWG2.
+   *
+   * Возвращает текущие AWG2-параметры интерфейса в формате совместимом
+   * с Settings.createTemplate() — можно сохранить как профиль обфускации.
+   * H1-H4 копируются как есть (диапазоны), рандомизацию делает AWG-протокол.
+   *
+   * Бросает ошибку если интерфейс не AWG2.
+   * @returns {Object} JSON-совместимый объект с AWG2 параметрами
+   */
+  exportObfuscationParams() {
+    if (this.data.protocol !== 'amneziawg-2.0') {
+      throw new Error('Obfuscation params are only available for AmneziaWG 2.0 interfaces');
+    }
+    const s = this.data.settings || {};
+    return {
+      jc: s.jc,
+      jmin: s.jmin,
+      jmax: s.jmax,
+      s1: s.s1,
+      s2: s.s2,
+      s3: s.s3,
+      s4: s.s4,
+      h1: s.h1,
+      h2: s.h2,
+      h3: s.h3,
+      h4: s.h4,
+      i1: s.i1 || null,
+      i2: s.i2 || null,
+      i3: s.i3 || null,
+      i4: s.i4 || null,
+      i5: s.i5 || null,
+    };
+  }
+
+  /**
    * Удалить интерфейс
    */
   async delete() {

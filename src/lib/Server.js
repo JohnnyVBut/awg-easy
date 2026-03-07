@@ -646,6 +646,56 @@ module.exports = class Server {
       }))
 
       /**
+       * POST /api/tunnel-interfaces/:id/peers/import-json
+       * Создать Interconnect peer из JSON-файла экспортированного другой стороной.
+       *
+       * Body (JSON экспортированный с другой стороны):
+       *   name            — имя пира (можно переименовать)
+       *   publicKey       — публичный ключ удалённой стороны
+       *   presharedKey    — PSK (должен совпадать на обеих сторонах)
+       *   endpoint        — удалённый endpoint (host:port)
+       *   persistentKeepalive — keepalive
+       *   allowedIPs      — туннельный IP удалённой стороны /32 (AllowedIPs в нашем конфиге)
+       *   clientAllowedIPs — что мы будем маршрутизировать через этот пир
+       *
+       * Отличие от POST /peers: тип всегда 'interconnect', generateKeys=false, autoAllocateIP=false.
+       * Ключи не генерируются — они уже содержатся в импортируемом JSON.
+       */
+      .post('/api/tunnel-interfaces/:id/peers/import-json', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const body = await readBody(event);
+
+        if (!body.publicKey) {
+          throw createError({ status: 400, message: 'publicKey is required in import JSON' });
+        }
+        if (!body.allowedIPs) {
+          throw createError({ status: 400, message: 'allowedIPs is required in import JSON' });
+        }
+        if (!body.name) {
+          throw createError({ status: 400, message: 'name is required' });
+        }
+
+        const peerData = {
+          name: body.name,
+          peerType: 'interconnect',
+          publicKey: body.publicKey,
+          presharedKey: body.presharedKey || '',
+          endpoint: body.endpoint || '',
+          allowedIPs: body.allowedIPs,
+          clientAllowedIPs: body.clientAllowedIPs || '0.0.0.0/0',
+          persistentKeepalive: body.persistentKeepalive || 25,
+          generateKeys: false,
+          autoAllocateIP: false,
+        };
+
+        const manager = await InterfaceManager.getInstance();
+        const peer = await manager.addPeer(id, peerData);
+
+        debug(`Peer imported from JSON: ${peer.id} to ${id}`);
+        return { peer: peer.toJSON() };
+      }))
+
+      /**
        * GET /api/tunnel-interfaces/:id/peers/:peerId
        * Получить информацию о peer
        */
@@ -753,6 +803,42 @@ module.exports = class Server {
       }))
 
       /**
+       * GET /api/tunnel-interfaces/:id/peers/:peerId/export-json
+       * Экспортировать параметры Interconnect peer для передачи удалённой стороне.
+       *
+       * Возвращает JSON-объект который удалённая сторона использует для импорта через
+       * POST /api/tunnel-interfaces/:remoteId/peers/import-json.
+       *
+       * Поля ответа:
+       *   name, publicKey, presharedKey, endpoint (WG_HOST:listenPort),
+       *   persistentKeepalive, allowedIPs (туннельный IP /32), clientAllowedIPs
+       *
+       * Доступен только для Interconnect пиров (peerType === 'interconnect').
+       */
+      .get('/api/tunnel-interfaces/:id/peers/:peerId/export-json', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const peerId = getRouterParam(event, 'peerId');
+
+        const manager = await InterfaceManager.getInstance();
+        const iface = manager.getInterface(id);
+        if (!iface) {
+          throw createError({ status: 404, message: 'Interface not found' });
+        }
+
+        const peer = manager.getPeer(id, peerId);
+        if (!peer) {
+          throw createError({ status: 404, message: 'Peer not found' });
+        }
+
+        if (peer.peerType !== 'interconnect') {
+          throw createError({ status: 400, message: 'export-json is only available for interconnect peers' });
+        }
+
+        const params = iface.exportPeerParams(peerId);
+        return params;
+      }))
+
+      /**
        * PUT /api/tunnel-interfaces/:id/peers/:peerId/name
        */
       .put('/api/tunnel-interfaces/:id/peers/:peerId/name', defineEventHandler(async (event) => {
@@ -803,6 +889,34 @@ module.exports = class Server {
         const oneTimeLink = [crypto.randomBytes(16).toString('hex')].join('');
         const peer = await manager.updatePeer(id, peerId, { oneTimeLink });
         return { peer: peer.toJSON() };
+      }))
+
+      /**
+       * GET /api/tunnel-interfaces/:id/export-obfuscation
+       * Экспортировать AWG2 параметры обфускации интерфейса.
+       *
+       * Возвращает текущие AWG2 параметры (Jc, Jmin, Jmax, S1-S4, H1-H4, I1-I5)
+       * в формате совместимом с Settings.createTemplate() — можно сохранить как профиль.
+       * H1-H4 копируются как есть (диапазоны), рандомизацию делает AWG-протокол.
+       *
+       * Ошибка 400 если интерфейс не AWG2.
+       */
+      .get('/api/tunnel-interfaces/:id/export-obfuscation', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await InterfaceManager.getInstance();
+        const iface = manager.getInterface(id);
+        if (!iface) {
+          throw createError({ status: 404, message: 'Interface not found' });
+        }
+
+        let params;
+        try {
+          params = iface.exportObfuscationParams();
+        } catch (err) {
+          throw createError({ status: 400, message: err.message });
+        }
+
+        return params;
       }))
 
       /**
