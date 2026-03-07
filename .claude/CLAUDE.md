@@ -44,9 +44,8 @@
 
 ## Правила работы
 
-- Активная ветка: **`feature/native-approach`** | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
-- Базовая ветка: `feature/new-design` (из неё создана `feature/native-approach`)
-- Коммитить и пушить только в активную ветку, не в worktree-ветки
+- Активная ветка: **`feature/kernel-module`** | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
+- Коммитить и пушить только в `feature/kernel-module`, не в worktree-ветки
 - После каждого пуша напоминать команды деплоя на сервере
 - Каждый коммит — подробное сообщение (что, почему, какие файлы)
 - После завершения задачи обновлять `REQUIREMENTS.md` (статус) и этот файл
@@ -277,9 +276,14 @@ POST /api/tunnel-interfaces/:id/stop   ← возвращает { interface: ifa
 POST /api/tunnel-interfaces/:id/restart ← возвращает { interface: iface.toJSON() }
 
 GET/POST /api/tunnel-interfaces/:id/peers
+POST /api/tunnel-interfaces/:id/peers/import-json  ← создать Interconnect peer из JSON
 GET/PATCH/DELETE /api/tunnel-interfaces/:id/peers/:peerId
 GET /api/tunnel-interfaces/:id/peers/:peerId/config
 GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
+POST /api/tunnel-interfaces/:id/peers/:peerId/enable
+POST /api/tunnel-interfaces/:id/peers/:peerId/disable
+GET /api/tunnel-interfaces/:id/peers/:peerId/export-json  ← JSON для передачи удалённой стороне
+GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 ```
 
 ---
@@ -391,40 +395,59 @@ async _doReload() {
 
 ## Checkpoint (текущее состояние)
 
-**Активная ветка:** `feature/native-approach` (создана из `feature/new-design`)
+**Активная ветка:** `feature/kernel-module`
 
-**Что работает:**
+**Что работает (backend):**
+- NAT только для client-интерфейсов (disableRoutes=false), interconnect — без NAT ✅ TESTED
+- H1-H4 не рандомизируются при apply template, копируются как есть ✅ TESTED
+- Peer model: peerType, clientAllowedIPs, enabled, PSK автогенерация ✅
+- addPeer: autoAllocateIP, generateKeys ✅
+- getStatus: transferRx/Tx, latestHandshake ✅
+- exportPeerParams(peerId): JSON для interconnect export ✅
+- exportObfuscationParams(): AWG2 settings JSON ✅
+- API: POST /peers/import-json, GET /peers/:id/export-json, GET /:id/export-obfuscation ✅
+
+**Что работает (frontend):**
 - Sidebar навигация (6 пунктов)
 - Interfaces page: dynamic tabs + per-interface view (info card + peers list)
 - Settings page: Global Settings + AWG2 Templates
 - Administration page: Admin Tunnel (бывший Clients)
 - Placeholder pages: Gateways, Routing, Firewall/NAT
-- WAN Tunnels: полностью удалены
 
 **Что не реализовано:**
+- Frontend: Steps 6-11 (API client methods, UI для export/import, enable/disable, online status, RX/TX)
 - Admin Instance backend (AdminInstance.js)
-- Interfaces edit modal
-- Peer enable/disable, online status, RX/TX
+- Interfaces edit modal (name/address/protocol/settings/template dropdown)
 - Gateways/Routing/Firewall backend
 
 ## Следующие задачи (по приоритету)
 
-### 0. [✅ ГОТОВО] native-approach рефакторинг
-- ✅ `_kernelRemovePeer` → `awg set peer remove` (без рестарта, без потери статистики)
-- ✅ `_doReload()` → process substitution вместо tmpfile (как WireGuard.js, mutex гарантирует безопасность)
+### ✅ DONE: Шаги 1-5 (backend)
+- ✅ Step 1: NAT fix (disableRoutes) — TESTED
+- ✅ Step 2: H1-H4 без рандомизации — TESTED
+- ✅ Steps 3-5: Peer model + export/import API
 
-### 1. Admin Instance
-- `src/lib/AdminInstance.js` — env vars → ключи → поднять при старте
-- API: `GET /api/admin`, `GET/POST/DELETE /api/admin/peers`, config + QR
-- UI: Administration page → Admin Tunnel (read-only статус, список пиров)
+### Текущий: Step 6 — api.js (новые клиентские методы)
+- `exportPeerJSON(ifaceId, peerId)` → GET .../export-json
+- `importPeerJSON(ifaceId, data)` → POST .../import-json
+- `exportObfuscation(ifaceId)` → GET .../export-obfuscation
+- `enablePeer(ifaceId, peerId)` / `disablePeer(ifaceId, peerId)`
+- `getPeerStats(ifaceId, peerId)` (или polling через getInterface)
 
-### 2. Interfaces улучшения
-- Edit modal (name/address/protocol/settings)
-- Load from template dropdown + авто-заполнение AWG2
-- Public key display + Copy button
+### Step 7: Settings page UI
+- Import/Export JSON кнопки для AWG2 профилей в Settings
 
-### 3. Peers улучшения
-- Enable/disable toggle, online/offline (latestHandshake), RX/TX
-- Peer edit modal
+### Step 8: Interface create/edit form
+- Обязательное поле IP, убрать "Use Defaults", дропдаун профиля
+
+### Step 9: Interface card
+- Кнопка Export обфускации, Export/Import peer JSON (только interconnect)
+
+### Step 10: Peer creation UI
+- Client: +New → имя → Create (автогенерация)
+- Interconnect: Manual (форма) / Import JSON
+
+### Step 11: Peer cards
+- online/offline, RX/TX, enable/disable, type-based кнопки
 
 Полный список → `REQUIREMENTS.md` раздел "🚧 Не реализовано".
