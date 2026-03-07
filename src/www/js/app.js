@@ -977,6 +977,57 @@ new Vue({
         .catch((err) => alert(`Restore failed: ${err.message}`));
     },
 
+    // ============================================================
+    // Interconnect Export / Import
+    // ============================================================
+
+    /**
+     * Download an interconnect peer's parameters as JSON.
+     * The remote side imports this file to configure their end of the tunnel.
+     */
+    async exportInterconnectPeerJSON(peer) {
+      try {
+        const params = await this.api.exportPeerJSON({
+          interfaceId: this.activeInterfaceId,
+          peerId: peer.id,
+        });
+        const blob = new Blob([JSON.stringify(params, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `peer-${peer.name.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(`Failed to export peer JSON: ${err.message}`);
+      }
+    },
+
+    /**
+     * Import an interconnect peer from a JSON file exported by the remote side.
+     * Opens a file picker, reads the JSON, and creates the peer via API.
+     */
+    importInterconnectPeerJSON() {
+      if (!this.activeInterfaceId) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,application/json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          await this.api.importPeerJSON({ interfaceId: this.activeInterfaceId, ...data });
+          await this.refreshPeers();
+          alert('Peer imported successfully!');
+        } catch (err) {
+          alert(`Failed to import peer: ${err.message}`);
+        }
+      };
+      input.click();
+    },
+
     async toggleDisableRoutes(iface) {
       try {
         await this.api.updateTunnelInterface({

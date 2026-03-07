@@ -694,6 +694,14 @@
                     </svg>
                     <span class="max-md:hidden text-sm">Manual</span>
                   </button>
+                  <!-- Import interconnect peer from JSON -->
+                  <button @click="importInterconnectPeerJSON()" title="Import interconnect peer from JSON (exported by remote side)"
+                    class="hover:bg-red-800 hover:border-red-800 hover:text-white text-gray-700 dark:text-neutral-200 max-md:border-x-0 border-2 border-gray-100 dark:border-neutral-600 py-2 px-4 md:rounded inline-flex items-center transition">
+                    <svg class="w-4 md:mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    <span class="max-md:hidden text-sm">Import JSON</span>
+                  </button>
                   <!-- New peer (quick create) -->
                   <button @click="showQuickPeerCreate = true; peerCreateName = ''; peerCreateExpiredDate = '';"
                     class="hover:bg-red-800 hover:border-red-800 hover:text-white text-gray-700 dark:text-neutral-200 max-md:border-l-0 border-2 border-gray-100 dark:border-neutral-600 py-2 px-4 rounded-r-full md:rounded inline-flex items-center transition">
@@ -895,6 +903,16 @@
                         class="align-middle bg-gray-100 dark:bg-neutral-600 dark:text-neutral-300 p-2 rounded transition hover:bg-red-800 dark:hover:bg-red-800 hover:text-white dark:hover:text-white">
                         <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                      </button>
+
+                      <!-- Export JSON (interconnect peers only) -->
+                      <button v-if="peer.peerType === 'interconnect'"
+                        @click="exportInterconnectPeerJSON(peer)"
+                        title="Export peer parameters as JSON (for remote side to import)"
+                        class="align-middle bg-gray-100 dark:bg-neutral-600 dark:text-neutral-300 p-2 rounded transition hover:bg-blue-600 dark:hover:bg-blue-600 hover:text-white dark:hover:text-white">
+                        <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                         </svg>
                       </button>
 
