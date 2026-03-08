@@ -77,7 +77,7 @@ class GatewayMonitor {
       // Alpine busybox:  "round-trip min/avg/max = X/AVG/X ms"
       // Матчим оба формата: ищем первое совпадение min/avg в строке с = X/AVG.
       const rm = out.match(/(?:rtt|round-trip)[^\n]+=\s*[\d.]+\/([\d.]+)\//);
-      const latency = rm ? parseFloat(rm[1]) : null;
+      const latency = rm ? Math.round(parseFloat(rm[1])) : null;
 
       let status = 'online';
       if (packetLoss === 100) {
