@@ -187,35 +187,72 @@ get _syncBin()  { return this.data.protocol === 'amneziawg-2.0' ? 'awg' : 'wg'; 
 // НЕПРАВИЛЬНО: захардкодить только wg-quick или только awg-quick
 ```
 
-### FIX-8: _kernelRemovePeer — AWG2 использует syncconf, не set peer remove
+### FIX-8: _kernelRemovePeer — AWG2 использует restart(), WG1 — wg set peer remove
 **Файл:** `src/lib/TunnelInterface.js` → метод `_kernelRemovePeer()`
-**Причина:** `awg set peer <pubkey> remove` зависает в ядре на паттерне
-add→remove→add→remove (баг AWG kernel module, подтверждён тестами).
-WireGuard 1.0 (`wg set peer remove`) этим не страдает.
+**Причина:** `awg set peer remove` дедлочится в AWG kernel module. Безопасное решение — restart().
+Сериализован через `_reloadMutex`.
 
 ```javascript
-// ПРАВИЛЬНО (текущее состояние):
-async _kernelRemovePeer(peerId, publicKey) {
+// ПРАВИЛЬНО:
+async _kernelRemovePeer(peerId, _publicKey) {
   if (!this.data.enabled) return;
-  if (this.data.protocol === 'amneziawg-2.0') {
-    // awg set peer remove deadlocks on add→remove→add→remove (AWG kernel bug).
-    // syncconf is safer: deadlocks later (~5+ iterations vs ~3).
-    await this.reload();
-  } else {
-    await Util.exec(`${this._syncBin} set ${this.id} peer ${publicKey} remove`);
-  }
+  this._reloadMutex = this._reloadMutex
+    .then(async () => {
+      try {
+        await this.restart();
+        debug(`Interface ${this.id} restarted to remove peer ${peerId}`);
+      } catch (err) {
+        debug(`_kernelRemovePeer restart failed for ${peerId}: ${err.message}`);
+      }
+    })
+    .catch(() => {});
+  return this._reloadMutex;
 }
+// НЕПРАВИЛЬНО: awg set peer remove (дедлок), или без _reloadMutex
 ```
 
-**⚠️ ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ AWG2:**
-Любая remove→add→remove операция с AWG ядром в конечном счёте дедлочится — это
-фундаментальный баг в AWG kernel module. `awg syncconf` задерживает дедлок
-(~5+ итераций) но не устраняет полностью. `awg set peer remove` дедлочится быстрее (~3).
-WireGuard 1.0 этим не страдает совсем.
+### FIX-9: _kernelSetPeer — AWG2 использует syncconf (reload), WG1 — wg set peer
+**Файл:** `src/lib/TunnelInterface.js` → метод `_kernelSetPeer()`
+**Причина:** `awg set peer <key> <params>` нестабилен в AWG kernel module — занимает
+10-15+ секунд даже при добавлении первого пира на чистый интерфейс. После завершения
+оставляет ядро в плохом состоянии → getStatus() дедлочится. Подтверждено в production.
+Для AWG2: используем reload() (awg syncconf) — конфиг на диске уже обновлён раньше.
+Сериализован через `_reloadMutex` (через reload()).
 
-**Единственный надёжный фикс:** `restart()` (down+up) — гарантированно работает,
-но флапает интерфейс и сбрасывает всю статистику пиров.
-**Принятое решение:** текущий подход (syncconf) достаточен — пиры выключают редко.
+```javascript
+// ПРАВИЛЬНО:
+async _kernelSetPeer(peer) {
+  if (!this.data.enabled) return;
+  if (this.data.protocol === 'amneziawg-2.0') {
+    return this.reload(); // awg syncconf — атомарно, без awg set peer
+  }
+  // WireGuard 1.0: wg set надёжен
+  this._reloadMutex = this._reloadMutex
+    .then(async () => { /* wg set peer ... */ })
+    .catch(() => {});
+  return this._reloadMutex;
+}
+// НЕПРАВИЛЬНО: awg set peer add для AWG2 (медленно, оставляет ядро в плохом состоянии)
+```
+
+**Важно для обоих методов (_kernelRemovePeer и _kernelSetPeer):**
+Оба идут через `_reloadMutex` — гарантирует что `restart()` и `reload()` никогда
+не выполняются одновременно. Конкурентный awg syncconf + awg-quick up = deadlock.
+
+### FIX-10: Util.exec — timeout по умолчанию 30s
+**Файл:** `src/lib/Util.js` → метод `exec()`
+**Причина:** Без timeout зависший `awg`/`wg` процесс живёт вечно. При polling каждую
+секунду накапливаются сотни зависших дочерних процессов → исчерпание ресурсов → container freeze.
+
+```javascript
+// ПРАВИЛЬНО:
+static async exec(cmd, { log = true, timeout = 30000 } = {}) {
+  // ...
+  const child = childProcess.exec(cmd, { shell: 'bash', timeout, killSignal: 'SIGKILL' }, callback);
+}
+// getStatus() вызывает с timeout: 5000 — быстро убивает зависший awg show dump
+// НЕПРАВИЛЬНО: без timeout (childProcess.exec висит вечно)
+```
 
 ---
 
@@ -315,81 +352,10 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | `c83b983` | feature/kernel-module | feat: Settings.js + Settings/Templates API |
 | `7482fc2` | feature/kernel-module | feat(ui): вкладка Settings (Global Settings + AWG2 Templates) |
 | `aa4feda` | feature/kernel-module | fix(ui): reactive status update after start/stop/restart |
-| `7cfee9d` | feature/new-design | fix: AWG kernel deadlock — restart() вместо set peer remove |
-| `139e7fa` | feature/new-design | revert: _kernelRemovePeer вернули к awg set peer remove |
-
----
-
-## 🔬 ИССЛЕДОВАНИЕ — feature/native-approach
-
-### Контекст (почему создана ветка)
-
-**Наблюдение:** `WireGuard.js` (admin-туннель wg0) использует AWG2-параметры (Jc, Jmin, H1-H4)
-и вызывает `wg syncconf wg0 <(wg-quick strip wg0)` — process substitution.
-На сервере `wg-quick` = `awg-quick` (бинарник AWG, не стандартный WG).
-Это означает что admin-туннель фактически делает:
-```bash
-awg syncconf wg0 <(awg-quick strip wg0)
-```
-...и **работает стабильно** (логи показывают завершение за ~30ms без зависаний).
-
-**Вывод:** В `TunnelInterface.js` был добавлен tmpfile-подход как страховка от deadlock'а,
-но `WireGuard.js` доказывает что process substitution с AWG2 работает нормально.
-Mutex в `TunnelInterface.js` уже сериализует вызовы `reload()` → конкурентности нет →
-deadlock невозможен → tmpfile был избыточной мерой.
-
-### Что уже сделано в feature/native-approach
-
-- ✅ `_kernelRemovePeer()` — откат к `awg set peer remove` (коммит `139e7fa` перенесён)
-  - **Было:** `this.restart()` (полный down/up, сбрасывал всю статистику, флапал интерфейс)
-  - **Стало:** `${this._syncBin} set ${this.id} peer ${publicKey} remove` (атомарно, без флапа)
-
-### Что нужно сделать в feature/native-approach
-
-#### Задача 1: `_doReload()` — заменить tmpfile на process substitution
-
-**Файл:** `src/lib/TunnelInterface.js` → метод `_doReload()` (~строки 572-585)
-
-**Текущий код (tmpfile):**
-```javascript
-async _doReload() {
-  const tmpFile = `/tmp/${this.id}-syncconf.conf`;
-  try {
-    await fs.writeFile(tmpFile, this._generateSyncConfig(), { mode: 0o600 });
-    await Util.exec(`${this._syncBin} syncconf ${this.id} ${tmpFile}`);
-    debug(`Interface ${this.id} reloaded (hot)`);
-  } catch (err) {
-    debug(`Hot reload failed (${err.message}) — skipping restart to avoid kernel hang`);
-  } finally {
-    await fs.unlink(tmpFile).catch(() => {});
-  }
-}
-```
-
-**Целевой код (process substitution, как в WireGuard.js):**
-```javascript
-async _doReload() {
-  try {
-    await Util.exec(`${this._syncBin} syncconf ${this.id} <(${this._quickBin} strip ${this.id})`);
-    debug(`Interface ${this.id} reloaded (hot)`);
-  } catch (err) {
-    debug(`Hot reload failed (${err.message}) — skipping restart to avoid kernel hang`);
-  }
-}
-```
-
-**Почему безопасно:**
-- `_reloadMutex` уже сериализует все вызовы `reload()` → одновременно всегда максимум один `syncconf`
-- Process substitution внутри одной команды не создаёт конкуренции при отсутствии параллельных вызовов
-- WireGuard.js доказывает что это работает для AWG2
-
-**Также:** метод `_generateSyncConfig()` можно оставить (он используется для записи wg-quick конфига при `start()`), но `_doReload()` больше не должен писать tmpfile.
-
-#### После выполнения задачи — проверить на сервере:
-1. Включить/выключить пир несколько раз подряд
-2. Убедиться что статистика остальных пиров не сбрасывается
-3. Убедиться что интерфейс не флапает (нет down/up в логах)
-4. Убедиться что `wg show wg10` отражает актуальный список пиров
+| `f8ca1ab` | feature/kernel-module | feat(ui): S2S badge + runtimeEndpoint в карточке пира |
+| `a3d0aa5` | feature/kernel-module | fix: interconnect peer allowedIPs = host /32, не подсеть |
+| `028a7c5` | feature/kernel-module | fix: mutex для _kernelSetPeer + exec timeout |
+| `b3c53be` | feature/kernel-module | fix: AWG2 _kernelSetPeer → awg syncconf вместо awg set peer |
 
 ---
 
@@ -403,51 +369,30 @@ async _doReload() {
 - Peer model: peerType, clientAllowedIPs, enabled, PSK автогенерация ✅
 - addPeer: autoAllocateIP, generateKeys ✅
 - getStatus: transferRx/Tx, latestHandshake ✅
-- exportPeerParams(peerId): JSON для interconnect export ✅
-- exportObfuscationParams(): AWG2 settings JSON ✅
-- API: POST /peers/import-json, GET /peers/:id/export-json, GET /:id/export-obfuscation ✅
+- Export/Import interconnect peer params (JSON workflow) ✅ TESTED
+- AWG kernel deadlock: _kernelSetPeer → syncconf, _kernelRemovePeer → restart ✅ TESTED
+- Util.exec timeout 30s (5s для getStatus) ✅
 
 **Что работает (frontend):**
 - Sidebar навигация (6 пунктов)
 - Interfaces page: dynamic tabs + per-interface view (info card + peers list)
+- Interface card: "Export My Params" кнопка
+- Peers: peerType toggle (Client/Interconnect) при создании
+- Peers: Import JSON кнопка (interconnect workflow)
+- Peer cards: S2S badge, runtimeEndpoint, online/offline, RX/TX, enable/disable
 - Settings page: Global Settings + AWG2 Templates
 - Administration page: Admin Tunnel (бывший Clients)
 - Placeholder pages: Gateways, Routing, Firewall/NAT
 
 **Что не реализовано:**
-- Frontend: Steps 6-11 (API client methods, UI для export/import, enable/disable, online status, RX/TX)
 - Admin Instance backend (AdminInstance.js)
 - Interfaces edit modal (name/address/protocol/settings/template dropdown)
 - Gateways/Routing/Firewall backend
 
 ## Следующие задачи (по приоритету)
 
-### ✅ DONE: Шаги 1-5 (backend)
-- ✅ Step 1: NAT fix (disableRoutes) — TESTED
-- ✅ Step 2: H1-H4 без рандомизации — TESTED
-- ✅ Steps 3-5: Peer model + export/import API
-
-### Текущий: Step 6 — api.js (новые клиентские методы)
-- `exportPeerJSON(ifaceId, peerId)` → GET .../export-json
-- `importPeerJSON(ifaceId, data)` → POST .../import-json
-- `exportObfuscation(ifaceId)` → GET .../export-obfuscation
-- `enablePeer(ifaceId, peerId)` / `disablePeer(ifaceId, peerId)`
-- `getPeerStats(ifaceId, peerId)` (или polling через getInterface)
-
-### Step 7: Settings page UI
-- Import/Export JSON кнопки для AWG2 профилей в Settings
-
-### Step 8: Interface create/edit form
-- Обязательное поле IP, убрать "Use Defaults", дропдаун профиля
-
-### Step 9: Interface card
-- Кнопка Export обфускации, Export/Import peer JSON (только interconnect)
-
-### Step 10: Peer creation UI
-- Client: +New → имя → Create (автогенерация)
-- Interconnect: Manual (форма) / Import JSON
-
-### Step 11: Peer cards
-- online/offline, RX/TX, enable/disable, type-based кнопки
+1. **Interfaces edit modal** — имя, адрес, протокол, дропдаун шаблона AWG2
+2. **Admin Instance** — `src/lib/AdminInstance.js`, страница Administration
+3. **Gateways/Routing/Firewall** — backend + UI
 
 Полный список → `REQUIREMENTS.md` раздел "🚧 Не реализовано".
