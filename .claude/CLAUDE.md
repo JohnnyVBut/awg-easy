@@ -53,7 +53,7 @@
 ## Деплой на сервере
 
 ```bash
-git pull origin feature/native-approach
+git pull origin feature/kernel-module
 ./build.sh
 docker compose down && docker compose up -d
 ```
@@ -311,6 +311,7 @@ GET/PATCH/DELETE /api/tunnel-interfaces/:id
 POST /api/tunnel-interfaces/:id/start  ← возвращает { interface: iface.toJSON() }
 POST /api/tunnel-interfaces/:id/stop   ← возвращает { interface: iface.toJSON() }
 POST /api/tunnel-interfaces/:id/restart ← возвращает { interface: iface.toJSON() }
+GET /api/tunnel-interfaces/:id/export-params  ← { name, publicKey, endpoint, address, protocol, [presharedKey] }
 
 GET/POST /api/tunnel-interfaces/:id/peers
 POST /api/tunnel-interfaces/:id/peers/import-json  ← создать Interconnect peer из JSON
@@ -319,7 +320,6 @@ GET /api/tunnel-interfaces/:id/peers/:peerId/config
 GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 POST /api/tunnel-interfaces/:id/peers/:peerId/enable
 POST /api/tunnel-interfaces/:id/peers/:peerId/disable
-GET /api/tunnel-interfaces/:id/peers/:peerId/export-json  ← JSON для передачи удалённой стороне
 GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 ```
 
@@ -362,37 +362,102 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
+**Последний коммит:** `c83b3cc` (docs: CLAUDE.md update)
 
-**Что работает (backend):**
-- NAT только для client-интерфейсов (disableRoutes=false), interconnect — без NAT ✅ TESTED
-- H1-H4 не рандомизируются при apply template, копируются как есть ✅ TESTED
-- Peer model: peerType, clientAllowedIPs, enabled, PSK автогенерация ✅
-- addPeer: autoAllocateIP, generateKeys ✅
-- getStatus: transferRx/Tx, latestHandshake ✅
-- Export/Import interconnect peer params (JSON workflow) ✅ TESTED
-- AWG kernel deadlock: _kernelSetPeer → syncconf, _kernelRemovePeer → restart ✅ TESTED
-- Util.exec timeout 30s (5s для getStatus) ✅
+---
 
-**Что работает (frontend):**
-- Sidebar навигация (6 пунктов)
-- Interfaces page: dynamic tabs + per-interface view (info card + peers list)
-- Interface card: "Export My Params" кнопка
-- Peers: peerType toggle (Client/Interconnect) при создании
-- Peers: Import JSON кнопка (interconnect workflow)
-- Peer cards: S2S badge, runtimeEndpoint, online/offline, RX/TX, enable/disable
-- Settings page: Global Settings + AWG2 Templates
-- Administration page: Admin Tunnel (бывший Clients)
-- Placeholder pages: Gateways, Routing, Firewall/NAT
+### ✅ Что работает — Backend
 
-**Что не реализовано:**
-- Admin Instance backend (AdminInstance.js)
-- Interfaces edit modal (name/address/protocol/settings/template dropdown)
-- Gateways/Routing/Firewall backend
+| Фича | Статус | Примечание |
+|------|--------|------------|
+| NAT только для client-iface (disableRoutes) | ✅ TESTED | interconnect — без MASQUERADE |
+| H1-H4 non-overlapping zones | ✅ TESTED | 4 зоны по 1073741823 uint32 |
+| Peer model: peerType, clientAllowedIPs, enabled, PSK | ✅ | |
+| addPeer: autoAllocateIP, generateKeys | ✅ | |
+| getStatus: transferRx/Tx, latestHandshake, runtimeEndpoint | ✅ | polling через setInterval |
+| Export/Import interconnect peer JSON workflow | ✅ TESTED | PSK координация работает |
+| AWG kernel deadlock fix: syncconf + restart | ✅ TESTED | awg set peer → убран для AWG2 |
+| Util.exec timeout 30s / getStatus 5s | ✅ | SIGKILL при превышении |
+
+### ✅ Что работает — Frontend
+
+| Страница/Компонент | Статус | Детали |
+|-------------------|--------|--------|
+| Sidebar (6 пунктов) | ✅ | Interfaces, Gateways, Routing, Firewall, Settings, Administration |
+| Interfaces: dynamic tabs | ✅ | по одной вкладке на интерфейс |
+| Interfaces: per-interface view | ✅ | Info card + Peers list |
+| Interface card: "Export My Params" | ✅ | скачивает JSON для другой стороны |
+| Peers: create modal (Client/Interconnect toggle) | ✅ | peerType выбирается до создания |
+| Peers: "Import JSON" кнопка | ✅ | interconnect workflow |
+| Peer cards: S2S badge | ✅ | синий тег для peerType=interconnect |
+| Peer cards: runtimeEndpoint | ✅ | IP:port из wg dump (обновляется ~1s) |
+| Peer cards: online/offline dot | ✅ | красный мигающий = online |
+| Peer cards: RX/TX stats | ✅ | текущий и накопленный трафик |
+| Peer cards: enable/disable toggle | ✅ | |
+| Peer cards: QR/download (только client) | ✅ | downloadableConfig = !!privateKey |
+| Settings: Global Settings + AWG2 Templates | ✅ | |
+| Administration: Admin Tunnel (старый Clients) | ✅ | |
+| Gateways / Routing / Firewall | ⏳ | placeholder "Coming soon" |
+
+### ❌ Что не реализовано
+
+1. **Interfaces edit modal** — редактирование имени, адреса, протокола, дропдаун шаблона AWG2
+2. **Admin Instance backend** — `src/lib/AdminInstance.js` (управление wg0/admin-туннелем через новую архитектуру)
+3. **Gateways** — backend + UI
+4. **Routing** — backend + UI (`ip route add` через API)
+5. **Firewall/NAT** — backend + UI
+
+---
+
+## S2S Interconnect Workflow (реализован, протестирован)
+
+Сценарий: два сервера (A и B), нужно создать S2S туннель.
+
+```
+Сервер A:                          Сервер B:
+1. Создать интерфейс wg10           1. Создать интерфейс wg10
+   (адрес 10.100.0.1/24)               (адрес 10.100.1.1/24)
+2. Export My Params →               2. Import JSON (файл от A)
+   скачать wg10-params.json            → создаётся Interconnect peer
+   { publicKey, endpoint,              → PSK генерируется автоматически
+     address, protocol }
+                                    3. Export My Params →
+                                       скачать wg10-params.json
+                                       { publicKey, endpoint,
+                                         address, protocol,
+                                         presharedKey }  ← PSK включён!
+4. Import JSON (файл от B)
+   → создаётся Interconnect peer
+   → PSK берётся из файла (sync!)
+```
+
+**Ключевые детали реализации:**
+- `export-params`: возвращает publicKey + endpoint (WG_HOST:port) + address + protocol
+  + presharedKey если уже есть interconnect peer с PSK
+- `import-json`: принимает оба формата — interface-params (address → /32) и peer-params (allowedIPs напрямую)
+- AllowedIPs для interconnect пира = `<remote_ip>/32` (не подсеть — крипто-роутинг только до пира)
+- PSK: сторона B генерирует при первом импорте, потом включает в свой export → A получает при импорте
+
+---
 
 ## Следующие задачи (по приоритету)
 
-1. **Interfaces edit modal** — имя, адрес, протокол, дропдаун шаблона AWG2
-2. **Admin Instance** — `src/lib/AdminInstance.js`, страница Administration
-3. **Gateways/Routing/Firewall** — backend + UI
+### 1. Interfaces edit modal (приоритет: высокий)
+**Что нужно:**
+- Кнопка "Edit" (карандаш) на interface card
+- Модальное окно: Name, Address (IP/mask), Protocol (dropdown: wireguard-1.0 / amneziawg-2.0)
+- Для AWG2: dropdown "Apply template" → автозаполнение H1-H4, Jc, Jmin, Jmax, S1-S4
+- PATCH /api/tunnel-interfaces/:id → перезапуск интерфейса с новым конфигом
+- **Файлы:** `src/www/index.html` (модалка), `src/www/js/app.js` (методы), `src/www/js/api.js` (updateInterface)
+
+### 2. Admin Instance (приоритет: средний)
+**Что нужно:**
+- `src/lib/AdminInstance.js` — загрузка из ENV vars (WG_DEFAULT_ADDRESS, WG_DEFAULT_DNS, etc.)
+- Страница Administration: показать статус admin-туннеля, список клиентов (из WireGuard.js)
+- **Файлы:** новый `src/lib/AdminInstance.js`, `src/www/index.html` (страница Administration), `src/lib/Server.js` (API)
+
+### 3. Gateways/Routing/Firewall (приоритет: низкий)
+- Заглушки "Coming soon" заменить на реальный UI
+- Backend: `ip route add/del`, `iptables-nft` правила через API
 
 Полный список → `REQUIREMENTS.md` раздел "🚧 Не реализовано".
