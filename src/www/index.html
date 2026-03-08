@@ -569,12 +569,18 @@
         <!-- ============================================================== -->
         <div v-if="activePage === 'interfaces'">
 
-          <!-- Tab bar: (+) + interface tabs -->
+          <!-- Tab bar: (+) + "All" dashboard tab + interface tabs -->
           <div class="flex gap-2 mb-4 overflow-x-auto whitespace-nowrap" style="padding-bottom: 4px;">
             <button @click="showInterfaceCreate = true"
               class="px-4 py-2 bg-green-600 text-white rounded-lg font-medium transition text-sm"
               title="Create Interface">
               +
+            </button>
+            <!-- "All" dashboard tab: selected when no interface is active -->
+            <button @click="activeInterfaceId = null"
+              :class="!activeInterfaceId ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+              class="px-4 py-2 rounded-lg font-medium transition text-sm">
+              All
             </button>
             <button v-for="iface in tunnelInterfaces" :key="iface.id"
               @click="activeInterfaceId = iface.id"
@@ -584,10 +590,189 @@
             </button>
           </div>
 
-          <!-- Empty state -->
-          <div v-if="!activeInterfaceId || !currentInterface" class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
-            <p v-if="tunnelInterfaces.length === 0" class="text-lg">No interfaces yet. Click <strong>+</strong> to create one.</p>
-            <p v-else class="text-lg">Select an interface tab above.</p>
+          <!-- Dashboard view (no interface tab selected) -->
+          <div v-if="!activeInterfaceId">
+            <!-- No interfaces at all -->
+            <div v-if="tunnelInterfaces.length === 0"
+              class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
+              <p class="text-lg">No interfaces yet. Click <strong>+</strong> to create one.</p>
+            </div>
+            <!-- Interfaces exist: show all peers from all interfaces -->
+            <div v-else>
+              <div v-if="allPeers.length === 0"
+                class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
+                <p>No peers across all interfaces.</p>
+              </div>
+              <div v-else class="shadow-md rounded-lg bg-white dark:bg-neutral-700 overflow-hidden">
+                <div v-for="peer in allPeers" :key="peer.id + '/' + peer.interfaceId"
+                  class="relative overflow-hidden border-b last:border-b-0 border-gray-100 dark:border-neutral-600 border-solid">
+
+                  <!-- Chart -->
+                  <div v-if="uiChartType" :class="`absolute z-0 bottom-0 left-0 right-0 h-6 ${uiChartType === 1 && 'line-chart'}`">
+                    <apexchart width="100%" height="100%" :options="chartOptionsTX" :series="peer.transferTxSeries"></apexchart>
+                  </div>
+                  <div v-if="uiChartType" :class="`absolute z-0 top-0 left-0 right-0 h-6 ${uiChartType === 1 && 'line-chart'}`">
+                    <apexchart width="100%" height="100%" :options="chartOptionsRX" :series="peer.transferRxSeries" style="transform: scaleY(-1);"></apexchart>
+                  </div>
+
+                  <div class="relative py-3 md:py-5 px-3 z-10 flex flex-col sm:flex-row justify-between gap-3">
+                    <div class="flex gap-3 md:gap-4 w-full items-center">
+
+                      <!-- Avatar -->
+                      <div class="h-10 w-10 mt-2 self-start rounded-full bg-gray-50 relative">
+                        <svg class="w-6 m-2 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+                        </svg>
+                        <img v-if="peer.avatar" :src="peer.avatar" class="w-10 rounded-full absolute top-0 left-0" />
+                        <div v-if="peer.latestHandshakeAt && ((new Date() - new Date(peer.latestHandshakeAt) < 1000 * 60 * 10))">
+                          <div class="animate-ping w-4 h-4 p-1 bg-red-100 dark:bg-red-100 rounded-full absolute -bottom-1 -right-1"></div>
+                          <div class="w-2 h-2 bg-red-800 dark:bg-red-600 rounded-full absolute bottom-0 right-0"></div>
+                        </div>
+                      </div>
+
+                      <!-- Name & Info -->
+                      <div class="flex flex-col xxs:flex-row w-full gap-2">
+                        <div class="flex flex-col flex-grow gap-1">
+                          <div class="text-gray-700 dark:text-neutral-200 group text-sm md:text-base"
+                            :title="peer.createdAt ? 'Created: ' + dateTime(new Date(peer.createdAt)) : ''">
+                            <input v-show="peerEditNameId === peer.id" v-model="peerEditName"
+                              v-on:keyup.enter="updatePeerName(peer, peerEditName); peerEditName = null; peerEditNameId = null;"
+                              v-on:keyup.escape="peerEditName = null; peerEditNameId = null;"
+                              :ref="'dpeer-' + peer.id + '-name'"
+                              class="rounded px-1 border-2 dark:bg-neutral-700 border-gray-100 dark:border-neutral-600 focus:border-gray-200 dark:focus:border-neutral-500 dark:placeholder:text-neutral-500 outline-none w-30" />
+                            <span v-show="peerEditNameId !== peer.id" class="border-t-2 border-b-2 border-transparent">{{peer.name}}</span>
+                            <!-- Interface name badge -->
+                            <span style="margin-left:6px;font-size:0.65rem;padding:1px 6px;background:rgba(107,114,128,0.12);color:#6b7280;border-radius:4px;font-weight:600;vertical-align:middle;display:inline-block;letter-spacing:0.02em;">
+                              {{peer.interfaceName}}
+                            </span>
+                            <!-- S2S badge -->
+                            <span v-if="peer.peerType === 'interconnect' && peerEditNameId !== peer.id"
+                              style="margin-left:4px;font-size:0.65rem;padding:1px 6px;background:rgba(59,130,246,0.12);color:#2563eb;border-radius:4px;font-weight:600;vertical-align:middle;display:inline-block;letter-spacing:0.02em;">
+                              S2S
+                            </span>
+                            <span v-show="peerEditNameId !== peer.id"
+                              @click="peerEditName = peer.name; peerEditNameId = peer.id; setTimeout(() => $refs['dpeer-' + peer.id + '-name'][0].select(), 1);"
+                              class="cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline align-middle opacity-25 hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </span>
+                          </div>
+                          <!-- Address -->
+                          <div class="block md:inline-block pb-1 md:pb-0 text-gray-500 dark:text-neutral-400 text-xs">
+                            <span>{{peer.allowedIPs}}</span>
+                            <!-- Inline Transfer TX -->
+                            <span v-if="!uiTrafficStats && peer.transferTx" class="whitespace-nowrap" :title="'Total download: ' + bytes(peer.transferTx)">
+                              ·
+                              <svg class="align-middle h-3 inline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                              </svg>
+                              {{peer.transferTxCurrent | bytes}}/s
+                            </span>
+                            <!-- Inline Transfer RX -->
+                            <span v-if="!uiTrafficStats && peer.transferRx" class="whitespace-nowrap" :title="'Total upload: ' + bytes(peer.transferRx)">
+                              ·
+                              <svg class="align-middle h-3 inline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                              </svg>
+                              {{peer.transferRxCurrent | bytes}}/s
+                            </span>
+                            <!-- Last seen -->
+                            <span class="text-gray-400 dark:text-neutral-500 whitespace-nowrap" v-if="peer.latestHandshakeAt"
+                              :title="'Last seen: ' + dateTime(new Date(peer.latestHandshakeAt))">
+                              {{!uiTrafficStats ? " · " : ""}}{{new Date(peer.latestHandshakeAt) | timeago}}
+                            </span>
+                            <!-- Runtime endpoint -->
+                            <span v-if="peer.peerType === 'interconnect' && peer.runtimeEndpoint"
+                              class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
+                              :title="'Connected from: ' + peer.runtimeEndpoint">
+                              · {{peer.runtimeEndpoint}}
+                            </span>
+                          </div>
+                        </div>
+
+                        <!-- Traffic stats (side panel) -->
+                        <div v-if="uiTrafficStats"
+                          class="flex gap-2 items-center shrink-0 text-gray-400 dark:text-neutral-400 text-xs mt-px justify-end">
+                          <div class="min-w-20 md:min-w-24" v-if="peer.transferTx">
+                            <span class="flex gap-1" :title="'Total download: ' + bytes(peer.transferTx)">
+                              <svg class="align-middle h-3 inline mt-0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                              </svg>
+                              <div>
+                                <span class="text-gray-700 dark:text-neutral-200">{{peer.transferTxCurrent | bytes}}/s</span>
+                                <br><span class="font-regular" style="font-size:0.85em">{{bytes(peer.transferTx)}}</span>
+                              </div>
+                            </span>
+                          </div>
+                          <div class="min-w-20 md:min-w-24" v-if="peer.transferRx">
+                            <span class="flex gap-1" :title="'Total upload: ' + bytes(peer.transferRx)">
+                              <svg class="align-middle h-3 inline mt-0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                              </svg>
+                              <div>
+                                <span class="text-gray-700 dark:text-neutral-200">{{peer.transferRxCurrent | bytes}}/s</span>
+                                <br><span class="font-regular" style="font-size:0.85em">{{bytes(peer.transferRx)}}</span>
+                              </div>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center justify-end">
+                      <div class="text-gray-400 dark:text-neutral-400 flex gap-1 items-center justify-between">
+                        <!-- Enable/Disable -->
+                        <div @click="disablePeer(peer)" v-if="peer.enabled === true" title="Disable peer"
+                          class="inline-block align-middle rounded-full w-10 h-6 mr-1 bg-red-800 cursor-pointer hover:bg-red-700 transition-all">
+                          <div class="rounded-full w-4 h-4 m-1 ml-5 bg-white"></div>
+                        </div>
+                        <div @click="enablePeer(peer)" v-if="peer.enabled === false" title="Enable peer"
+                          class="inline-block align-middle rounded-full w-10 h-6 mr-1 bg-gray-200 dark:bg-neutral-400 cursor-pointer hover:bg-gray-300 dark:hover:bg-neutral-500 transition-all">
+                          <div class="rounded-full w-4 h-4 m-1 bg-white"></div>
+                        </div>
+
+                        <!-- Show QR -->
+                        <button :disabled="!peer.downloadableConfig"
+                          class="align-middle bg-gray-100 dark:bg-neutral-600 dark:text-neutral-300 p-2 rounded transition"
+                          :class="{
+                            'hover:bg-red-800 dark:hover:bg-red-800 hover:text-white dark:hover:text-white': peer.downloadableConfig,
+                            'is-disabled': !peer.downloadableConfig
+                          }"
+                          :title="!peer.downloadableConfig ? 'No private key' : 'Show QR'"
+                          @click="qrcode = './api/tunnel-interfaces/' + peer.interfaceId + '/peers/' + peer.id + '/qrcode.svg'">
+                          <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                          </svg>
+                        </button>
+
+                        <!-- Download Config -->
+                        <button :disabled="!peer.downloadableConfig"
+                          @click="if(peer.downloadableConfig) downloadPeerConfig(peer)"
+                          class="align-middle bg-gray-100 dark:bg-neutral-600 dark:text-neutral-300 p-2 rounded transition"
+                          :class="{
+                            'hover:bg-red-800 dark:hover:bg-red-800 hover:text-white dark:hover:text-white': peer.downloadableConfig,
+                            'is-disabled': !peer.downloadableConfig
+                          }"
+                          :title="!peer.downloadableConfig ? 'No private key' : 'Download config'">
+                          <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </button>
+
+                        <!-- Delete -->
+                        <button @click="peerDelete = peer" title="Delete peer"
+                          class="align-middle bg-gray-100 dark:bg-neutral-600 dark:text-neutral-300 p-2 rounded transition hover:bg-red-800 dark:hover:bg-red-800 hover:text-white dark:hover:text-white">
+                          <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Per-interface view -->
@@ -894,7 +1079,7 @@
                           'is-disabled': !peer.downloadableConfig
                         }"
                         :title="!peer.downloadableConfig ? 'No private key' : 'Show QR'"
-                        @click="qrcode = './api/tunnel-interfaces/' + activeInterfaceId + '/peers/' + peer.id + '/qrcode.svg'">
+                        @click="qrcode = './api/tunnel-interfaces/' + (peer.interfaceId || activeInterfaceId) + '/peers/' + peer.id + '/qrcode.svg'">
                         <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                         </svg>

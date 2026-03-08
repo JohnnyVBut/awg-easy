@@ -118,6 +118,7 @@ new Vue({
     tunnelInterfaces: [],
     selectedInterface: null,
     selectedInterfacePeers: [],
+    allPeers: [],            // dashboard: flat list of peers from all interfaces
     showInterfaceCreate: false,
     showPeerCreate: false, // manual peer create modal
     showQuickPeerCreate: false, // quick peer create dialog
@@ -746,7 +747,7 @@ new Vue({
 
     async downloadPeerConfig(peer) {
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${this.activeInterfaceId}/peers/${peer.id}/config`, {
+        const res = await fetch(`/api/tunnel-interfaces/${this._peerIfaceId(peer)}/peers/${peer.id}/config`, {
           credentials: 'include',
         });
         if (!res.ok) throw new Error(res.statusText);
@@ -810,10 +811,24 @@ new Vue({
     // Peer management methods (admin-tunnel style)
     // ========================================================================
 
+    // Returns the correct interfaceId for a peer action, works both in per-interface view and dashboard
+    _peerIfaceId(peer) {
+      return (peer && peer.interfaceId) || this.activeInterfaceId;
+    },
+
+    // Refresh peers: if an interface tab is selected, refresh that interface; otherwise refresh all (dashboard)
+    async _refreshPeersOrAll(opts = {}) {
+      if (this.activeInterfaceId) {
+        await this.refreshPeers(opts);
+      } else {
+        await this.refreshAllPeers(opts);
+      }
+    },
+
     async enablePeer(peer) {
       try {
-        await this.api.enablePeer({ interfaceId: this.activeInterfaceId, peerId: peer.id });
-        await this.refreshPeers();
+        await this.api.enablePeer({ interfaceId: this._peerIfaceId(peer), peerId: peer.id });
+        await this._refreshPeersOrAll();
       } catch (err) {
         alert(err.message || err.toString());
       }
@@ -821,8 +836,8 @@ new Vue({
 
     async disablePeer(peer) {
       try {
-        await this.api.disablePeer({ interfaceId: this.activeInterfaceId, peerId: peer.id });
-        await this.refreshPeers();
+        await this.api.disablePeer({ interfaceId: this._peerIfaceId(peer), peerId: peer.id });
+        await this._refreshPeersOrAll();
       } catch (err) {
         alert(err.message || err.toString());
       }
@@ -830,8 +845,8 @@ new Vue({
 
     async updatePeerName(peer, name) {
       try {
-        await this.api.updatePeerName({ interfaceId: this.activeInterfaceId, peerId: peer.id, name });
-        await this.refreshPeers();
+        await this.api.updatePeerName({ interfaceId: this._peerIfaceId(peer), peerId: peer.id, name });
+        await this._refreshPeersOrAll();
       } catch (err) {
         alert(err.message || err.toString());
       }
@@ -839,8 +854,8 @@ new Vue({
 
     async updatePeerAddress(peer, address) {
       try {
-        await this.api.updatePeerAddress({ interfaceId: this.activeInterfaceId, peerId: peer.id, address });
-        await this.refreshPeers();
+        await this.api.updatePeerAddress({ interfaceId: this._peerIfaceId(peer), peerId: peer.id, address });
+        await this._refreshPeersOrAll();
       } catch (err) {
         alert(err.message || err.toString());
       }
@@ -848,8 +863,8 @@ new Vue({
 
     async updatePeerExpireDate(peer, expireDate) {
       try {
-        await this.api.updatePeerExpireDate({ interfaceId: this.activeInterfaceId, peerId: peer.id, expireDate });
-        await this.refreshPeers();
+        await this.api.updatePeerExpireDate({ interfaceId: this._peerIfaceId(peer), peerId: peer.id, expireDate });
+        await this._refreshPeersOrAll();
       } catch (err) {
         alert(err.message || err.toString());
       }
@@ -857,8 +872,8 @@ new Vue({
 
     async showPeerOneTimeLink(peer) {
       try {
-        await this.api.generatePeerOneTimeLink({ interfaceId: this.activeInterfaceId, peerId: peer.id });
-        await this.refreshPeers();
+        await this.api.generatePeerOneTimeLink({ interfaceId: this._peerIfaceId(peer), peerId: peer.id });
+        await this._refreshPeersOrAll();
       } catch (err) {
         alert(err.message || err.toString());
       }
@@ -868,11 +883,11 @@ new Vue({
       if (!this.peerDelete) return;
       try {
         await this.api.deleteTunnelInterfacePeer({
-          interfaceId: this.activeInterfaceId,
+          interfaceId: this._peerIfaceId(this.peerDelete),
           peerId: this.peerDelete.id,
         });
         this.peerDelete = null;
-        await this.refreshPeers();
+        await this._refreshPeersOrAll();
         await this.loadTunnelInterfaces();
       } catch (err) {
         alert(err.message || err.toString());
@@ -888,6 +903,9 @@ new Vue({
       try {
         const res = await this.api.getTunnelInterfacePeers({ interfaceId: this.activeInterfaceId });
         const peers = (res.peers || []).map(peer => {
+          // Tag with interfaceId so actions work from dashboard too
+          peer.interfaceId = this.activeInterfaceId;
+
           // Parse dates
           peer.createdAt = peer.createdAt ? new Date(peer.createdAt) : null;
           peer.updatedAt = peer.updatedAt ? new Date(peer.updatedAt) : null;
@@ -942,6 +960,70 @@ new Vue({
       } catch (err) {
         console.error('refreshPeers failed:', err);
       }
+    },
+
+    /**
+     * Dashboard mode: load peers from ALL interfaces into this.allPeers.
+     * Each peer gets peer.interfaceId and peer.interfaceName set.
+     */
+    async refreshAllPeers({ updateCharts = false } = {}) {
+      if (!this.authenticated) return;
+      const all = [];
+      for (const iface of this.tunnelInterfaces) {
+        try {
+          const res = await this.api.getTunnelInterfacePeers({ interfaceId: iface.id });
+          const peers = (res.peers || []).map(peer => {
+            peer.interfaceId   = iface.id;
+            peer.interfaceName = iface.name || iface.id;
+
+            peer.createdAt = peer.createdAt ? new Date(peer.createdAt) : null;
+            peer.updatedAt = peer.updatedAt ? new Date(peer.updatedAt) : null;
+            peer.expiredAt = peer.expiredAt ? new Date(peer.expiredAt) : null;
+            peer.latestHandshakeAt = peer.latestHandshakeAt ? new Date(peer.latestHandshakeAt) : null;
+
+            if (peer.name && this.avatarSettings.dicebear) {
+              peer.avatar = `https://api.dicebear.com/9.x/${this.avatarSettings.dicebear}/svg?seed=${sha256(peer.name.toLowerCase().trim())}`;
+            }
+
+            if (!this.peersPersist[peer.id]) {
+              this.peersPersist[peer.id] = {};
+              this.peersPersist[peer.id].transferRxHistory  = Array(50).fill(0);
+              this.peersPersist[peer.id].transferRxPrevious = peer.transferRx || 0;
+              this.peersPersist[peer.id].transferTxHistory  = Array(50).fill(0);
+              this.peersPersist[peer.id].transferTxPrevious = peer.transferTx || 0;
+            }
+            const pp = this.peersPersist[peer.id];
+            pp.transferRxCurrent = (peer.transferRx || 0) - pp.transferRxPrevious;
+            pp.transferRxPrevious = peer.transferRx || 0;
+            pp.transferTxCurrent = (peer.transferTx || 0) - pp.transferTxPrevious;
+            pp.transferTxPrevious = peer.transferTx || 0;
+
+            if (updateCharts) {
+              pp.transferRxHistory.push(pp.transferRxCurrent);
+              pp.transferRxHistory.shift();
+              pp.transferTxHistory.push(pp.transferTxCurrent);
+              pp.transferTxHistory.shift();
+              pp.transferTxSeries = [{ name: 'Tx', data: pp.transferTxHistory }];
+              pp.transferRxSeries = [{ name: 'Rx', data: pp.transferRxHistory }];
+              peer.transferTxHistory = pp.transferTxHistory;
+              peer.transferRxHistory = pp.transferRxHistory;
+              peer.transferMax       = Math.max(...peer.transferTxHistory, ...peer.transferRxHistory);
+              peer.transferTxSeries  = pp.transferTxSeries;
+              peer.transferRxSeries  = pp.transferRxSeries;
+            }
+            peer.transferTxCurrent = pp.transferTxCurrent;
+            peer.transferRxCurrent = pp.transferRxCurrent;
+            peer.hoverTx = pp.hoverTx;
+            peer.hoverRx = pp.hoverRx;
+
+            return peer;
+          });
+          all.push(...peers);
+        } catch (err) {
+          // skip failed interface silently
+        }
+      }
+      this.allPeers = all;
     },
 
     async backupInterface() {
@@ -1252,8 +1334,10 @@ new Vue({
         }).catch((err) => {
           alert(err.message || err.toString());
         });
-        // Load tunnel interfaces at startup (default page)
-        this.loadTunnelInterfaces();
+        // Load tunnel interfaces at startup (default page); then populate dashboard immediately
+        this.loadTunnelInterfaces().then(() => {
+          if (!this.activeInterfaceId) this.refreshAllPeers();
+        }).catch(console.error);
         // Load settings + templates at startup so they are available
         // on any page (e.g. "Obfuscation Profile" dropdown in Create Interface modal).
         this.loadSettings();
@@ -1271,9 +1355,18 @@ new Vue({
       this.refresh({
         updateCharts: this.updateCharts,
       }).catch(console.error);
-      this.refreshPeers({
-        updateCharts: this.updateCharts,
-      }).catch(console.error);
+      if (this.activePage === 'interfaces') {
+        if (this.activeInterfaceId) {
+          this.refreshPeers({
+            updateCharts: this.updateCharts,
+          }).catch(console.error);
+        } else {
+          // Dashboard mode: refresh all interfaces' peers
+          this.refreshAllPeers({
+            updateCharts: this.updateCharts,
+          }).catch(console.error);
+        }
+      }
     }, 1000);
 
     this.api.getuiTrafficStats()
@@ -1363,6 +1456,8 @@ new Vue({
       } else {
         this.selectedInterface = null;
         this.selectedInterfacePeers = [];
+        // Switch to dashboard — immediately load all peers
+        this.refreshAllPeers({ updateCharts: false });
       }
     },
   },
