@@ -196,6 +196,38 @@ new Vue({
       i1: '', i2: '', i3: '', i4: '', i5: '',
     },
 
+    // Gateways
+    gateways: [],
+    gatewayGroups: [],
+    systemInterfaces: [],
+    showGatewayCreate: false,
+    showGatewayEdit:   false,
+    showGroupCreate:   false,
+    showGroupEdit:     false,
+    gatewayCreate: {
+      name: '',
+      interface: '',
+      address: '',
+      monitor: true,
+      monitorInterval: 5,
+      latencyThreshold: 500,
+      lossThreshold: 20,
+      description: '',
+    },
+    gatewayEdit: {
+      id: null,
+      name: '',
+      interface: '',
+      address: '',
+      monitor: true,
+      monitorInterval: 5,
+      latencyThreshold: 500,
+      lossThreshold: 20,
+      description: '',
+    },
+    groupCreate: { name: '', trigger: 'packetloss', description: '', gateways: [] },
+    groupEdit:   { id: null, name: '', trigger: 'packetloss', description: '', gateways: [] },
+
     uiShowCharts: localStorage.getItem('uiShowCharts') === '1',
     uiTheme: localStorage.theme || 'auto',
     prefersDarkScheme: window.matchMedia('(prefers-color-scheme: dark)'),
@@ -382,6 +414,11 @@ new Vue({
           // have got 401 (unauthenticated) before login. Re-load now that we have a session.
           this.loadTunnelInterfaces();
           this.loadSettings(); // needed for AWG2 template dropdown in Create/Edit modals
+          if (this.activePage === 'gateways') {
+            this.loadGateways();
+            this.loadGatewayGroups();
+            this.loadSystemInterfaces();
+          }
         })
         .catch((err) => {
           alert(err.message || err.toString());
@@ -490,6 +527,11 @@ new Vue({
       this.activePage = pageId;
       if (pageId === 'interfaces') this.loadTunnelInterfaces();
       if (pageId === 'settings') this.loadSettings();
+      if (pageId === 'gateways') {
+        this.loadGateways();
+        this.loadGatewayGroups();
+        this.loadSystemInterfaces();
+      }
     },
 
     // ========================================================================
@@ -854,6 +896,219 @@ new Vue({
         console.error('Download failed:', err);
         alert(`Failed: ${err.message}`);
       }
+    },
+
+    // ========================================================================
+    // Gateways Methods
+    // ========================================================================
+
+    async loadGateways() {
+      try {
+        const res = await this.api.getGateways();
+        this.gateways = res.gateways || [];
+      } catch (err) {
+        console.error('loadGateways error:', err);
+      }
+    },
+
+    async refreshGateways() {
+      try {
+        const res = await this.api.getGateways();
+        this.gateways = res.gateways || [];
+      } catch (_) { /* silent poll */ }
+    },
+
+    async loadGatewayGroups() {
+      try {
+        const res = await this.api.getGatewayGroups();
+        this.gatewayGroups = res.groups || [];
+      } catch (err) {
+        console.error('loadGatewayGroups error:', err);
+      }
+    },
+
+    async loadSystemInterfaces() {
+      try {
+        const res = await this.api.getSystemInterfaces();
+        this.systemInterfaces = res.interfaces || [];
+      } catch (err) {
+        console.error('loadSystemInterfaces error:', err);
+      }
+    },
+
+    // ── Create Gateway ────────────────────────────────────────────────────────
+    async createGateway() {
+      const f = this.gatewayCreate;
+      if (!f.name.trim()) return alert('Gateway name is required');
+      if (!f.interface)   return alert('Interface is required');
+      if (!f.address.trim()) return alert('Address is required');
+      try {
+        await this.api.createGateway({
+          name:             f.name.trim(),
+          interface:        f.interface,
+          address:          f.address.trim(),
+          monitor:          f.monitor,
+          monitorInterval:  Number(f.monitorInterval),
+          latencyThreshold: Number(f.latencyThreshold),
+          lossThreshold:    Number(f.lossThreshold),
+          description:      f.description.trim(),
+        });
+        this.showGatewayCreate = false;
+        this.gatewayCreate = {
+          name: '', interface: '', address: '',
+          monitor: true, monitorInterval: 5,
+          latencyThreshold: 500, lossThreshold: 20, description: '',
+        };
+        await this.loadGateways();
+      } catch (err) {
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ── Edit Gateway ──────────────────────────────────────────────────────────
+    openGatewayEdit(gw) {
+      this.gatewayEdit = {
+        id:               gw.id,
+        name:             gw.name,
+        interface:        gw.interface,
+        address:          gw.address,
+        monitor:          gw.monitor,
+        monitorInterval:  gw.monitorInterval,
+        latencyThreshold: gw.latencyThreshold,
+        lossThreshold:    gw.lossThreshold,
+        description:      gw.description || '',
+      };
+      this.showGatewayEdit = true;
+    },
+
+    async saveGatewayEdit() {
+      const f = this.gatewayEdit;
+      if (!f.name.trim()) return alert('Gateway name is required');
+      if (!f.interface)   return alert('Interface is required');
+      if (!f.address.trim()) return alert('Address is required');
+      try {
+        await this.api.updateGateway({
+          gatewayId:        f.id,
+          name:             f.name.trim(),
+          interface:        f.interface,
+          address:          f.address.trim(),
+          monitor:          f.monitor,
+          monitorInterval:  Number(f.monitorInterval),
+          latencyThreshold: Number(f.latencyThreshold),
+          lossThreshold:    Number(f.lossThreshold),
+          description:      f.description.trim(),
+        });
+        this.showGatewayEdit = false;
+        const res = await this.api.getGateways();
+        this.gateways = res.gateways || [];
+      } catch (err) {
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ── Delete Gateway ────────────────────────────────────────────────────────
+    async deleteGateway(gw) {
+      if (!confirm(`Delete gateway "${gw.name}"?`)) return;
+      try {
+        await this.api.deleteGateway({ gatewayId: gw.id });
+        const res = await this.api.getGateways();
+        this.gateways = res.gateways || [];
+      } catch (err) {
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ── Create Gateway Group ──────────────────────────────────────────────────
+    async createGatewayGroup() {
+      const f = this.groupCreate;
+      if (!f.name.trim()) return alert('Group name is required');
+      try {
+        await this.api.createGatewayGroup({
+          name:        f.name.trim(),
+          trigger:     f.trigger,
+          description: f.description.trim(),
+          gateways:    f.gateways,
+        });
+        this.showGroupCreate = false;
+        this.groupCreate = { name: '', trigger: 'packetloss', description: '', gateways: [] };
+        await this.loadGatewayGroups();
+      } catch (err) {
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ── Edit Gateway Group ────────────────────────────────────────────────────
+    openGroupEdit(grp) {
+      this.groupEdit = {
+        id:          grp.id,
+        name:        grp.name,
+        trigger:     grp.trigger,
+        description: grp.description || '',
+        gateways:    JSON.parse(JSON.stringify(grp.gateways || [])),
+      };
+      this.showGroupEdit = true;
+    },
+
+    async saveGroupEdit() {
+      const f = this.groupEdit;
+      if (!f.name.trim()) return alert('Group name is required');
+      try {
+        await this.api.updateGatewayGroup({
+          groupId:     f.id,
+          name:        f.name.trim(),
+          trigger:     f.trigger,
+          description: f.description.trim(),
+          gateways:    f.gateways,
+        });
+        this.showGroupEdit = false;
+        const res = await this.api.getGatewayGroups();
+        this.gatewayGroups = res.groups || [];
+      } catch (err) {
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ── Delete Gateway Group ──────────────────────────────────────────────────
+    async deleteGatewayGroup(grp) {
+      if (!confirm(`Delete gateway group "${grp.name}"?`)) return;
+      try {
+        await this.api.deleteGatewayGroup({ groupId: grp.id });
+        const res = await this.api.getGatewayGroups();
+        this.gatewayGroups = res.groups || [];
+      } catch (err) {
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ── Group gateways entry helpers ──────────────────────────────────────────
+    addGroupGatewayEntry(form) {
+      form.gateways.push({ gatewayId: '', tier: 1, weight: 100 });
+    },
+
+    removeGroupGatewayEntry(form, idx) {
+      form.gateways.splice(idx, 1);
+    },
+
+    // ── Status helpers ────────────────────────────────────────────────────────
+    gatewayStatusColor(status) {
+      const map = { online: '#22c55e', degraded: '#eab308', offline: '#ef4444', unknown: '#9ca3af' };
+      return map[status] || map.unknown;
+    },
+
+    gatewayStatusLabel(status) {
+      const map = { online: 'Online', degraded: 'Degraded', offline: 'Offline', unknown: 'Unknown' };
+      return map[status] || 'Unknown';
+    },
+
+    // Look up gateway name by id (used in group display)
+    gatewayNameById(id) {
+      const gw = this.gateways.find(g => g.id === id);
+      return gw ? gw.name : id;
+    },
+
+    gatewayStatusById(id) {
+      const gw = this.gateways.find(g => g.id === id);
+      return gw ? gw.status : 'unknown';
     },
 
     // ========================================================================
@@ -1455,6 +1710,9 @@ new Vue({
             updateCharts: this.updateCharts,
           }).catch(console.error);
         }
+      }
+      if (this.activePage === 'gateways') {
+        this.refreshGateways().catch(console.error);
       }
     }, 1000);
 

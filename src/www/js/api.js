@@ -472,4 +472,83 @@ class API {
     });
   }
 
+  // ============================================================
+  // System Interfaces API
+  // ============================================================
+
+  async getSystemInterfaces() {
+    return this.call({
+      method: 'get',
+      path: '/system/interfaces',
+    });
+  }
+
+  // ============================================================
+  // Gateways API
+  // ============================================================
+
+  async getGateways() {
+    return this.call({
+      method: 'get',
+      path: '/gateways',
+    });
+  }
+
+  async createGateway(data) {
+    return this.call({
+      method: 'post',
+      path: '/gateways',
+      body: data,
+    });
+  }
+
+  async updateGateway({ gatewayId, ...updates }) {
+    return this.call({
+      method: 'patch',
+      path: `/gateways/${gatewayId}`,
+      body: updates,
+    });
+  }
+
+  async deleteGateway({ gatewayId }) {
+    return this.call({
+      method: 'delete',
+      path: `/gateways/${gatewayId}`,
+    });
+  }
+
+  // ============================================================
+  // Gateway Groups API
+  // ============================================================
+
+  async getGatewayGroups() {
+    return this.call({
+      method: 'get',
+      path: '/gateway-groups',
+    });
+  }
+
+  async createGatewayGroup(data) {
+    return this.call({
+      method: 'post',
+      path: '/gateway-groups',
+      body: data,
+    });
+  }
+
+  async updateGatewayGroup({ groupId, ...updates }) {
+    return this.call({
+      method: 'patch',
+      path: `/gateway-groups/${groupId}`,
+      body: updates,
+    });
+  }
+
+  async deleteGatewayGroup({ groupId }) {
+    return this.call({
+      method: 'delete',
+      path: `/gateway-groups/${groupId}`,
+    });
+  }
+
 }

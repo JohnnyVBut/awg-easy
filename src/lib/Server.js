@@ -12,7 +12,9 @@ const expressSession = require('express-session');
 const debug = require('debug')('Server');
 const TunnelManager = require('./TunnelManager');
 const InterfaceManager = require('./InterfaceManager');
+const GatewayManager = require('./GatewayManager');
 const Settings = require('./Settings');
+const Util = require('./Util');
 
 const {
   createApp,
@@ -1121,6 +1123,164 @@ module.exports = class Server {
         const settings = await Settings.getInstance();
         const awgSettings = settings.applyTemplate(id);
         return { settings: awgSettings };
+      }))
+
+      // ========================================================================
+      // System Interfaces API
+      // ========================================================================
+
+      /**
+       * GET /api/system/interfaces
+       * Получить список сетевых интерфейсов хоста (eth0, wg10, ...)
+       * Используется для выбора интерфейса при создании Gateway.
+       */
+      .get('/api/system/interfaces', defineEventHandler(async () => {
+        try {
+          const out = await Util.exec('ip -j link show', { log: false });
+          const links = JSON.parse(out || '[]');
+          return {
+            interfaces: links
+              .filter(l => l.ifname !== 'lo')
+              .map(l => ({ name: l.ifname, type: l.link_type, operstate: l.operstate })),
+          };
+        } catch (err) {
+          // На не-Linux платформах или при ошибке возвращаем пустой список
+          return { interfaces: [] };
+        }
+      }))
+
+      // ========================================================================
+      // Gateways API
+      // ========================================================================
+
+      /**
+       * GET /api/gateways
+       * Получить список всех gateway со статусами мониторинга
+       */
+      .get('/api/gateways', defineEventHandler(async () => {
+        const manager = await GatewayManager.getInstance();
+        return {
+          gateways: manager.getAllGateways().map(gw => manager._gatewayToAPI(gw)),
+        };
+      }))
+
+      /**
+       * POST /api/gateways
+       * Создать новый gateway
+       */
+      .post('/api/gateways', defineEventHandler(async (event) => {
+        const body = await readBody(event);
+        if (!body.name) {
+          throw createError({ status: 400, message: 'Gateway name is required' });
+        }
+        if (!body.interface) {
+          throw createError({ status: 400, message: 'Gateway interface is required' });
+        }
+        if (!body.address) {
+          throw createError({ status: 400, message: 'Gateway address is required' });
+        }
+        const manager = await GatewayManager.getInstance();
+        const gw = await manager.createGateway(body);
+        return { gateway: manager._gatewayToAPI(gw) };
+      }))
+
+      /**
+       * GET /api/gateways/:id
+       * Получить информацию о конкретном gateway
+       */
+      .get('/api/gateways/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await GatewayManager.getInstance();
+        const gw = manager.getGateway(id);
+        if (!gw) throw createError({ status: 404, message: `Gateway ${id} not found` });
+        return { gateway: manager._gatewayToAPI(gw) };
+      }))
+
+      /**
+       * PATCH /api/gateways/:id
+       * Обновить gateway
+       */
+      .patch('/api/gateways/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const updates = await readBody(event);
+        const manager = await GatewayManager.getInstance();
+        const gw = await manager.updateGateway(id, updates);
+        return { gateway: manager._gatewayToAPI(gw) };
+      }))
+
+      /**
+       * DELETE /api/gateways/:id
+       * Удалить gateway
+       */
+      .delete('/api/gateways/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await GatewayManager.getInstance();
+        await manager.deleteGateway(id);
+        return { success: true };
+      }))
+
+      // ========================================================================
+      // Gateway Groups API
+      // ========================================================================
+
+      /**
+       * GET /api/gateway-groups
+       * Получить список всех групп шлюзов
+       */
+      .get('/api/gateway-groups', defineEventHandler(async () => {
+        const manager = await GatewayManager.getInstance();
+        return {
+          groups: manager.getAllGroups().map(grp => grp.toJSON()),
+        };
+      }))
+
+      /**
+       * POST /api/gateway-groups
+       * Создать новую группу шлюзов
+       */
+      .post('/api/gateway-groups', defineEventHandler(async (event) => {
+        const body = await readBody(event);
+        if (!body.name) {
+          throw createError({ status: 400, message: 'Group name is required' });
+        }
+        const manager = await GatewayManager.getInstance();
+        const grp = await manager.createGroup(body);
+        return { group: grp.toJSON() };
+      }))
+
+      /**
+       * GET /api/gateway-groups/:id
+       * Получить информацию о группе
+       */
+      .get('/api/gateway-groups/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await GatewayManager.getInstance();
+        const grp = manager.getGroup(id);
+        if (!grp) throw createError({ status: 404, message: `Gateway group ${id} not found` });
+        return { group: grp.toJSON() };
+      }))
+
+      /**
+       * PATCH /api/gateway-groups/:id
+       * Обновить группу
+       */
+      .patch('/api/gateway-groups/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const updates = await readBody(event);
+        const manager = await GatewayManager.getInstance();
+        const grp = await manager.updateGroup(id, updates);
+        return { group: grp.toJSON() };
+      }))
+
+      /**
+       * DELETE /api/gateway-groups/:id
+       * Удалить группу
+       */
+      .delete('/api/gateway-groups/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const manager = await GatewayManager.getInstance();
+        await manager.deleteGroup(id);
+        return { success: true };
       }));
 
     const safePathJoin = (base, target) => {
@@ -1266,6 +1426,15 @@ module.exports = class Server {
       debug('InterfaceManager initialized successfully');
     }).catch((err) => {
       debug('Error initializing InterfaceManager:', err);
+    });
+
+    // ========================================================================
+    // Initialize GatewayManager (async: loads gateways + starts monitoring)
+    // ========================================================================
+    GatewayManager.getInstance().then(() => {
+      debug('GatewayManager initialized successfully');
+    }).catch((err) => {
+      debug('Error initializing GatewayManager:', err);
     });
 
     createServer(toNodeListener(app)).listen(PORT, WEBUI_HOST);
