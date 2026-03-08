@@ -54,6 +54,7 @@ module.exports = class Util {
 
   static async exec(cmd, {
     log = true,
+    timeout = 30000,
   } = {}) {
     if (typeof log === 'string') {
       // eslint-disable-next-line no-console
@@ -68,12 +69,22 @@ module.exports = class Util {
     }
 
     return new Promise((resolve, reject) => {
-      childProcess.exec(cmd, {
+      const child = childProcess.exec(cmd, {
         shell: 'bash',
+        timeout,
+        killSignal: 'SIGKILL',
       }, (err, stdout) => {
-        if (err) return reject(err);
+        if (err) {
+          // childProcess.exec sets err.killed=true when it kills due to timeout
+          if (err.killed) {
+            return reject(new Error(`Command timed out after ${timeout}ms: ${cmd.slice(0, 80)}`));
+          }
+          return reject(err);
+        }
         return resolve(String(stdout).trim());
       });
+      // suppress unhandled 'error' event — callback handles all errors
+      child.on('error', () => {});
     });
   }
 

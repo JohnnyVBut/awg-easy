@@ -494,27 +494,37 @@ class TunnelInterface {
    * Атомарно добавить/обновить один peer в работающем ядре.
    * Использует `wg set peer` / `awg set peer` — не трогает [Interface] параметры
    * (H1-H4, Jc, ListenPort и т.д.), только конкретный [Peer].
-   * Это безопаснее чем syncconf: нет риска kernel deadlock.
+   *
+   * MUTEX: сериализован через _reloadMutex вместе с _kernelRemovePeer().
+   * Без этого возможна гонка: restart() (из _kernelRemovePeer) запускает
+   * awg-quick up, который внутри вызывает awg set для каждого пира из конфига,
+   * а одновременный _kernelSetPeer() вызывает awg set для того же пира —
+   * два одновременных awg set на один пир = AWG kernel deadlock.
    */
   async _kernelSetPeer(peer) {
     if (!this.data.enabled) return;
-    const pskFile = peer.presharedKey ? `/tmp/${this.id}-psk-${peer.id}` : null;
-    try {
-      if (pskFile) {
-        await fs.writeFile(pskFile, peer.presharedKey + '\n', { mode: 0o600 });
-      }
-      let cmd = `${this._syncBin} set ${this.id} peer ${peer.publicKey}`;
-      if (pskFile) cmd += ` preshared-key ${pskFile}`;
-      if (peer.allowedIPs) cmd += ` allowed-ips ${peer.allowedIPs}`;
-      if (peer.endpoint) cmd += ` endpoint ${peer.endpoint}`;
-      if (peer.persistentKeepalive > 0) cmd += ` persistent-keepalive ${peer.persistentKeepalive}`;
-      await Util.exec(cmd);
-      debug(`Peer ${peer.id} set in kernel (${this.id})`);
-    } catch (err) {
-      debug(`_kernelSetPeer failed for ${peer.id}: ${err.message}`);
-    } finally {
-      if (pskFile) await fs.unlink(pskFile).catch(() => {});
-    }
+    this._reloadMutex = this._reloadMutex
+      .then(async () => {
+        const pskFile = peer.presharedKey ? `/tmp/${this.id}-psk-${peer.id}` : null;
+        try {
+          if (pskFile) {
+            await fs.writeFile(pskFile, peer.presharedKey + '\n', { mode: 0o600 });
+          }
+          let cmd = `${this._syncBin} set ${this.id} peer ${peer.publicKey}`;
+          if (pskFile) cmd += ` preshared-key ${pskFile}`;
+          if (peer.allowedIPs) cmd += ` allowed-ips ${peer.allowedIPs}`;
+          if (peer.endpoint) cmd += ` endpoint ${peer.endpoint}`;
+          if (peer.persistentKeepalive > 0) cmd += ` persistent-keepalive ${peer.persistentKeepalive}`;
+          await Util.exec(cmd, { timeout: 15000 });
+          debug(`Peer ${peer.id} set in kernel (${this.id})`);
+        } catch (err) {
+          debug(`_kernelSetPeer failed for ${peer.id}: ${err.message}`);
+        } finally {
+          if (pskFile) await fs.unlink(pskFile).catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return this._reloadMutex;
   }
 
   /**
@@ -626,7 +636,7 @@ class TunnelInterface {
     }
 
     try {
-      const dump = await Util.exec(`${this._syncBin} show ${this.id} dump`, { log: false });
+      const dump = await Util.exec(`${this._syncBin} show ${this.id} dump`, { log: false, timeout: 5000 });
       const lines = dump.trim().split('\n').slice(1); // skip first line (interface info)
 
       for (const line of lines) {
