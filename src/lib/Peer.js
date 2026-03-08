@@ -29,6 +29,7 @@ class Peer {
     this.presharedKey = data.presharedKey || '';
     this.endpoint = data.endpoint || '';
     this.allowedIPs = data.allowedIPs;           // AllowedIPs на стороне хаба (что хаб маршрутизирует к пиру)
+    this.address = data.address || null;         // Туннельный IP пира с маской интерфейса (e.g. "10.100.0.2/24"), хранится отдельно от allowedIPs
     this.clientAllowedIPs = data.clientAllowedIPs || ''; // AllowedIPs в клиентском конфиге
     this.peerType = data.peerType || 'client';   // default 'client'
     this.persistentKeepalive = data.persistentKeepalive || 25;
@@ -65,6 +66,7 @@ class Peer {
       presharedKey: this.presharedKey,
       endpoint: this.endpoint,
       allowedIPs: this.allowedIPs,
+      address: this.address,
       clientAllowedIPs: this.clientAllowedIPs,
       peerType: this.peerType,
       persistentKeepalive: this.persistentKeepalive,
@@ -197,8 +199,10 @@ class Peer {
     let config = '[Interface]\n';
     config += `PrivateKey = ${this.privateKey}\n`;
 
-    // Address = IP пира с маской интерфейса (вычисляется, не хранится)
-    if (this.allowedIPs && interfaceData.address) {
+    // Address = туннельный IP пира (берётся из поля address, либо вычисляется из allowedIPs)
+    if (this.address) {
+      config += `Address = ${this.address}\n`;
+    } else if (this.allowedIPs && interfaceData.address) {
       const peerIp = this.allowedIPs.split('/')[0];
       const ifaceMask = interfaceData.address.split('/')[1] || '24';
       config += `Address = ${peerIp}/${ifaceMask}\n`;
@@ -272,8 +276,10 @@ class Peer {
     config += '# Listen port (choose any free UDP port)\n';
     config += 'ListenPort = 51820\n\n';
 
-    // Address = IP пира с маской интерфейса (вычисляется, не хранится)
-    if (this.allowedIPs && interfaceData.address) {
+    // Address = туннельный IP пира (берётся из поля address, либо вычисляется из allowedIPs)
+    if (this.address) {
+      config += `Address = ${this.address}\n`;
+    } else if (this.allowedIPs && interfaceData.address) {
       const peerIp = this.allowedIPs.split('/')[0];
       const ifaceMask = interfaceData.address.split('/')[1] || '24';
       config += `Address = ${peerIp}/${ifaceMask}\n`;

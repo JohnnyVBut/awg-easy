@@ -125,6 +125,17 @@ class TunnelInterface {
       };
     }
 
+    // Вычислить туннельный адрес пира (host IP + маска интерфейса) если не задан явно.
+    // Нужен для отображения в UI отдельно от allowedIPs (например, allowedIPs=0.0.0.0/0,
+    // но address=10.100.0.2/24 — реальный IP туннельного интерфейса пира).
+    if (!peerData.address && peerData.allowedIPs && this.data.address) {
+      const peerIp = peerData.allowedIPs.split(',')[0].trim().split('/')[0];
+      if (peerIp !== '0.0.0.0') {
+        const ifaceMask = this.data.address.split('/')[1] || '24';
+        peerData.address = `${peerIp}/${ifaceMask}`;
+      }
+    }
+
     // Валидация
     const peer = new Peer({
       ...peerData,
@@ -778,6 +789,12 @@ class TunnelInterface {
       address: this.data.address,
       protocol: this.data.protocol,
     };
+
+    // S2S (Table=off) интерфейсы: рекомендуем импортирующей стороне
+    // установить allowedIPs=0.0.0.0/0, чтобы трафик мог идти через туннель.
+    if (this.data.disableRoutes) {
+      result.allowedIPs = '0.0.0.0/0';
+    }
 
     if (presharedKey) {
       result.presharedKey = presharedKey;

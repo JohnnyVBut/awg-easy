@@ -696,6 +696,9 @@ module.exports = class Server {
           presharedKey,
           endpoint: body.endpoint || '',
           allowedIPs,
+          // Сохраняем реальный туннельный адрес удалённого интерфейса отдельно от allowedIPs.
+          // Нужно для отображения в UI: address=10.100.0.2/24, allowedIPs=0.0.0.0/0.
+          address: body.address || null,
           clientAllowedIPs: body.clientAllowedIPs || '0.0.0.0/0',
           persistentKeepalive: body.persistentKeepalive || 25,
           generateKeys: false,

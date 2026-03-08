@@ -658,9 +658,9 @@
                               </svg>
                             </span>
                           </div>
-                          <!-- Address -->
+                          <!-- Address + AllowedIPs -->
                           <div class="block md:inline-block pb-1 md:pb-0 text-gray-500 dark:text-neutral-400 text-xs">
-                            <span>{{peer.allowedIPs}}</span>
+                            <span v-if="peer.address">{{peer.address}}</span><span v-else>{{peer.allowedIPs}}</span><span v-if="peer.address && peer.allowedIPs !== peer.address" class="text-gray-400 dark:text-neutral-500"> · {{peer.allowedIPs}}</span>
                             <!-- Inline Transfer TX -->
                             <span v-if="!uiTrafficStats && peer.transferTx" class="whitespace-nowrap" :title="'Total download: ' + bytes(peer.transferTx)">
                               ·
@@ -975,7 +975,9 @@
                               v-on:keyup.escape="peerEditAddress = null; peerEditAddressId = null;"
                               :ref="'peer-' + peer.id + '-address'"
                               class="rounded border-2 dark:bg-neutral-700 border-gray-100 dark:border-neutral-600 focus:border-gray-200 dark:focus:border-neutral-500 outline-none w-20 text-black dark:text-neutral-300 dark:placeholder:text-neutral-500" />
-                            <span v-show="peerEditAddressId !== peer.id" class="inline-block">{{peer.allowedIPs}}</span>
+                            <span v-show="peerEditAddressId !== peer.id" class="inline-block">
+                              <span v-if="peer.address">{{peer.address}}</span><span v-else>{{peer.allowedIPs}}</span><span v-if="peer.address && peer.allowedIPs !== peer.address" class="text-gray-400 dark:text-neutral-500"> · {{peer.allowedIPs}}</span>
+                            </span>
                             <span v-show="peerEditAddressId !== peer.id"
                               @click="peerEditAddress = peer.allowedIPs; peerEditAddressId = peer.id; setTimeout(() => $refs['peer-' + peer.id + '-address'][0].select(), 1);"
                               class="cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
