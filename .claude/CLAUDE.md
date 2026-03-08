@@ -356,13 +356,16 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | `a3d0aa5` | feature/kernel-module | fix: interconnect peer allowedIPs = host /32, не подсеть |
 | `028a7c5` | feature/kernel-module | fix: mutex для _kernelSetPeer + exec timeout |
 | `b3c53be` | feature/kernel-module | fix: AWG2 _kernelSetPeer → awg syncconf вместо awg set peer |
+| `337869e` | feature/kernel-module | feat(ui): dashboard view — все пиры всех интерфейсов на одном экране |
+| `943a046` | feature/kernel-module | feat(ui): Edit Interface modal (имя, адрес, порт, AWG2 профиль) |
+| `075ebc8` | feature/kernel-module | fix(ui): загрузка templates после логина (AWG2 дропдаун без визита Settings) |
 
 ---
 
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `c83b3cc` (docs: CLAUDE.md update)
+**Последний коммит:** `075ebc8`
 
 ---
 
@@ -378,15 +381,19 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | Export/Import interconnect peer JSON workflow | ✅ TESTED | PSK координация работает |
 | AWG kernel deadlock fix: syncconf + restart | ✅ TESTED | awg set peer → убран для AWG2 |
 | Util.exec timeout 30s / getStatus 5s | ✅ | SIGKILL при превышении |
+| PATCH /api/tunnel-interfaces/:id | ✅ | hot-reload через syncconf, без даунтайма |
 
 ### ✅ Что работает — Frontend
 
 | Страница/Компонент | Статус | Детали |
 |-------------------|--------|--------|
 | Sidebar (6 пунктов) | ✅ | Interfaces, Gateways, Routing, Firewall, Settings, Administration |
+| Interfaces: вкладка "All" (дашборд) | ✅ | все пиры всех интерфейсов, дефолтный вид |
 | Interfaces: dynamic tabs | ✅ | по одной вкладке на интерфейс |
 | Interfaces: per-interface view | ✅ | Info card + Peers list |
+| Interface card: "Edit" кнопка | ✅ | модал: имя, адрес, порт, AWG2 профиль |
 | Interface card: "Export My Params" | ✅ | скачивает JSON для другой стороны |
+| Dashboard peer cards | ✅ | серый бейдж interfaceName, все действия работают |
 | Peers: create modal (Client/Interconnect toggle) | ✅ | peerType выбирается до создания |
 | Peers: "Import JSON" кнопка | ✅ | interconnect workflow |
 | Peer cards: S2S badge | ✅ | синий тег для peerType=interconnect |
@@ -396,16 +403,16 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | Peer cards: enable/disable toggle | ✅ | |
 | Peer cards: QR/download (только client) | ✅ | downloadableConfig = !!privateKey |
 | Settings: Global Settings + AWG2 Templates | ✅ | |
+| AWG2 дропдаун доступен сразу после логина | ✅ | fix: loadSettings() в login() |
 | Administration: Admin Tunnel (старый Clients) | ✅ | |
 | Gateways / Routing / Firewall | ⏳ | placeholder "Coming soon" |
 
 ### ❌ Что не реализовано
 
-1. **Interfaces edit modal** — редактирование имени, адреса, протокола, дропдаун шаблона AWG2
-2. **Admin Instance backend** — `src/lib/AdminInstance.js` (управление wg0/admin-туннелем через новую архитектуру)
-3. **Gateways** — backend + UI
-4. **Routing** — backend + UI (`ip route add` через API)
-5. **Firewall/NAT** — backend + UI
+1. **Admin Instance backend** — `src/lib/AdminInstance.js` (управление wg0/admin-туннелем через новую архитектуру)
+2. **Gateways** — backend + UI
+3. **Routing** — backend + UI (`ip route add` через API)
+4. **Firewall/NAT** — backend + UI
 
 ---
 
@@ -442,22 +449,58 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 
 ## Следующие задачи (по приоритету)
 
-### 1. Interfaces edit modal (приоритет: высокий)
-**Что нужно:**
-- Кнопка "Edit" (карандаш) на interface card
-- Модальное окно: Name, Address (IP/mask), Protocol (dropdown: wireguard-1.0 / amneziawg-2.0)
-- Для AWG2: dropdown "Apply template" → автозаполнение H1-H4, Jc, Jmin, Jmax, S1-S4
-- PATCH /api/tunnel-interfaces/:id → перезапуск интерфейса с новым конфигом
-- **Файлы:** `src/www/index.html` (модалка), `src/www/js/app.js` (методы), `src/www/js/api.js` (updateInterface)
-
-### 2. Admin Instance (приоритет: средний)
+### 1. Admin Instance (приоритет: средний)
 **Что нужно:**
 - `src/lib/AdminInstance.js` — загрузка из ENV vars (WG_DEFAULT_ADDRESS, WG_DEFAULT_DNS, etc.)
 - Страница Administration: показать статус admin-туннеля, список клиентов (из WireGuard.js)
 - **Файлы:** новый `src/lib/AdminInstance.js`, `src/www/index.html` (страница Administration), `src/lib/Server.js` (API)
 
-### 3. Gateways/Routing/Firewall (приоритет: низкий)
+### 2. Gateways/Routing/Firewall (приоритет: низкий)
 - Заглушки "Coming soon" заменить на реальный UI
 - Backend: `ip route add/del`, `iptables-nft` правила через API
 
 Полный список → `REQUIREMENTS.md` раздел "🚧 Не реализовано".
+
+---
+
+## Детали реализации — Dashboard + Edit Interface
+
+### Dashboard (вкладка "All")
+
+**Данные:**
+- `allPeers: []` — реактивный массив, каждый peer имеет `peer.interfaceId` + `peer.interfaceName`
+- `_peerIfaceId(peer)` — возвращает `peer.interfaceId || activeInterfaceId` — правильный iface для API-вызовов
+- `_refreshPeersOrAll()` — после действий над пиром вызывает нужный refresh (per-iface или all)
+
+**Polling:**
+```javascript
+setInterval(() => {
+  if (activePage === 'interfaces') {
+    if (activeInterfaceId) refreshPeers();
+    else refreshAllPeers(); // dashboard mode
+  }
+}, 1000);
+```
+
+**Watcher `activeInterfaceId`:** при переключении на null → немедленно вызывает `refreshAllPeers()`.
+
+**Startup:** `loadTunnelInterfaces().then(() => refreshAllPeers())` — дашборд заполняется сразу.
+
+### Edit Interface Modal
+
+**Данные:** `showInterfaceEdit: false`, `interfaceEdit: { id, name, address, listenPort, disableRoutes, protocol, selectedTemplateId, settings: { jc, jmin, jmax, s1-s4, h1-h4, i1-i5 } }`
+
+**Методы:**
+- `openInterfaceEdit(iface)` — заполняет interfaceEdit из iface.data + открывает модал
+- `onEditInterfaceTemplateSelect(templateId)` — заполняет interfaceEdit.settings из шаблона
+- `saveInterfaceEdit()` — валидация → `api.updateTunnelInterface()` → `_applyInterfaceUpdate()` (Vue splice)
+
+**Кнопка:** фиолетовая outline "Edit" в ряду кнопок interface info card.
+
+**Backend flow:** `PATCH /api/tunnel-interfaces/:id` → `Object.assign(data, updates)` → `save()` → `regenerateConfig()` → `reload()` (syncconf, без даунтайма).
+
+### Fix: AWG2 дропдаун после логина
+
+**Проблема:** `loadSettings()` в mounted() получал 401, если приложение требует пароль. После логина вызывался только `loadTunnelInterfaces()`, шаблоны не загружались.
+
+**Фикс:** добавлен `this.loadSettings()` рядом с `this.loadTunnelInterfaces()` в `login()` handler.
