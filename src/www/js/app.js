@@ -378,9 +378,10 @@ new Vue({
           this.authenticated = session.authenticated;
           this.requiresPassword = session.requiresPassword;
           await this.refresh();
-          // loadTunnelInterfaces is called in mounted() but may have got 401
-          // (unauthenticated) before login. Re-load now that we have a session.
+          // loadTunnelInterfaces / loadSettings are called in mounted() but may
+          // have got 401 (unauthenticated) before login. Re-load now that we have a session.
           this.loadTunnelInterfaces();
+          this.loadSettings(); // needed for AWG2 template dropdown in Create/Edit modals
         })
         .catch((err) => {
           alert(err.message || err.toString());
