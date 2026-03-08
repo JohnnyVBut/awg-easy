@@ -491,18 +491,28 @@ class TunnelInterface {
   }
 
   /**
-   * Атомарно добавить/обновить один peer в работающем ядре.
-   * Использует `wg set peer` / `awg set peer` — не трогает [Interface] параметры
-   * (H1-H4, Jc, ListenPort и т.д.), только конкретный [Peer].
+   * Применить добавление/обновление пира в работающее ядро.
    *
-   * MUTEX: сериализован через _reloadMutex вместе с _kernelRemovePeer().
-   * Без этого возможна гонка: restart() (из _kernelRemovePeer) запускает
-   * awg-quick up, который внутри вызывает awg set для каждого пира из конфига,
-   * а одновременный _kernelSetPeer() вызывает awg set для того же пира —
-   * два одновременных awg set на один пир = AWG kernel deadlock.
+   * AWG 2.0: использует syncconf (reload) вместо `awg set peer`.
+   *   `awg set peer <key> add` нестабилен в AWG kernel module — занимает
+   *   10-15+ секунд даже без конкурентных операций, после чего оставляет
+   *   ядро в плохом состоянии. `awg syncconf` (через awg-quick strip)
+   *   отправляет полный конфиг атомарно и работает стабильно.
+   *   Конфиг на диске уже обновлён в addPeer() перед вызовом.
+   *
+   * WireGuard 1.0: `wg set peer` надёжен и быстр, используем его.
+   *   Сериализован через _reloadMutex.
    */
   async _kernelSetPeer(peer) {
     if (!this.data.enabled) return;
+
+    if (this.data.protocol === 'amneziawg-2.0') {
+      // reload() цепляется в _reloadMutex и вызывает awg syncconf.
+      // Конфиг уже содержит нового пира (regenerateConfig вызван ранее).
+      return this.reload();
+    }
+
+    // WireGuard 1.0
     this._reloadMutex = this._reloadMutex
       .then(async () => {
         const pskFile = peer.presharedKey ? `/tmp/${this.id}-psk-${peer.id}` : null;
@@ -515,7 +525,7 @@ class TunnelInterface {
           if (peer.allowedIPs) cmd += ` allowed-ips ${peer.allowedIPs}`;
           if (peer.endpoint) cmd += ` endpoint ${peer.endpoint}`;
           if (peer.persistentKeepalive > 0) cmd += ` persistent-keepalive ${peer.persistentKeepalive}`;
-          await Util.exec(cmd, { timeout: 15000 });
+          await Util.exec(cmd);
           debug(`Peer ${peer.id} set in kernel (${this.id})`);
         } catch (err) {
           debug(`_kernelSetPeer failed for ${peer.id}: ${err.message}`);
