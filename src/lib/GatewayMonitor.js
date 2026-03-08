@@ -72,8 +72,11 @@ class GatewayMonitor {
       const lm = out.match(/(\d+)% packet loss/);
       const packetLoss = lm ? parseInt(lm[1], 10) : 100;
 
-      // Парсинг среднего RTT: "rtt min/avg/max/mdev = xx.xx/AVG/xx.xx/..."
-      const rm = out.match(/rtt .+= [\d.]+\/([\d.]+)\//);
+      // Парсинг среднего RTT (avg).
+      // Linux iproute2: "rtt min/avg/max/mdev = X/AVG/X/X ms"
+      // Alpine busybox:  "round-trip min/avg/max = X/AVG/X ms"
+      // Матчим оба формата: ищем первое совпадение min/avg в строке с = X/AVG.
+      const rm = out.match(/(?:rtt|round-trip)[^\n]+=\s*[\d.]+\/([\d.]+)\//);
       const latency = rm ? parseFloat(rm[1]) : null;
 
       let status = 'online';
