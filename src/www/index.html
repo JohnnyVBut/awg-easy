@@ -839,6 +839,13 @@
                     class="px-3 py-1 text-sm bg-blue-600 text-white rounded transition">
                     {{ loadingInterfaceId === currentInterface.id ? '...' : 'Restart' }}
                   </button>
+                  <!-- Edit Interface -->
+                  <button @click="openInterfaceEdit(currentInterface)"
+                    class="px-3 py-1 text-sm text-purple-600 dark:text-purple-400 rounded transition"
+                    style="border: 1px solid currentColor;"
+                    title="Edit interface settings (name, address, port, obfuscation profile)">
+                    Edit
+                  </button>
                   <button @click="deleteTunnelInterface(currentInterface)"
                     class="px-3 py-1 text-sm text-red-600 dark:text-red-400 rounded transition"
                     style="border: 1px solid currentColor;">
@@ -1312,6 +1319,212 @@
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Edit Interface Modal -->
+        <div v-if="showInterfaceEdit"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showInterfaceEdit = false">
+
+          <div class="bg-white dark:bg-neutral-700 rounded-lg flex flex-col" style="max-width:520px; margin:0 auto;">
+
+            <!-- Header -->
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-2xl font-medium dark:text-neutral-200">Edit Interface</h2>
+              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">
+                {{ interfaceEdit.id }}
+                <span class="ml-2 px-2 py-0.5 text-xs rounded"
+                  :class="interfaceEdit.protocol === 'amneziawg-2.0'
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                    : 'bg-gray-100 text-gray-600 dark:bg-neutral-600 dark:text-neutral-300'">
+                  {{ interfaceEdit.protocol === 'amneziawg-2.0' ? 'AWG 2.0' : 'WG 1.0' }}
+                </span>
+              </p>
+            </div>
+
+            <!-- Body -->
+            <div style="padding:16px 24px 24px;">
+
+              <!-- Name -->
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Name</label>
+                <input v-model="interfaceEdit.name" type="text" placeholder="e.g., Main VPN Hub"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+              </div>
+
+              <!-- Tunnel Address -->
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">
+                  Tunnel Address <span class="text-red-500">*</span>
+                </label>
+                <input v-model="interfaceEdit.address" type="text" placeholder="e.g., 10.100.0.1/24"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                  CIDR format. Changing this will regenerate peer configs — reconnect clients after saving.
+                </p>
+              </div>
+
+              <!-- Listen Port -->
+              <div class="mb-4">
+                <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Listen Port</label>
+                <input v-model.number="interfaceEdit.listenPort" type="number" min="1024" max="65535"
+                  placeholder="auto"
+                  class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                  Leave empty to keep current port. Changes take effect after save (hot-reload).
+                </p>
+              </div>
+
+              <!-- Disable Routes -->
+              <div class="mb-4">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" v-model="interfaceEdit.disableRoutes" class="w-4 h-4">
+                  <span class="text-sm font-medium dark:text-neutral-300">Disable Routing (Table = off)</span>
+                </label>
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                  Enable for S2S interconnect interfaces (no NAT, no default route).
+                </p>
+              </div>
+
+              <!-- AWG2 Settings (only for AWG 2.0 interfaces) -->
+              <div v-if="interfaceEdit.protocol === 'amneziawg-2.0'" class="mb-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded">
+                <p class="font-medium dark:text-neutral-200 mb-3">Obfuscation Settings (AWG 2.0)</p>
+
+                <!-- Template dropdown -->
+                <div class="mb-3">
+                  <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Apply Profile</label>
+                  <select v-model="interfaceEdit.selectedTemplateId"
+                    @change="onEditInterfaceTemplateSelect(interfaceEdit.selectedTemplateId)"
+                    class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                    <option value="">— Keep current / manual entry —</option>
+                    <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
+                  </select>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    Select a saved profile to overwrite parameters below, or edit manually.
+                  </p>
+                </div>
+
+                <!-- Jc / Jmin / Jmax -->
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jc</label>
+                    <input v-model.number="interfaceEdit.settings.jc" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmin</label>
+                    <input v-model.number="interfaceEdit.settings.jmin" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Jmax</label>
+                    <input v-model.number="interfaceEdit.settings.jmax" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                </div>
+
+                <!-- S1 / S2 / S3 / S4 -->
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S1</label>
+                    <input v-model.number="interfaceEdit.settings.s1" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S2</label>
+                    <input v-model.number="interfaceEdit.settings.s2" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S3</label>
+                    <input v-model.number="interfaceEdit.settings.s3" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">S4</label>
+                    <input v-model.number="interfaceEdit.settings.s4" type="number"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                </div>
+
+                <!-- H1 / H2 / H3 / H4 -->
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H1 <span class="text-red-500">*</span></label>
+                    <input v-model="interfaceEdit.settings.h1" type="text" placeholder="e.g. 5-50000000"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H2 <span class="text-red-500">*</span></label>
+                    <input v-model="interfaceEdit.settings.h2" type="text" placeholder="e.g. 1073741828-1123741828"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H3 <span class="text-red-500">*</span></label>
+                    <input v-model="interfaceEdit.settings.h3" type="text" placeholder="e.g. 2147483651-2197483651"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">H4 <span class="text-red-500">*</span></label>
+                    <input v-model="interfaceEdit.settings.h4" type="text" placeholder="e.g. 3221225479-3271225479"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mb-3">
+                  H1-H4 must match on both sides of the tunnel. Both sides must use the same ranges.
+                </p>
+
+                <!-- I1-I5 (optional) -->
+                <div class="dark:border-purple-700" style="margin-top:12px; padding-top:12px; border-top:1px solid #e9d5ff;">
+                  <p class="text-xs font-medium dark:text-neutral-300 mb-2">I1-I5 (optional, advanced)</p>
+                  <div class="grid grid-cols-5 gap-2">
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">I1</label>
+                      <input v-model="interfaceEdit.settings.i1" type="text" placeholder="1-100"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">I2</label>
+                      <input v-model="interfaceEdit.settings.i2" type="text" placeholder="1-100"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">I3</label>
+                      <input v-model="interfaceEdit.settings.i3" type="text" placeholder="1-100"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">I4</label>
+                      <input v-model="interfaceEdit.settings.i4" type="text" placeholder="1-100"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">I5</label>
+                      <input v-model="interfaceEdit.settings.i5" type="text" placeholder="1-100"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /Body -->
+
+            <!-- Footer -->
+            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+              <div class="flex gap-3 justify-end">
+                <button @click="showInterfaceEdit = false"
+                  class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
+                  Cancel
+                </button>
+                <button @click="saveInterfaceEdit"
+                  class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition">
+                  Save
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
 

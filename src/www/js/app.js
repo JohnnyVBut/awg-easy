@@ -120,6 +120,22 @@ new Vue({
     selectedInterfacePeers: [],
     allPeers: [],            // dashboard: flat list of peers from all interfaces
     showInterfaceCreate: false,
+    showInterfaceEdit: false,
+    interfaceEdit: {
+      id: null,
+      name: '',
+      address: '',
+      listenPort: '',
+      disableRoutes: false,
+      protocol: 'wireguard-1.0',
+      selectedTemplateId: '',
+      settings: {
+        jc: 6, jmin: 10, jmax: 50,
+        s1: 64, s2: 67, s3: 64, s4: 4,
+        h1: '', h2: '', h3: '', h4: '',
+        i1: '', i2: '', i3: '', i4: '', i5: '',
+      },
+    },
     showPeerCreate: false, // manual peer create modal
     showQuickPeerCreate: false, // quick peer create dialog
     loadingInterfaceId: null,
@@ -550,6 +566,78 @@ new Vue({
         }
       } catch (err) {
         console.error('Failed to create interface:', err);
+        alert(`Failed: ${err.message}`);
+      }
+    },
+
+    // ========================================================================
+    // Edit Interface
+    // ========================================================================
+
+    openInterfaceEdit(iface) {
+      const s = iface.settings || {};
+      this.interfaceEdit = {
+        id: iface.id,
+        name: iface.name || iface.id,
+        address: iface.address || '',
+        listenPort: iface.listenPort || '',
+        disableRoutes: !!iface.disableRoutes,
+        protocol: iface.protocol || 'wireguard-1.0',
+        selectedTemplateId: '',
+        settings: {
+          jc:   s.jc   ?? 6,   jmin: s.jmin ?? 10,  jmax: s.jmax ?? 50,
+          s1:   s.s1   ?? 64,  s2:   s.s2   ?? 67,  s3:   s.s3  ?? 64,  s4: s.s4 ?? 4,
+          h1:   s.h1   || '',  h2:   s.h2   || '',  h3:   s.h3  || '',  h4: s.h4 || '',
+          i1:   s.i1   || '',  i2:   s.i2   || '',  i3:   s.i3  || '',  i4: s.i4 || '',  i5: s.i5 || '',
+        },
+      };
+      this.showInterfaceEdit = true;
+    },
+
+    onEditInterfaceTemplateSelect(templateId) {
+      if (!templateId) return;
+      const tmpl = (this.templates || []).find(t => t.id === templateId);
+      if (!tmpl) return;
+      this.interfaceEdit.settings = {
+        jc:   tmpl.jc,   jmin: tmpl.jmin,  jmax: tmpl.jmax,
+        s1:   tmpl.s1,   s2:   tmpl.s2,    s3:   tmpl.s3,   s4: tmpl.s4,
+        h1:   tmpl.h1,   h2:   tmpl.h2,    h3:   tmpl.h3,   h4: tmpl.h4,
+        i1:   tmpl.i1 || '', i2: tmpl.i2 || '', i3: tmpl.i3 || '',
+        i4:   tmpl.i4 || '', i5: tmpl.i5 || '',
+      };
+    },
+
+    async saveInterfaceEdit() {
+      const { id, name, address, listenPort, disableRoutes, protocol, settings } = this.interfaceEdit;
+
+      if (!name) { alert('Please enter a name'); return; }
+      if (!address || !address.includes('/')) {
+        alert('Please enter Tunnel Address in CIDR format (e.g. 10.100.0.1/24)');
+        return;
+      }
+      if (protocol === 'amneziawg-2.0') {
+        if (!settings.h1 || !settings.h2 || !settings.h3 || !settings.h4) {
+          alert('Please set H1-H4 parameters for AWG 2.0 (select a profile or enter manually)');
+          return;
+        }
+      }
+
+      const payload = {
+        name,
+        address,
+        listenPort: listenPort !== '' && listenPort !== null ? Number(listenPort) : undefined,
+        disableRoutes,
+      };
+      if (protocol === 'amneziawg-2.0') {
+        payload.settings = { ...settings };
+      }
+
+      try {
+        const res = await this.api.updateTunnelInterface({ interfaceId: id, ...payload });
+        this._applyInterfaceUpdate(res.interface);
+        this.showInterfaceEdit = false;
+      } catch (err) {
+        console.error('saveInterfaceEdit failed:', err);
         alert(`Failed: ${err.message}`);
       }
     },
