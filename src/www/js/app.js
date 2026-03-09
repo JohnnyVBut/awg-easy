@@ -182,6 +182,9 @@ new Vue({
       dns: '1.1.1.1, 8.8.8.8',
       defaultPersistentKeepalive: 25,
       defaultClientAllowedIPs: '0.0.0.0/0, ::/0',
+      gatewayWindowSeconds:     30,
+      gatewayHealthyThreshold:  95,
+      gatewayDegradedThreshold: 90,
     },
     settingsSaved: false,
     templates: [],
@@ -210,7 +213,8 @@ new Vue({
       address: '',
       monitor: true,
       monitorInterval: 5,
-      windowSeconds: 60,
+      windowSeconds: null,  // null = use global default
+      latencyThreshold: 500,
       description: '',
     },
     gatewayEdit: {
@@ -220,7 +224,8 @@ new Vue({
       address: '',
       monitor: true,
       monitorInterval: 5,
-      windowSeconds: 60,
+      windowSeconds: null,
+      latencyThreshold: 500,
       description: '',
     },
     groupCreate: { name: '', trigger: 'packetloss', description: '', gateways: [] },
@@ -942,18 +947,20 @@ new Vue({
       if (!f.address.trim()) return alert('Address is required');
       try {
         await this.api.createGateway({
-          name:            f.name.trim(),
-          interface:       f.interface,
-          address:         f.address.trim(),
-          monitor:         f.monitor,
-          monitorInterval: Number(f.monitorInterval),
-          windowSeconds:   Number(f.windowSeconds),
-          description:     f.description.trim(),
+          name:             f.name.trim(),
+          interface:        f.interface,
+          address:          f.address.trim(),
+          monitor:          f.monitor,
+          monitorInterval:  Number(f.monitorInterval),
+          windowSeconds:    f.windowSeconds !== null ? Number(f.windowSeconds) : null,
+          latencyThreshold: Number(f.latencyThreshold),
+          description:      f.description.trim(),
         });
         this.showGatewayCreate = false;
         this.gatewayCreate = {
           name: '', interface: '', address: '',
-          monitor: true, monitorInterval: 5, windowSeconds: 60, description: '',
+          monitor: true, monitorInterval: 5, windowSeconds: null,
+          latencyThreshold: 500, description: '',
         };
         await this.loadGateways();
       } catch (err) {
@@ -964,14 +971,15 @@ new Vue({
     // ── Edit Gateway ──────────────────────────────────────────────────────────
     openGatewayEdit(gw) {
       this.gatewayEdit = {
-        id:              gw.id,
-        name:            gw.name,
-        interface:       gw.interface,
-        address:         gw.address,
-        monitor:         gw.monitor,
-        monitorInterval: gw.monitorInterval,
-        windowSeconds:   gw.windowSeconds || 60,
-        description:     gw.description || '',
+        id:               gw.id,
+        name:             gw.name,
+        interface:        gw.interface,
+        address:          gw.address,
+        monitor:          gw.monitor,
+        monitorInterval:  gw.monitorInterval,
+        windowSeconds:    gw.windowSeconds ?? null,
+        latencyThreshold: gw.latencyThreshold || 500,
+        description:      gw.description || '',
       };
       this.showGatewayEdit = true;
     },
@@ -983,14 +991,15 @@ new Vue({
       if (!f.address.trim()) return alert('Address is required');
       try {
         await this.api.updateGateway({
-          gatewayId:       f.id,
-          name:            f.name.trim(),
-          interface:       f.interface,
-          address:         f.address.trim(),
-          monitor:         f.monitor,
-          monitorInterval: Number(f.monitorInterval),
-          windowSeconds:   Number(f.windowSeconds),
-          description:     f.description.trim(),
+          gatewayId:        f.id,
+          name:             f.name.trim(),
+          interface:        f.interface,
+          address:          f.address.trim(),
+          monitor:          f.monitor,
+          monitorInterval:  Number(f.monitorInterval),
+          windowSeconds:    f.windowSeconds !== null ? Number(f.windowSeconds) : null,
+          latencyThreshold: Number(f.latencyThreshold),
+          description:      f.description.trim(),
         });
         this.showGatewayEdit = false;
         const res = await this.api.getGateways();

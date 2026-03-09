@@ -1559,6 +1559,32 @@
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono text-sm">
                 <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">What the client routes through the VPN (full tunnel = 0.0.0.0/0, ::/0).</p>
               </div>
+
+              <!-- Gateway Monitor -->
+              <div style="border-top-width:1px; padding-top:12px;" class="dark:border-neutral-600">
+                <p class="text-sm font-semibold dark:text-neutral-300 mb-3">Gateway Monitor</p>
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Window (s)</label>
+                    <input v-model.number="globalSettings.gatewayWindowSeconds" type="number" min="10"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                    <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Sliding window size</p>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Healthy (%)</label>
+                    <input v-model.number="globalSettings.gatewayHealthyThreshold" type="number" min="1" max="100"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                    <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Success rate ≥ → Healthy</p>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Degraded (%)</label>
+                    <input v-model.number="globalSettings.gatewayDegradedThreshold" type="number" min="1" max="100"
+                      class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                    <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Success rate ≥ → Degraded</p>
+                  </div>
+                </div>
+              </div>
+
               <div class="flex items-center gap-3 pt-2">
                 <button @click="saveSettings"
                   class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition text-sm font-medium">
@@ -1875,19 +1901,27 @@
                 <!-- Monitor params (only if enabled) -->
                 <div v-if="gatewayCreate.monitor">
                   <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Monitor Parameters</p>
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="grid grid-cols-3 gap-3">
                     <div>
                       <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Probe Interval (s)</label>
                       <input v-model.number="gatewayCreate.monitorInterval" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Window (s)</label>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Window override (s)</label>
                       <input v-model.number="gatewayCreate.windowSeconds" type="number" min="10"
+                        :placeholder="globalSettings.gatewayWindowSeconds"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Latency threshold (ms)</label>
+                      <input v-model.number="gatewayCreate.latencyThreshold" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                   </div>
-                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Status: ≥95% success → Healthy · 90–95% → Degraded · &lt;90% → Down</p>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    Status by packet loss: ≥{{globalSettings.gatewayHealthyThreshold}}% → Healthy · ≥{{globalSettings.gatewayDegradedThreshold}}% → Degraded · else → Down
+                  </p>
                 </div>
 
                 <!-- Description -->
@@ -1961,19 +1995,27 @@
 
                 <div v-if="gatewayEdit.monitor">
                   <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Monitor Parameters</p>
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="grid grid-cols-3 gap-3">
                     <div>
                       <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Probe Interval (s)</label>
                       <input v-model.number="gatewayEdit.monitorInterval" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Window (s)</label>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Window override (s)</label>
                       <input v-model.number="gatewayEdit.windowSeconds" type="number" min="10"
+                        :placeholder="globalSettings.gatewayWindowSeconds"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Latency threshold (ms)</label>
+                      <input v-model.number="gatewayEdit.latencyThreshold" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                   </div>
-                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Status: ≥95% success → Healthy · 90–95% → Degraded · &lt;90% → Down</p>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    Status by packet loss: ≥{{globalSettings.gatewayHealthyThreshold}}% → Healthy · ≥{{globalSettings.gatewayDegradedThreshold}}% → Degraded · else → Down
+                  </p>
                 </div>
 
                 <div>

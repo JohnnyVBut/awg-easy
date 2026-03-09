@@ -1,13 +1,10 @@
 'use strict';
 
-const Util = require('./Util');
-const debug = require('debug')('awg:GatewayMonitor');
+const Util     = require('./Util');
+const Settings = require('./Settings');
+const debug    = require('debug')('awg:GatewayMonitor');
 
-// Status thresholds (packet success rate %)
-const THRESHOLD_HEALTHY  = 95; // >= 95% → healthy
-const THRESHOLD_DEGRADED = 90; // >= 90% && < 95% → degraded
-                                //  < 90% → down
-const MIN_PROBES = 3;           // need at least this many probes before committing to a status
+const MIN_PROBES = 3; // need at least this many probes before committing to a status
 
 /**
  * GatewayMonitor — singleton, запускает ping-цикл для каждого gateway.
@@ -16,10 +13,11 @@ const MIN_PROBES = 3;           // need at least this many probes before committ
  *   - Каждый тик: ping -c 1 -W 1  →  один probe (success/fail + latency)
  *   - Window: последние windowSeconds секунд проб (хранится в памяти)
  *   - Success rate = (total - lost) / total * 100
- *   - >= THRESHOLD_HEALTHY  → 'healthy'
- *   - >= THRESHOLD_DEGRADED → 'degraded'
- *   - <  THRESHOLD_DEGRADED → 'down'
- *   - < MIN_PROBES samples  → 'unknown'
+ *   - >= gatewayHealthyThreshold  → 'healthy'   (default 95%)
+ *   - >= gatewayDegradedThreshold → 'degraded'  (default 90%)
+ *   - <  gatewayDegradedThreshold → 'down'
+ *   - < MIN_PROBES samples        → 'unknown'
+ *   Пороги и дефолтное окно берутся из Settings (настраиваются в Global Settings).
  *   Latency: скользящее среднее по успешным пробам в окне.
  */
 class GatewayMonitor {
@@ -86,7 +84,13 @@ class GatewayMonitor {
    * Выполнить один probe (ping -c 1), записать в окно, пересчитать статус.
    */
   async _probe(gateway) {
-    const { interface: iface, address, windowSeconds } = gateway.data;
+    const { interface: iface, address } = gateway.data;
+
+    // Thresholds and window: global settings, with per-gateway windowSeconds override
+    const settings = await Settings.getInstance();
+    const windowSeconds = gateway.data.windowSeconds ?? settings.data.gatewayWindowSeconds;
+    const thresholdHealthy  = settings.data.gatewayHealthyThreshold;
+    const thresholdDegraded = settings.data.gatewayDegradedThreshold;
 
     let success = false;
     let latency = null;
@@ -142,9 +146,9 @@ class GatewayMonitor {
     let status;
     if (total < MIN_PROBES) {
       status = 'unknown';
-    } else if (successRate >= THRESHOLD_HEALTHY) {
+    } else if (successRate >= thresholdHealthy) {
       status = 'healthy';
-    } else if (successRate >= THRESHOLD_DEGRADED) {
+    } else if (successRate >= thresholdDegraded) {
       status = 'degraded';
     } else {
       status = 'down';

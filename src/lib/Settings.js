@@ -8,6 +8,10 @@ const DEFAULTS = {
   dns: '1.1.1.1, 8.8.8.8',
   defaultPersistentKeepalive: 25,
   defaultClientAllowedIPs: '0.0.0.0/0, ::/0',
+  // Gateway monitor global defaults
+  gatewayWindowSeconds:     30,  // sliding window size (seconds)
+  gatewayHealthyThreshold:  95,  // success rate % → healthy
+  gatewayDegradedThreshold: 90,  // success rate % → degraded (below → down)
   templates: [],
 };
 
@@ -71,6 +75,9 @@ class Settings {
       dns: this.data.dns,
       defaultPersistentKeepalive: this.data.defaultPersistentKeepalive,
       defaultClientAllowedIPs: this.data.defaultClientAllowedIPs,
+      gatewayWindowSeconds:     this.data.gatewayWindowSeconds,
+      gatewayHealthyThreshold:  this.data.gatewayHealthyThreshold,
+      gatewayDegradedThreshold: this.data.gatewayDegradedThreshold,
     };
   }
 
@@ -81,6 +88,15 @@ class Settings {
     }
     if (updates.defaultClientAllowedIPs !== undefined) {
       this.data.defaultClientAllowedIPs = String(updates.defaultClientAllowedIPs);
+    }
+    if (updates.gatewayWindowSeconds !== undefined) {
+      this.data.gatewayWindowSeconds = Number(updates.gatewayWindowSeconds);
+    }
+    if (updates.gatewayHealthyThreshold !== undefined) {
+      this.data.gatewayHealthyThreshold = Number(updates.gatewayHealthyThreshold);
+    }
+    if (updates.gatewayDegradedThreshold !== undefined) {
+      this.data.gatewayDegradedThreshold = Number(updates.gatewayDegradedThreshold);
     }
     await this._save();
     return this.getSettings();
