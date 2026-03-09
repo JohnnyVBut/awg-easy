@@ -2,7 +2,7 @@ version: '3'
 
 services:
   awg-easy:
-    image: awg-easy:2.0
+    image: awg2-easy:latest
     container_name: awg-easy
     restart: unless-stopped
 
