@@ -4,7 +4,8 @@ FROM docker.io/library/node:22-alpine AS build_node_modules
 # Copy Web UI
 COPY src /app
 WORKDIR /app
-RUN npm install --omit=dev &&\
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install --omit=dev && \
     mv node_modules /node_modules
 
 # Copy build result to a new image.
