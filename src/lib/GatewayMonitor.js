@@ -84,7 +84,8 @@ class GatewayMonitor {
    * Выполнить один probe (ping -c 1), записать в окно, пересчитать статус.
    */
   async _probe(gateway) {
-    const { interface: iface, address } = gateway.data;
+    const { interface: iface, gatewayIP, monitorAddress } = gateway.data;
+    const pingTarget = monitorAddress || gatewayIP; // monitor IP если задан, иначе gateway IP
 
     // Thresholds and window: global settings, with per-gateway windowSeconds override
     const settings = await Settings.getInstance();
@@ -97,7 +98,7 @@ class GatewayMonitor {
 
     try {
       const out = await Util.exec(
-        `ping -c 1 -W 1 -I ${iface} ${address}`,
+        `ping -c 1 -W 1 -I ${iface} ${pingTarget}`,
         { timeout: 5000, log: false }
       );
 

@@ -1179,8 +1179,8 @@ module.exports = class Server {
         if (!body.interface) {
           throw createError({ status: 400, message: 'Gateway interface is required' });
         }
-        if (!body.address) {
-          throw createError({ status: 400, message: 'Gateway address is required' });
+        if (!body.gatewayIP) {
+          throw createError({ status: 400, message: 'Gateway IP is required' });
         }
         const manager = await GatewayManager.getInstance();
         const gw = await manager.createGateway(body);

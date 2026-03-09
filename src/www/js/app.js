@@ -210,10 +210,11 @@ new Vue({
     gatewayCreate: {
       name: '',
       interface: '',
-      address: '',
+      gatewayIP: '',
+      monitorAddress: '',
       monitor: true,
       monitorInterval: 5,
-      windowSeconds: null,  // null = use global default
+      windowSeconds: null,
       latencyThreshold: 500,
       description: '',
     },
@@ -221,7 +222,8 @@ new Vue({
       id: null,
       name: '',
       interface: '',
-      address: '',
+      gatewayIP: '',
+      monitorAddress: '',
       monitor: true,
       monitorInterval: 5,
       windowSeconds: null,
@@ -942,14 +944,15 @@ new Vue({
     // ── Create Gateway ────────────────────────────────────────────────────────
     async createGateway() {
       const f = this.gatewayCreate;
-      if (!f.name.trim()) return alert('Gateway name is required');
-      if (!f.interface)   return alert('Interface is required');
-      if (!f.address.trim()) return alert('Address is required');
+      if (!f.name.trim())      return alert('Gateway name is required');
+      if (!f.interface)        return alert('Interface is required');
+      if (!f.gatewayIP.trim()) return alert('Gateway IP is required');
       try {
         await this.api.createGateway({
           name:             f.name.trim(),
           interface:        f.interface,
-          address:          f.address.trim(),
+          gatewayIP:        f.gatewayIP.trim(),
+          monitorAddress:   f.monitorAddress.trim(),
           monitor:          f.monitor,
           monitorInterval:  Number(f.monitorInterval),
           windowSeconds:    f.windowSeconds !== null ? Number(f.windowSeconds) : null,
@@ -958,7 +961,7 @@ new Vue({
         });
         this.showGatewayCreate = false;
         this.gatewayCreate = {
-          name: '', interface: '', address: '',
+          name: '', interface: '', gatewayIP: '', monitorAddress: '',
           monitor: true, monitorInterval: 5, windowSeconds: null,
           latencyThreshold: 500, description: '',
         };
@@ -974,7 +977,8 @@ new Vue({
         id:               gw.id,
         name:             gw.name,
         interface:        gw.interface,
-        address:          gw.address,
+        gatewayIP:        gw.gatewayIP || '',
+        monitorAddress:   gw.monitorAddress || '',
         monitor:          gw.monitor,
         monitorInterval:  gw.monitorInterval,
         windowSeconds:    gw.windowSeconds ?? null,
@@ -986,15 +990,16 @@ new Vue({
 
     async saveGatewayEdit() {
       const f = this.gatewayEdit;
-      if (!f.name.trim()) return alert('Gateway name is required');
-      if (!f.interface)   return alert('Interface is required');
-      if (!f.address.trim()) return alert('Address is required');
+      if (!f.name.trim())      return alert('Gateway name is required');
+      if (!f.interface)        return alert('Interface is required');
+      if (!f.gatewayIP.trim()) return alert('Gateway IP is required');
       try {
         await this.api.updateGateway({
           gatewayId:        f.id,
           name:             f.name.trim(),
           interface:        f.interface,
-          address:          f.address.trim(),
+          gatewayIP:        f.gatewayIP.trim(),
+          monitorAddress:   f.monitorAddress.trim(),
           monitor:          f.monitor,
           monitorInterval:  Number(f.monitorInterval),
           windowSeconds:    f.windowSeconds !== null ? Number(f.windowSeconds) : null,

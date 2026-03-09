@@ -15,7 +15,8 @@ class Gateway {
     this.data = {
       name:            data.name            || '',
       interface:       data.interface       || '',   // сетевой интерфейс (eth0, wg10, ...)
-      address:         data.address         || '',   // IP-адрес для пинга
+      gatewayIP:       data.gatewayIP       || '',   // next-hop IP (для маршрутизации)
+      monitorAddress:  data.monitorAddress  || '',   // IP для пинга; '' = использовать gatewayIP
       enabled:          data.enabled          !== false,
       monitor:          data.monitor          !== false,
       monitorInterval:  data.monitorInterval  || 5,    // секунды между пробами (ping -c 1)
