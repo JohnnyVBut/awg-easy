@@ -22,12 +22,7 @@ fi
 
 # Get server IP
 echo -e "${BLUE}Detecting server IP...${NC}"
-SERVER_IP=$(curl -s --connect-timeout 4 ifconfig.me 2>/dev/null || \
-            curl -s --connect-timeout 4 icanhazip.com 2>/dev/null || \
-            curl -s --connect-timeout 4 checkip.amazonaws.com 2>/dev/null || \
-            curl -s --connect-timeout 4 ident.me 2>/dev/null || \
-            curl -s --connect-timeout 4 ip.seeip.org 2>/dev/null || \
-            echo "")
+SERVER_IP=$(curl -s --connect-timeout 4 ident.me 2>/dev/null || echo "")
 
 if [ -z "$SERVER_IP" ]; then
     echo -e "${YELLOW}Could not detect server IP automatically.${NC}"
