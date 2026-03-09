@@ -31,6 +31,9 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
+# Switch to Yandex mirror (faster from RU/CIS, avoids dl-cdn.alpinelinux.org blocks).
+RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirror.yandex.ru/mirrors|g' /etc/apk/repositories
+
 # Install Linux packages.
 # libstdc++ + libgcc required by Node 22 binary (dynamically linked against C++ stdlib).
 RUN apk add --no-cache \
