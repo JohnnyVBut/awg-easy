@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 
 # Сборка образа
 echo -e "${GREEN}Building Docker image...${NC}"
-docker build -t awg2-easy:latest .
+docker build --network=host -t awg2-easy:latest .
 
 echo ""
 echo -e "${GREEN}✓ Build complete!${NC}"
