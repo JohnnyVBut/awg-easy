@@ -1875,23 +1875,19 @@
                 <!-- Monitor params (only if enabled) -->
                 <div v-if="gatewayCreate.monitor">
                   <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Monitor Parameters</p>
-                  <div class="grid grid-cols-3 gap-3">
+                  <div class="grid grid-cols-2 gap-3">
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Interval (s)</label>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Probe Interval (s)</label>
                       <input v-model.number="gatewayCreate.monitorInterval" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Latency (ms)</label>
-                      <input v-model.number="gatewayCreate.latencyThreshold" type="number" min="1"
-                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
-                    </div>
-                    <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Loss (%)</label>
-                      <input v-model.number="gatewayCreate.lossThreshold" type="number" min="0" max="100"
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Window (s)</label>
+                      <input v-model.number="gatewayCreate.windowSeconds" type="number" min="10"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                   </div>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Status: ≥95% success → Healthy · 90–95% → Degraded · &lt;90% → Down</p>
                 </div>
 
                 <!-- Description -->
@@ -1965,23 +1961,19 @@
 
                 <div v-if="gatewayEdit.monitor">
                   <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Monitor Parameters</p>
-                  <div class="grid grid-cols-3 gap-3">
+                  <div class="grid grid-cols-2 gap-3">
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Interval (s)</label>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Probe Interval (s)</label>
                       <input v-model.number="gatewayEdit.monitorInterval" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Latency (ms)</label>
-                      <input v-model.number="gatewayEdit.latencyThreshold" type="number" min="1"
-                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
-                    </div>
-                    <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Loss (%)</label>
-                      <input v-model.number="gatewayEdit.lossThreshold" type="number" min="0" max="100"
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Window (s)</label>
+                      <input v-model.number="gatewayEdit.windowSeconds" type="number" min="10"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
                   </div>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Status: ≥95% success → Healthy · 90–95% → Degraded · &lt;90% → Down</p>
                 </div>
 
                 <div>

@@ -210,8 +210,7 @@ new Vue({
       address: '',
       monitor: true,
       monitorInterval: 5,
-      latencyThreshold: 500,
-      lossThreshold: 20,
+      windowSeconds: 60,
       description: '',
     },
     gatewayEdit: {
@@ -221,8 +220,7 @@ new Vue({
       address: '',
       monitor: true,
       monitorInterval: 5,
-      latencyThreshold: 500,
-      lossThreshold: 20,
+      windowSeconds: 60,
       description: '',
     },
     groupCreate: { name: '', trigger: 'packetloss', description: '', gateways: [] },
@@ -944,20 +942,18 @@ new Vue({
       if (!f.address.trim()) return alert('Address is required');
       try {
         await this.api.createGateway({
-          name:             f.name.trim(),
-          interface:        f.interface,
-          address:          f.address.trim(),
-          monitor:          f.monitor,
-          monitorInterval:  Number(f.monitorInterval),
-          latencyThreshold: Number(f.latencyThreshold),
-          lossThreshold:    Number(f.lossThreshold),
-          description:      f.description.trim(),
+          name:            f.name.trim(),
+          interface:       f.interface,
+          address:         f.address.trim(),
+          monitor:         f.monitor,
+          monitorInterval: Number(f.monitorInterval),
+          windowSeconds:   Number(f.windowSeconds),
+          description:     f.description.trim(),
         });
         this.showGatewayCreate = false;
         this.gatewayCreate = {
           name: '', interface: '', address: '',
-          monitor: true, monitorInterval: 5,
-          latencyThreshold: 500, lossThreshold: 20, description: '',
+          monitor: true, monitorInterval: 5, windowSeconds: 60, description: '',
         };
         await this.loadGateways();
       } catch (err) {
@@ -968,15 +964,14 @@ new Vue({
     // ── Edit Gateway ──────────────────────────────────────────────────────────
     openGatewayEdit(gw) {
       this.gatewayEdit = {
-        id:               gw.id,
-        name:             gw.name,
-        interface:        gw.interface,
-        address:          gw.address,
-        monitor:          gw.monitor,
-        monitorInterval:  gw.monitorInterval,
-        latencyThreshold: gw.latencyThreshold,
-        lossThreshold:    gw.lossThreshold,
-        description:      gw.description || '',
+        id:              gw.id,
+        name:            gw.name,
+        interface:       gw.interface,
+        address:         gw.address,
+        monitor:         gw.monitor,
+        monitorInterval: gw.monitorInterval,
+        windowSeconds:   gw.windowSeconds || 60,
+        description:     gw.description || '',
       };
       this.showGatewayEdit = true;
     },
@@ -988,15 +983,14 @@ new Vue({
       if (!f.address.trim()) return alert('Address is required');
       try {
         await this.api.updateGateway({
-          gatewayId:        f.id,
-          name:             f.name.trim(),
-          interface:        f.interface,
-          address:          f.address.trim(),
-          monitor:          f.monitor,
-          monitorInterval:  Number(f.monitorInterval),
-          latencyThreshold: Number(f.latencyThreshold),
-          lossThreshold:    Number(f.lossThreshold),
-          description:      f.description.trim(),
+          gatewayId:       f.id,
+          name:            f.name.trim(),
+          interface:       f.interface,
+          address:         f.address.trim(),
+          monitor:         f.monitor,
+          monitorInterval: Number(f.monitorInterval),
+          windowSeconds:   Number(f.windowSeconds),
+          description:     f.description.trim(),
         });
         this.showGatewayEdit = false;
         const res = await this.api.getGateways();
@@ -1091,12 +1085,12 @@ new Vue({
 
     // ── Status helpers ────────────────────────────────────────────────────────
     gatewayStatusColor(status) {
-      const map = { online: '#22c55e', degraded: '#eab308', offline: '#ef4444', unknown: '#9ca3af' };
+      const map = { healthy: '#22c55e', degraded: '#eab308', down: '#ef4444', unknown: '#9ca3af' };
       return map[status] || map.unknown;
     },
 
     gatewayStatusLabel(status) {
-      const map = { online: 'Online', degraded: 'Degraded', offline: 'Offline', unknown: 'Unknown' };
+      const map = { healthy: 'Healthy', degraded: 'Degraded', down: 'Down', unknown: 'Unknown' };
       return map[status] || 'Unknown';
     },
 

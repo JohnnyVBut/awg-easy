@@ -355,11 +355,13 @@ class TunnelInterface {
       config += `Address = ${this.data.address}\n`;
 
       if (this.data.disableRoutes) {
-        // Interconnect / P2P interface: no NAT, no masquerade.
-        // Only FORWARD ACCEPT so routed traffic can pass through the tunnel.
-        // NAT is intentionally omitted — routing is managed externally (PBR).
-        config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT\n`;
-        config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true\n`;
+        // Interconnect / S2S interface: FORWARD ACCEPT + MASQUERADE через ISP интерфейс.
+        // ISP интерфейс определяется динамически через default route — имя может отличаться
+        // на разных VM (eth0, ens3, ens18, ...). Используем ip route + awk при каждом запуске.
+        const subnet = this._cidrToSubnet(this.data.address);
+        const getIsp = `ISP=$(ip -4 route show default | awk 'NR==1{print $5}')`;
+        config += `PostUp = ${getIsp}; iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -o $ISP -j MASQUERADE\n`;
+        config += `PostDown = ${getIsp}; iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -o $ISP -j MASQUERADE 2>/dev/null || true\n`;
       } else {
         // Client interface: NAT masquerade so clients can reach the internet.
         const subnet = this._cidrToSubnet(this.data.address);

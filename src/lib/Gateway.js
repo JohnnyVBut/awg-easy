@@ -13,16 +13,15 @@ class Gateway {
   constructor(data) {
     this.id = data.id || uuidv4();
     this.data = {
-      name:              data.name              || '',
-      interface:         data.interface         || '',   // сетевой интерфейс (eth0, wg10, ...)
-      address:           data.address           || '',   // IP-адрес для пинга
-      enabled:           data.enabled           !== false,
-      monitor:           data.monitor           !== false,
-      monitorInterval:   data.monitorInterval   || 5,    // секунды между пингами
-      latencyThreshold:  data.latencyThreshold  || 500,  // мс — выше → degraded
-      lossThreshold:     data.lossThreshold     || 20,   // % — выше → degraded
-      description:       data.description       || '',
-      createdAt:         data.createdAt         || new Date().toISOString(),
+      name:            data.name            || '',
+      interface:       data.interface       || '',   // сетевой интерфейс (eth0, wg10, ...)
+      address:         data.address         || '',   // IP-адрес для пинга
+      enabled:         data.enabled         !== false,
+      monitor:         data.monitor         !== false,
+      monitorInterval: data.monitorInterval || 5,   // секунды между пробами (ping -c 1)
+      windowSeconds:   data.windowSeconds   || 60,  // размер скользящего окна в секундах
+      description:     data.description     || '',
+      createdAt:       data.createdAt       || new Date().toISOString(),
     };
   }
 
