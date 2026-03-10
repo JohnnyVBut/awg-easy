@@ -41,6 +41,7 @@ RUN apk add --no-cache \
     dumb-init \
     iptables \
     iptables-legacy \
+    iproute2 \
     libstdc++ \
     libgcc
 
