@@ -238,6 +238,7 @@ new Vue({
     routingTable: 'main',         // таблица для Status tab
     routingTables: [],            // список таблиц из /etc/iproute2/rt_tables
     kernelRoutes: [],
+    kernelRoutesError: '',
     staticRoutes: [],
     routeTestIp: '',
     routeTestResult: null,
@@ -1167,11 +1168,14 @@ new Vue({
     },
 
     async loadKernelRoutes() {
+      this.kernelRoutesError = '';
       try {
         const res = await this.api.getKernelRoutes(this.routingTable);
         this.kernelRoutes = res.routes || [];
       } catch (err) {
         console.error('loadKernelRoutes error:', err);
+        this.kernelRoutesError = err.message || 'Failed to load kernel routes';
+        this.kernelRoutes = [];
       }
     },
 

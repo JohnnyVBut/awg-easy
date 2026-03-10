@@ -2307,8 +2307,13 @@
                   class="px-3 py-1 bg-gray-200 dark:bg-neutral-600 dark:text-neutral-200 rounded text-sm">↻</button>
               </div>
 
+              <!-- Error state -->
+              <div v-if="kernelRoutesError" class="text-sm" style="padding:12px 16px; background:#fee2e2; border:1px solid #fca5a5; border-radius:8px; color:#991b1b;">
+                ⚠️ Error: {{ kernelRoutesError }}
+              </div>
+
               <!-- Empty state -->
-              <div v-if="kernelRoutes.length === 0" class="text-sm text-gray-400 dark:text-neutral-500" style="padding:16px 0;">
+              <div v-if="!kernelRoutesError && kernelRoutes.length === 0" class="text-sm text-gray-400 dark:text-neutral-500" style="padding:16px 0;">
                 No routes found.
               </div>
 

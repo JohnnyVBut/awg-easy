@@ -161,9 +161,16 @@ class RouteManager {
       const out = await Util.exec(cmd, { log: true });
       return JSON.parse(out || '[]');
     } catch (err) {
-      // ip route show table <N> падает если таблица не существует
-      if (err.message && err.message.includes('ipset')) throw err;
-      return [];
+      const msg = err.message || '';
+      // Таблица не существует — нормальная ситуация, вернуть пустой массив
+      if (msg.includes('Invalid argument') || msg.includes('No such process') ||
+          msg.includes('does not exist') || msg.includes('RTNETLINK')) {
+        return [];
+      }
+      // Всё остальное (ip не найден, -j не поддерживается, timeout и т.д.)
+      // — пробросить ошибку, чтобы клиент увидел что именно сломалось
+      debug(`getKernelRoutes failed for table "${table}": ${msg}`);
+      throw createError({ status: 500, message: `ip route error: ${msg}` });
     }
   }
 
