@@ -2299,10 +2299,9 @@
                 <h3 class="font-semibold dark:text-neutral-200">Kernel Routes</h3>
                 <select v-model="routingTable" @change="loadKernelRoutes"
                   class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-1 text-sm">
-                  <option value="main">main</option>
-                  <option value="all">all</option>
-                  <option value="local">local</option>
-                  <option value="100">100</option>
+                  <option v-for="t in routingTables" :key="t.name" :value="t.name">
+                    {{ t.name }}{{ t.id !== null ? ' (' + t.id + ')' : '' }}
+                  </option>
                 </select>
                 <button @click="loadKernelRoutes"
                   class="px-3 py-1 bg-gray-200 dark:bg-neutral-600 dark:text-neutral-200 rounded text-sm">↻</button>
@@ -2473,7 +2472,13 @@
                 </div>
                 <div style="flex:1;">
                   <label class="text-sm font-medium dark:text-neutral-300">Table</label>
-                  <input v-model="routeCreate.table" type="text" placeholder="main"
+                  <select v-if="routingTables.length > 0" v-model="routeCreate.table"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1">
+                    <option v-for="t in routingTables.filter(t => t.name !== 'all')" :key="t.name" :value="t.name">
+                      {{ t.name }}{{ t.id !== null ? ' (' + t.id + ')' : '' }}
+                    </option>
+                  </select>
+                  <input v-else v-model="routeCreate.table" type="text" placeholder="main"
                     class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
                 </div>
               </div>

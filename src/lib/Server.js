@@ -1292,6 +1292,15 @@ module.exports = class Server {
       // ========================================================================
 
       /**
+       * GET /api/routing/tables
+       * Список routing-таблиц из /etc/iproute2/rt_tables
+       */
+      .get('/api/routing/tables', defineEventHandler(async () => {
+        const rm = await RouteManager.getInstance();
+        return { tables: await rm.getRoutingTables() };
+      }))
+
+      /**
        * GET /api/routing/table?table=main
        * Получить маршруты из ядра Linux (ip -j route show table <table>)
        */

@@ -555,6 +555,13 @@ class API {
   // Routing API
   // ============================================================
 
+  async getRoutingTables() {
+    return this.call({
+      method: 'get',
+      path: '/routing/tables',
+    });
+  }
+
   async getKernelRoutes(table = 'main') {
     return this.call({
       method: 'get',

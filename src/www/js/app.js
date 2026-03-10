@@ -236,6 +236,7 @@ new Vue({
     // Routing page
     activeRoutingTab: 'status',   // 'status' | 'static' | 'ospf'
     routingTable: 'main',         // таблица для Status tab
+    routingTables: [],            // список таблиц из /etc/iproute2/rt_tables
     kernelRoutes: [],
     staticRoutes: [],
     routeTestIp: '',
@@ -557,7 +558,7 @@ new Vue({
         this.loadSystemInterfaces();
       }
       if (pageId === 'routing') {
-        this.loadKernelRoutes();
+        this.loadRoutingTables().then(() => this.loadKernelRoutes());
         this.loadStaticRoutes();
       }
     },
@@ -1149,6 +1150,20 @@ new Vue({
     switchRoutingTab(tab) {
       this.activeRoutingTab = tab;
       if (tab === 'status') this.loadKernelRoutes();
+    },
+
+    async loadRoutingTables() {
+      try {
+        const res = await this.api.getRoutingTables();
+        this.routingTables = res.tables || [];
+        // Установить дефолтную таблицу = 'main' если она есть
+        if (this.routingTables.length > 0 && !this.routingTables.find(t => t.name === this.routingTable)) {
+          this.routingTable = this.routingTables[0].name;
+        }
+      } catch (err) {
+        console.error('loadRoutingTables error:', err);
+        this.routingTables = [{ id: 254, name: 'main' }, { id: null, name: 'all' }];
+      }
     },
 
     async loadKernelRoutes() {

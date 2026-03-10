@@ -47,6 +47,47 @@ class RouteManager {
   }
 
   /**
+   * Получить список routing-таблиц из /etc/iproute2/rt_tables.
+   * Возвращает массив { id, name } — только реально настроенные таблицы.
+   * Всегда включает synthetic 'all' (ip route show table all).
+   */
+  async getRoutingTables() {
+    const RT_TABLES_FILE = '/etc/iproute2/rt_tables';
+    // Системные таблицы которые нет смысла показывать
+    const SKIP_IDS = new Set([0, 255]); // unspec, local
+    const SKIP_NAMES = new Set(['unspec', 'local']);
+
+    let tables = [];
+    try {
+      const content = await fs.readFile(RT_TABLES_FILE, 'utf8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const parts = trimmed.split(/\s+/);
+        if (parts.length < 2) continue;
+        const id = parseInt(parts[0], 10);
+        const name = parts[1];
+        if (SKIP_IDS.has(id) || SKIP_NAMES.has(name)) continue;
+        tables.push({ id, name });
+      }
+      // Сортируем: сначала именованные (main/default), потом числовые
+      tables.sort((a, b) => a.id - b.id);
+    } catch (err) {
+      // Файл не найден (не Linux) — вернуть стандартные
+      debug(`Could not read rt_tables: ${err.message}`);
+      tables = [
+        { id: 253, name: 'default' },
+        { id: 254, name: 'main' },
+      ];
+    }
+
+    // Всегда добавляем synthetic 'all' в конец
+    tables.push({ id: null, name: 'all' });
+
+    return tables;
+  }
+
+  /**
    * Получить маршруты из ядра Linux.
    * @param {string} table - 'main' | 'all' | номер таблицы
    */
