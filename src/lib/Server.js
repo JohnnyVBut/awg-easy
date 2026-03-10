@@ -13,6 +13,7 @@ const debug = require('debug')('Server');
 const TunnelManager = require('./TunnelManager');
 const InterfaceManager = require('./InterfaceManager');
 const GatewayManager = require('./GatewayManager');
+const RouteManager = require('./RouteManager');
 const Settings = require('./Settings');
 const Util = require('./Util');
 
@@ -1284,6 +1285,77 @@ module.exports = class Server {
         const manager = await GatewayManager.getInstance();
         await manager.deleteGroup(id);
         return { success: true };
+      }))
+
+      // ========================================================================
+      // Routing API
+      // ========================================================================
+
+      /**
+       * GET /api/routing/table?table=main
+       * Получить маршруты из ядра Linux (ip -j route show table <table>)
+       */
+      .get('/api/routing/table', defineEventHandler(async (event) => {
+        const table = event.node.req.url.includes('?')
+          ? new URLSearchParams(event.node.req.url.split('?')[1]).get('table') || 'main'
+          : 'main';
+        const rm = await RouteManager.getInstance();
+        return { routes: await rm.getKernelRoutes(table) };
+      }))
+
+      /**
+       * GET /api/routing/test?ip=8.8.8.8
+       * Тест: ip route get <ip>
+       */
+      .get('/api/routing/test', defineEventHandler(async (event) => {
+        const ip = event.node.req.url.includes('?')
+          ? new URLSearchParams(event.node.req.url.split('?')[1]).get('ip') || ''
+          : '';
+        const rm = await RouteManager.getInstance();
+        return { result: await rm.testRoute(ip) };
+      }))
+
+      /**
+       * GET /api/routing/routes
+       * Список managed статических маршрутов из JSON
+       */
+      .get('/api/routing/routes', defineEventHandler(async () => {
+        const rm = await RouteManager.getInstance();
+        return { routes: rm.getRoutes() };
+      }))
+
+      /**
+       * POST /api/routing/routes
+       * Создать статический маршрут
+       */
+      .post('/api/routing/routes', defineEventHandler(async (event) => {
+        const body = await readBody(event);
+        const rm = await RouteManager.getInstance();
+        const route = await rm.addRoute(body);
+        return { route };
+      }))
+
+      /**
+       * PATCH /api/routing/routes/:id
+       * Включить / выключить маршрут
+       */
+      .patch('/api/routing/routes/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const body = await readBody(event);
+        const rm = await RouteManager.getInstance();
+        const route = await rm.toggleRoute(id, !!body.enabled);
+        return { route };
+      }))
+
+      /**
+       * DELETE /api/routing/routes/:id
+       * Удалить статический маршрут
+       */
+      .delete('/api/routing/routes/:id', defineEventHandler(async (event) => {
+        const id = getRouterParam(event, 'id');
+        const rm = await RouteManager.getInstance();
+        await rm.deleteRoute(id);
+        return { success: true };
       }));
 
     const safePathJoin = (base, target) => {
@@ -1438,6 +1510,15 @@ module.exports = class Server {
       debug('GatewayManager initialized successfully');
     }).catch((err) => {
       debug('Error initializing GatewayManager:', err);
+    });
+
+    // ========================================================================
+    // Initialize RouteManager (async: loads routes.json + applies enabled routes)
+    // ========================================================================
+    RouteManager.getInstance().then(() => {
+      debug('RouteManager initialized successfully');
+    }).catch((err) => {
+      debug('Error initializing RouteManager:', err);
     });
 
     createServer(toNodeListener(app)).listen(PORT, WEBUI_HOST);

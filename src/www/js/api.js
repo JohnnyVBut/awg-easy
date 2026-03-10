@@ -551,4 +551,52 @@ class API {
     });
   }
 
+  // ============================================================
+  // Routing API
+  // ============================================================
+
+  async getKernelRoutes(table = 'main') {
+    return this.call({
+      method: 'get',
+      path: `/routing/table?table=${encodeURIComponent(table)}`,
+    });
+  }
+
+  async testRoute(ip) {
+    return this.call({
+      method: 'get',
+      path: `/routing/test?ip=${encodeURIComponent(ip)}`,
+    });
+  }
+
+  async getStaticRoutes() {
+    return this.call({
+      method: 'get',
+      path: '/routing/routes',
+    });
+  }
+
+  async createStaticRoute(data) {
+    return this.call({
+      method: 'post',
+      path: '/routing/routes',
+      body: data,
+    });
+  }
+
+  async toggleStaticRoute({ routeId, enabled }) {
+    return this.call({
+      method: 'patch',
+      path: `/routing/routes/${routeId}`,
+      body: { enabled },
+    });
+  }
+
+  async deleteStaticRoute({ routeId }) {
+    return this.call({
+      method: 'delete',
+      path: `/routing/routes/${routeId}`,
+    });
+  }
+
 }

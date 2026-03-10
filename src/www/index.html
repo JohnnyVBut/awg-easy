@@ -2234,11 +2234,270 @@
         </div><!-- /gateways page -->
 
         <!-- ============================================================== -->
-        <!-- Routing Page (placeholder)                                     -->
         <!-- ============================================================== -->
-        <div v-if="activePage === 'routing'" class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
-          <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Routing</h2>
-          <p class="text-lg">Coming soon</p>
+        <!-- Routing Page                                                   -->
+        <!-- ============================================================== -->
+        <div v-if="activePage === 'routing'">
+
+          <!-- Tab bar: Status | Static | OSPF -->
+          <div class="flex gap-2 mb-4">
+            <button @click="switchRoutingTab('status')"
+              :class="activeRoutingTab === 'status' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+              class="px-4 py-2 rounded-lg font-medium transition text-sm">
+              Status
+            </button>
+            <button @click="switchRoutingTab('static')"
+              :class="activeRoutingTab === 'static' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+              class="px-4 py-2 rounded-lg font-medium transition text-sm">
+              Static
+            </button>
+            <button @click="switchRoutingTab('ospf')"
+              class="px-4 py-2 rounded-lg font-medium transition text-sm bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200"
+              style="opacity:0.5; cursor:not-allowed;" disabled>
+              OSPF
+            </button>
+          </div>
+
+          <!-- ── STATUS TAB ────────────────────────────────────────────── -->
+          <div v-if="activeRoutingTab === 'status'" style="display:flex; flex-direction:column; gap:24px;">
+
+            <!-- Route Lookup card -->
+            <div class="bg-white dark:bg-neutral-800 rounded-lg shadow-sm" style="padding:20px 24px;">
+              <h3 class="font-semibold dark:text-neutral-200 mb-2">Route Lookup</h3>
+              <div class="flex gap-2 items-center">
+                <input v-model="routeTestIp" type="text" placeholder="e.g. 8.8.8.8"
+                  @keyup.enter="testRoute"
+                  class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm"
+                  style="width:200px;" />
+                <button @click="testRoute" :disabled="routeTestLoading"
+                  class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium transition"
+                  style="min-width:70px;">
+                  {{ routeTestLoading ? '...' : 'Test' }}
+                </button>
+              </div>
+
+              <!-- Test result -->
+              <div v-if="routeTestResult" class="mt-2 rounded" style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd;">
+                <div class="text-sm" style="display:flex; flex-direction:column; gap:4px;">
+                  <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">dst</span>
+                    <span class="font-mono font-medium">{{ routeTestResult.dst || '—' }}</span></div>
+                  <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">gateway</span>
+                    <span class="font-mono">{{ routeTestResult.gateway || '—' }}</span></div>
+                  <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">dev</span>
+                    <span class="font-mono">{{ routeTestResult.dev || '—' }}</span></div>
+                  <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">src</span>
+                    <span class="font-mono">{{ routeTestResult.prefsrc || routeTestResult.src || '—' }}</span></div>
+                </div>
+              </div>
+              <div v-if="routeTestError" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ routeTestError }}</div>
+            </div>
+
+            <!-- Kernel routing table -->
+            <div class="bg-white dark:bg-neutral-800 rounded-lg shadow-sm" style="padding:20px 24px;">
+              <!-- Table selector -->
+              <div class="flex items-center gap-3 mb-4">
+                <h3 class="font-semibold dark:text-neutral-200">Kernel Routes</h3>
+                <select v-model="routingTable" @change="loadKernelRoutes"
+                  class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-1 text-sm">
+                  <option value="main">main</option>
+                  <option value="all">all</option>
+                  <option value="local">local</option>
+                  <option value="100">100</option>
+                </select>
+                <button @click="loadKernelRoutes"
+                  class="px-3 py-1 bg-gray-200 dark:bg-neutral-600 dark:text-neutral-200 rounded text-sm">↻</button>
+              </div>
+
+              <!-- Empty state -->
+              <div v-if="kernelRoutes.length === 0" class="text-sm text-gray-400 dark:text-neutral-500" style="padding:16px 0;">
+                No routes found.
+              </div>
+
+              <!-- Routes table -->
+              <div v-if="kernelRoutes.length > 0" style="overflow-x:auto;">
+                <table class="w-full text-sm text-left" style="border-collapse:collapse;">
+                  <thead>
+                    <tr style="border-bottom:1px solid #e5e7eb;">
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Destination</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Gateway</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Interface</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Protocol</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Metric</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(r, idx) in kernelRoutes" :key="idx"
+                      :style="idx % 2 === 0 ? '' : 'background:rgba(0,0,0,0.02);'"
+                      style="border-bottom:1px solid #f3f4f6;">
+                      <td class="font-mono dark:text-neutral-200" style="padding:6px 10px 6px 0;">{{ r.dst || 'default' }}</td>
+                      <td class="font-mono text-gray-600 dark:text-neutral-400" style="padding:6px 10px 6px 0;">{{ r.gateway || '—' }}</td>
+                      <td class="font-mono text-gray-600 dark:text-neutral-400" style="padding:6px 10px 6px 0;">{{ r.dev || '—' }}</td>
+                      <td style="padding:6px 10px 6px 0;">
+                        <span class="rounded-full text-xs font-medium"
+                          style="padding:2px 8px; display:inline-block;"
+                          :style="r.protocol === 'kernel' ? 'background:#e0e7ff;color:#3730a3;' :
+                                  r.protocol === 'static' ? 'background:#dcfce7;color:#166534;' :
+                                  r.protocol === 'ospf'   ? 'background:#fef9c3;color:#854d0e;' :
+                                  r.protocol === 'bgp'    ? 'background:#ffe4e6;color:#9f1239;' :
+                                                            'background:#f3f4f6;color:#6b7280;'">
+                          {{ r.protocol || '—' }}
+                        </span>
+                      </td>
+                      <td class="text-gray-500 dark:text-neutral-500" style="padding:6px 10px 6px 0;">{{ r.metric !== undefined ? r.metric : '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── STATIC TAB ─────────────────────────────────────────────── -->
+          <div v-if="activeRoutingTab === 'static'" style="display:flex; flex-direction:column; gap:16px;">
+
+            <!-- Header -->
+            <div class="flex items-center justify-between">
+              <h2 class="text-xl font-semibold dark:text-neutral-200">Static Routes</h2>
+              <button @click="showRouteCreate = true"
+                class="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium transition">
+                + Add Route
+              </button>
+            </div>
+
+            <!-- Empty state -->
+            <div v-if="staticRoutes.length === 0"
+              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800"
+              style="padding:40px 24px;">
+              No static routes configured. Click <strong>+ Add Route</strong> to create one.
+            </div>
+
+            <!-- Routes list -->
+            <div v-if="staticRoutes.length > 0"
+              class="bg-white dark:bg-neutral-800 rounded-lg shadow-sm"
+              style="overflow:hidden;">
+              <div v-for="(route, idx) in staticRoutes" :key="route.id"
+                class="flex items-center"
+                :style="idx > 0 ? 'border-top:1px solid #e5e7eb;' : ''"
+                style="padding:12px 16px; gap:12px;">
+
+                <!-- Enable toggle -->
+                <span @click="toggleRoute(route.id, !route.enabled)"
+                  class="cursor-pointer shrink-0"
+                  :title="route.enabled ? 'Disable route' : 'Enable route'">
+                  <span v-if="route.enabled"
+                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px #bbf7d0;"></span>
+                  <span v-else
+                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#d1d5db;border:2px solid #9ca3af;"></span>
+                </span>
+
+                <!-- Description / Destination -->
+                <div style="min-width:0; flex:1;">
+                  <div class="font-mono font-medium dark:text-neutral-200">{{ route.destination }}</div>
+                  <div v-if="route.description" class="text-xs text-gray-400 dark:text-neutral-500 truncate">{{ route.description }}</div>
+                </div>
+
+                <!-- Gateway -->
+                <span class="font-mono text-sm text-gray-600 dark:text-neutral-400 shrink-0" style="min-width:100px;">
+                  {{ route.gateway || '—' }}
+                </span>
+
+                <!-- Dev -->
+                <span class="font-mono text-sm text-gray-500 dark:text-neutral-500 shrink-0" style="min-width:60px;">
+                  {{ route.dev || '—' }}
+                </span>
+
+                <!-- Table -->
+                <span class="text-xs rounded-full shrink-0"
+                  style="padding:2px 8px; background:#e0e7ff; color:#3730a3;">
+                  {{ route.table || 'main' }}
+                </span>
+
+                <!-- Delete button -->
+                <button @click="deleteRoute(route.id)"
+                  class="shrink-0 text-red-600"
+                  style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:16px;"
+                  title="Delete route">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── OSPF TAB ───────────────────────────────────────────────── -->
+          <div v-if="activeRoutingTab === 'ospf'" class="text-center text-gray-500 dark:text-neutral-400" style="padding:60px 0;">
+            <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">OSPF</h2>
+            <p class="text-lg">Coming soon</p>
+          </div>
+
+        </div>
+
+        <!-- ── Add Static Route Modal ──────────────────────────────────── -->
+        <div v-if="showRouteCreate && activePage === 'routing'"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showRouteCreate = false">
+
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:480px; margin:0 auto;">
+            <!-- Header -->
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-xl font-medium dark:text-neutral-200">Add Static Route</h2>
+            </div>
+
+            <!-- Body -->
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+
+              <!-- Destination -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Destination (CIDR) *</label>
+                <input v-model="routeCreate.destination" type="text" placeholder="e.g. 10.0.0.0/8 or default"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+
+              <!-- Gateway -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Gateway (via)</label>
+                <input v-model="routeCreate.gateway" type="text" placeholder="e.g. 10.255.255.1"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+
+              <!-- Interface -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Interface (dev)</label>
+                <input v-model="routeCreate.dev" type="text" placeholder="e.g. wg10 (optional)"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+
+              <!-- Metric + Table -->
+              <div class="flex gap-3">
+                <div style="flex:1;">
+                  <label class="text-sm font-medium dark:text-neutral-300">Metric</label>
+                  <input v-model="routeCreate.metric" type="number" placeholder="optional"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+                </div>
+                <div style="flex:1;">
+                  <label class="text-sm font-medium dark:text-neutral-300">Table</label>
+                  <input v-model="routeCreate.table" type="text" placeholder="main"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+                </div>
+              </div>
+
+              <!-- Description -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Description</label>
+                <input v-model="routeCreate.description" type="text" placeholder="optional"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+
+              <!-- Buttons -->
+              <div class="flex gap-2" style="justify-content:flex-end;">
+                <button @click="showRouteCreate = false"
+                  class="px-4 py-2 bg-gray-200 dark:bg-neutral-600 dark:text-neutral-200 rounded text-sm font-medium transition">
+                  Cancel
+                </button>
+                <button @click="createRoute"
+                  class="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium transition">
+                  Add Route
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ============================================================== -->

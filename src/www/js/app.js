@@ -233,6 +233,25 @@ new Vue({
     groupCreate: { name: '', trigger: 'packetloss', description: '', gateways: [] },
     groupEdit:   { id: null, name: '', trigger: 'packetloss', description: '', gateways: [] },
 
+    // Routing page
+    activeRoutingTab: 'status',   // 'status' | 'static' | 'ospf'
+    routingTable: 'main',         // таблица для Status tab
+    kernelRoutes: [],
+    staticRoutes: [],
+    routeTestIp: '',
+    routeTestResult: null,
+    routeTestLoading: false,
+    routeTestError: '',
+    showRouteCreate: false,
+    routeCreate: {
+      description: '',
+      destination: '',
+      gateway: '',
+      dev: '',
+      metric: '',
+      table: 'main',
+    },
+
     uiShowCharts: localStorage.getItem('uiShowCharts') === '1',
     uiTheme: localStorage.theme || 'auto',
     prefersDarkScheme: window.matchMedia('(prefers-color-scheme: dark)'),
@@ -536,6 +555,10 @@ new Vue({
         this.loadGateways();
         this.loadGatewayGroups();
         this.loadSystemInterfaces();
+      }
+      if (pageId === 'routing') {
+        this.loadKernelRoutes();
+        this.loadStaticRoutes();
       }
     },
 
@@ -1117,6 +1140,86 @@ new Vue({
     gatewayStatusById(id) {
       const gw = this.gateways.find(g => g.id === id);
       return gw ? gw.status : 'unknown';
+    },
+
+    // ========================================================================
+    // Routing Methods
+    // ========================================================================
+
+    switchRoutingTab(tab) {
+      this.activeRoutingTab = tab;
+      if (tab === 'status') this.loadKernelRoutes();
+    },
+
+    async loadKernelRoutes() {
+      try {
+        const res = await this.api.getKernelRoutes(this.routingTable);
+        this.kernelRoutes = res.routes || [];
+      } catch (err) {
+        console.error('loadKernelRoutes error:', err);
+      }
+    },
+
+    async loadStaticRoutes() {
+      try {
+        const res = await this.api.getStaticRoutes();
+        this.staticRoutes = res.routes || [];
+      } catch (err) {
+        console.error('loadStaticRoutes error:', err);
+      }
+    },
+
+    async testRoute() {
+      if (!this.routeTestIp) return;
+      this.routeTestLoading = true;
+      this.routeTestResult = null;
+      this.routeTestError = '';
+      try {
+        const res = await this.api.testRoute(this.routeTestIp);
+        this.routeTestResult = res.result;
+      } catch (err) {
+        this.routeTestError = err.message || 'Error';
+      } finally {
+        this.routeTestLoading = false;
+      }
+    },
+
+    async createRoute() {
+      try {
+        const data = {
+          description: this.routeCreate.description,
+          destination: this.routeCreate.destination,
+          gateway: this.routeCreate.gateway,
+          dev: this.routeCreate.dev,
+          metric: this.routeCreate.metric !== '' ? Number(this.routeCreate.metric) : null,
+          table: this.routeCreate.table || 'main',
+        };
+        await this.api.createStaticRoute(data);
+        this.showRouteCreate = false;
+        this.routeCreate = { description: '', destination: '', gateway: '', dev: '', metric: '', table: 'main' };
+        await this.loadStaticRoutes();
+      } catch (err) {
+        alert(err.message || 'Failed to create route');
+      }
+    },
+
+    async toggleRoute(id, enabled) {
+      try {
+        await this.api.toggleStaticRoute({ routeId: id, enabled });
+        await this.loadStaticRoutes();
+      } catch (err) {
+        alert(err.message || 'Failed to toggle route');
+      }
+    },
+
+    async deleteRoute(id) {
+      if (!confirm('Delete this route?')) return;
+      try {
+        await this.api.deleteStaticRoute({ routeId: id });
+        await this.loadStaticRoutes();
+      } catch (err) {
+        alert(err.message || 'Failed to delete route');
+      }
     },
 
     // ========================================================================
