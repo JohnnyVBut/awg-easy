@@ -23,9 +23,9 @@ VPN Client (192.168.72.x)
 Russian IP              Non-Russian IP
    │                         │
 ens3 → ISP RU          wg10 → KZ сервер (10.255.255.1)
-(6*.1**.**.1)                │
+(62.***.***.*)               │
                         MASQUERADE → eth0 → Internet
-                        (1**.**.*.1)
+                        (185.**.*.*)
 ```
 
 ## Серверы
@@ -34,9 +34,9 @@ ens3 → ISP RU          wg10 → KZ сервер (10.255.255.1)
 |------|-----------|----|
 | RU VPN клиенты | wg11 | 192.168.72.1/24 |
 | RU → KZ туннель | wg10 | 10.255.255.2/30 |
-| RU ISP | ens3 | gateway 6*.1**.**.1 |
+| RU ISP | ens3 | gateway 62.***.***.* |
 | KZ туннельный IP | wg10 | 10.255.255.1 |
-| KZ ISP | eth0 | gateway 1**.**.*.1 |
+| KZ ISP | eth0 | gateway 185.**.*.* |
 
 ## Реализация
 
