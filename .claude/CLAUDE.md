@@ -254,6 +254,42 @@ static async exec(cmd, { log = true, timeout = 30000 } = {}) {
 // НЕПРАВИЛЬНО: без timeout (childProcess.exec висит вечно)
 ```
 
+### FIX-11: ip -j (JSON флаг) зависает на некоторых ядрах Linux — НИКОГДА не использовать
+**Файл:** `src/lib/RouteManager.js` — все методы работающие с `ip` командами
+**Причина:** Флаг `-j` (JSON output) у `iproute2` использует другой путь через netlink API,
+который на ряде конфигураций ядра Linux зависает **навсегда** (ни ответа, ни ошибки).
+Подтверждено в production на Москве: `ip -j route show table main` висел бесконечно.
+Контейнер с `--network host` делает polling каждую секунду → за несколько минут
+накапливались десятки зависших процессов → `RouteManager.init()` не завершался →
+все API-запросы к routing висели → UI показывал вечный Loading...
+
+**Правило:** `ip -j` **ЗАПРЕЩЕНО** во всём проекте. Использовать только текстовый вывод + парсинг.
+
+```javascript
+// ПРАВИЛЬНО — текстовый вывод + _parseTextRoutes():
+const out = await Util.exec('ip route show table main', { log: true, timeout: 5000 });
+return RouteManager._parseTextRoutes(out || '');
+
+// ПРАВИЛЬНО — ip rule show (текст) для обнаружения routing tables:
+const out = await Util.exec('ip rule show', { log: false, timeout: 5000 });
+// парсить строки вида "100: from all fwmark 0x1 lookup 100"
+
+// ПРАВИЛЬНО — ip route get (текст):
+const out = await Util.exec(`ip route get ${ip}`, { timeout: 5000 });
+// парсить строку вида "10.8.0.5 dev wg0 src 10.8.0.1 uid 0"
+
+// НЕПРАВИЛЬНО — НИКОГДА:
+// ip -j route show table main  ← зависает
+// ip -j route get 8.8.8.8      ← зависает
+// ip -j rule show               ← зависает
+// ip -j addr show               ← потенциально зависает
+```
+
+**Симптомы зависания `ip -j`:**
+- docker logs показывает много повторяющихся `$ ip -j route show ...` без ответа
+- UI показывает вечный "Loading..." при переходе на страницу Routing
+- Через ~1 минуту (N×timeout) всё начинает работать — это таймауты Util.exec срабатывают
+
 ---
 
 ## Архитектура проекта
@@ -334,7 +370,7 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 |----------|------------------|--------|
 | Interfaces | `'interfaces'` | ✅ динамические вкладки, per-interface view (info + peers) |
 | Gateways | `'gateways'` | ⏳ placeholder ("Coming soon") |
-| Routing | `'routing'` | ⏳ placeholder ("Coming soon") |
+| Routing | `'routing'` | ✅ Status (kernel routes + route test) + Static routes CRUD + OSPF placeholder |
 | Firewall / NAT | `'firewall'` | ⏳ placeholder ("Coming soon") |
 | Settings | `'settings'` | ✅ Global Settings + AWG2 Templates |
 | Administration | `'administration'` | ✅ Admin Tunnel (бывший Clients tab) |
@@ -359,13 +395,19 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | `337869e` | feature/kernel-module | feat(ui): dashboard view — все пиры всех интерфейсов на одном экране |
 | `943a046` | feature/kernel-module | feat(ui): Edit Interface modal (имя, адрес, порт, AWG2 профиль) |
 | `075ebc8` | feature/kernel-module | fix(ui): загрузка templates после логина (AWG2 дропдаун без визита Settings) |
+| `138e33d` | feature/kernel-module | feat: Routing page — Status + Static Routes + OSPF placeholder (RouteManager, API, UI) |
+| `152f010` | feature/kernel-module | fix: routing table discovery via kernel (ip rule show) instead of container rt_tables |
+| `2f025c3` | feature/kernel-module | fix: add iproute2 explicitly to Dockerfile |
+| `36b3191` | feature/kernel-module | fix(ui): show kernelRoutesError + loading indicator |
+| `ef5d5cc` | feature/kernel-module | fix(ui): parallel loading + kernelRoutesLoading state |
+| `b3c7153` | feature/kernel-module | fix: remove ALL ip -j usage — text parsing instead (hangs on some kernels) |
 
 ---
 
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `075ebc8`
+**Последний коммит:** `b3c7153`
 
 ---
 
@@ -382,6 +424,14 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | AWG kernel deadlock fix: syncconf + restart | ✅ TESTED | awg set peer → убран для AWG2 |
 | Util.exec timeout 30s / getStatus 5s | ✅ | SIGKILL при превышении |
 | PATCH /api/tunnel-interfaces/:id | ✅ | hot-reload через syncconf, без даунтайма |
+| RouteManager: getKernelRoutes (text parse) | ✅ TESTED | ip route show (без -j), работает на всех ядрах |
+| RouteManager: getRoutingTables (ip rule show) | ✅ TESTED | обнаруживает хостовые таблицы (table 100 vpn_kz) |
+| RouteManager: testRoute (text parse) | ✅ | ip route get, без -j |
+| RouteManager: addRoute/deleteRoute/toggleRoute | ✅ | персистентность в routes.json |
+| Routing API: GET /api/routing/table | ✅ | kernel routes по таблице |
+| Routing API: GET /api/routing/tables | ✅ | список таблиц |
+| Routing API: GET /api/routing/test | ✅ | route get |
+| Routing API: GET/POST/PATCH/DELETE /api/routing/routes | ✅ | static routes CRUD |
 
 ### ✅ Что работает — Frontend
 
@@ -405,14 +455,17 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | Settings: Global Settings + AWG2 Templates | ✅ | |
 | AWG2 дропдаун доступен сразу после логина | ✅ | fix: loadSettings() в login() |
 | Administration: Admin Tunnel (старый Clients) | ✅ | |
-| Gateways / Routing / Firewall | ⏳ | placeholder "Coming soon" |
+| Routing: Status tab (kernel routes + route test) | ✅ TESTED | работает на Москве и КЗ |
+| Routing: Static tab (CRUD + toggle) | ✅ | персистентность в routes.json |
+| Routing: OSPF tab | ⏳ | placeholder "Coming soon" |
+| Routing: таблица 100 в дропдауне | ✅ TESTED | обнаруживается через ip rule show |
+| Gateways / Firewall | ⏳ | placeholder "Coming soon" |
 
 ### ❌ Что не реализовано
 
 1. **Admin Instance backend** — `src/lib/AdminInstance.js` (управление wg0/admin-туннелем через новую архитектуру)
 2. **Gateways** — backend + UI
-3. **Routing** — backend + UI (`ip route add` через API)
-4. **Firewall/NAT** — backend + UI
+3. **Firewall/NAT** — backend + UI
 
 ---
 

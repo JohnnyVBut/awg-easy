@@ -1,6 +1,6 @@
 # AWG-Easy 2.0 — Requirements
 
-> Статус: **реализация в процессе** | Последнее обновление: 2026-03-07 (требования: типы интерфейсов, Disable Routes + NAT, AWG2 импорт/экспорт)
+> Статус: **реализация в процессе** | Последнее обновление: 2026-03-11 (Routing page: Status + Static Routes; fix: ip -j removed)
 > Ветка: `feature/kernel-module` | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
 
 ---
@@ -27,7 +27,7 @@
 |----------|------------------|--------|-----------|
 | **Interfaces** | `'interfaces'` | ✅ Работает | Динамические вкладки, per-interface view (info + peers) |
 | **Gateways** | `'gateways'` | ⏳ Placeholder | "Coming soon" |
-| **Routing** | `'routing'` | ⏳ Placeholder | "Coming soon" |
+| **Routing** | `'routing'` | ✅ Работает | Status (kernel routes + route test) + Static CRUD + OSPF placeholder |
 | **Firewall / NAT** | `'firewall'` | ⏳ Placeholder | "Coming soon" |
 | **Settings** | `'settings'` | ✅ Работает | Global Settings + AWG2 Templates |
 | **Administration** | `'administration'` | ✅ Работает | Admin Tunnel (бывший Clients tab) |
@@ -77,6 +77,12 @@
 - Приватный ключ хранится на сервере (нужен для QR/download)
 - `--network host` — интерфейсы живут в ядре хоста между рестартами контейнера
 - Маска пира всегда `/32`, подсеть только для крипторутинга
+- **`ip -j` (JSON флаг) ЗАПРЕЩЁН** — зависает навсегда на некоторых конфигурациях ядра Linux.
+  Везде использовать текстовый вывод `ip route show` / `ip rule show` / `ip route get` + парсинг.
+  Routing tables обнаруживаются через `ip rule show` (ищем `lookup <table>`) — работает с `--network host`
+  и позволяет увидеть хостовые таблицы (напр. `100 vpn_kz`), которых нет в контейнерном `/etc/iproute2/rt_tables`.
+- **RouteManager** хранит managed статические маршруты в `/etc/wireguard/data/routes.json`, восстанавливает при старте.
+  Маршруты добавленные внешними скриптами (split routing) RouteManager не видит и не восстанавливает — это нормально.
 
 ---
 
