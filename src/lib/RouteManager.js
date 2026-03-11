@@ -49,21 +49,19 @@ class RouteManager {
   /**
    * Получить список routing-таблиц.
    *
-   * Стратегия: обнаруживаем таблицы ЧЕРЕЗ ЯДРО (ip -j route show table all),
-   * а не через /etc/iproute2/rt_tables контейнера.
-   * Причина: контейнер (Alpine) имеет собственный rt_tables только со стандартными
-   * таблицами; таблицы добавленные на хосте (напр. 100 vpn_kz) в нём не видны.
-   * Через --network host ядро шарится, поэтому ip route show table all видит всё.
+   * Стратегия (без ip -j, который зависает на некоторых ядрах):
+   * 1. Читаем /etc/iproute2/rt_tables контейнера → базовый маппинг id↔name
+   * 2. Запускаем `ip rule show` (text, без -j) → находим дополнительные таблицы
+   *    через паттерн "lookup <table>" в строках политики маршрутизации.
+   *    Это позволяет обнаружить хостовые таблицы (напр. 100/vpn_kz) через --network host.
    *
-   * Возвращает массив { id, name } — только таблицы с реальными маршрутами
-   * + synthetic 'all' в конце.
+   * Возвращает массив { id, name } + synthetic 'all' в конце.
    */
   async getRoutingTables() {
     const SKIP_IDS = new Set([0, 255]); // unspec, local
     const SKIP_NAMES = new Set(['unspec', 'local']);
 
-    // Шаг 1: читаем rt_tables контейнера для маппинга id↔name
-    // (только для известных таблиц типа main/default — хостовые там не будут)
+    // Шаг 1: читаем rt_tables контейнера для базового маппинга id↔name
     const RT_TABLES_FILE = '/etc/iproute2/rt_tables';
     const nameById = new Map(); // id → name
     const idByName = new Map(); // name → id
@@ -81,69 +79,55 @@ class RouteManager {
       }
     } catch (err) {
       debug(`Could not read rt_tables: ${err.message}`);
-      // Минимальный fallback
       nameById.set(253, 'default');
       nameById.set(254, 'main');
       idByName.set('default', 253);
       idByName.set('main', 254);
     }
 
-    // Шаг 2: обнаруживаем реально существующие таблицы из ядра.
-    // ip -j route show table all возвращает маршруты из ВСЕХ таблиц.
-    // Поле route.table — строка-имя (если имя есть в rt_tables контейнера)
-    // или числовой ID (если имени нет — например, хостовая таблица 100).
-    const found = new Map(); // key (id или name) → { id, name }
+    // Шаг 2: обнаруживаем таблицы через `ip rule show` (text, без -j).
+    // Пример строк:
+    //   0:      lookup local
+    //   32766:  lookup main
+    //   10000:  from all lookup 100
+    const found = new Map(); // id → { id, name }
     try {
-      const out = await Util.exec('ip -j route show table all', { log: false });
-      const routes = JSON.parse(out || '[]');
-      for (const route of routes) {
-        const t = route.table;
-        if (t == null) continue;
+      const out = await Util.exec('ip rule show', { log: false, timeout: 5000 });
+      for (const line of (out || '').split('\n')) {
+        const m = line.match(/\blookup\s+(\S+)/);
+        if (!m) continue;
+        const token = m[1];
+        const numId = parseInt(token, 10);
 
         let id, name;
-        if (typeof t === 'number') {
-          // ip не нашёл имя в rt_tables контейнера → вернул числовой ID
-          id = t;
+        if (!isNaN(numId) && String(numId) === token) {
+          // числовой ID → ищем имя в rt_tables
+          id = numId;
           name = nameById.get(id) || String(id);
-        } else if (typeof t === 'string') {
-          const numId = parseInt(t, 10);
-          if (!isNaN(numId) && String(numId) === t) {
-            // числовая строка (нет имени)
-            id = numId;
-            name = nameById.get(id) || t;
-          } else {
-            // именованная таблица ('main', 'default', 'vpn_kz', ...)
-            name = t;
-            id = idByName.get(t) ?? null;
-          }
         } else {
-          continue;
+          // именованная таблица ('main', 'default', 'vpn_kz', ...)
+          name = token;
+          id = idByName.get(token) ?? null;
         }
 
-        if (id !== null && SKIP_IDS.has(id)) continue;
-        if (SKIP_NAMES.has(name)) continue;
-
-        const key = id ?? name;
-        if (!found.has(key)) {
-          found.set(key, { id, name });
-        }
+        if (id === null) continue;
+        if (SKIP_IDS.has(id) || SKIP_NAMES.has(name)) continue;
+        if (!found.has(id)) found.set(id, { id, name });
       }
     } catch (err) {
-      debug(`Kernel table discovery failed: ${err.message}`);
-      // Fallback: берём из rt_tables контейнера
+      debug(`ip rule show failed: ${err.message}`);
+      // Fallback: только то что есть в rt_tables контейнера
       for (const [id, name] of nameById) {
         if (SKIP_IDS.has(id) || SKIP_NAMES.has(name)) continue;
         found.set(id, { id, name });
       }
     }
 
-    // Гарантируем main (254) даже если таблица временно пуста
+    // Гарантируем main (254)
     if (!found.has(254)) found.set(254, { id: 254, name: nameById.get(254) || 'main' });
 
     // Сортировка по id
-    const tables = Array.from(found.values())
-      .filter(t => t.id !== null)
-      .sort((a, b) => a.id - b.id);
+    const tables = Array.from(found.values()).sort((a, b) => a.id - b.id);
 
     // Всегда добавляем synthetic 'all' в конец
     tables.push({ id: null, name: 'all' });
@@ -153,37 +137,95 @@ class RouteManager {
 
   /**
    * Получить маршруты из ядра Linux.
+   * Использует текстовый вывод ip route show (без -j) — работает на любом ядре.
+   * Флаг -j (JSON) зависает на некоторых конфигурациях ядра Linux и не используется.
    * @param {string} table - 'main' | 'all' | номер таблицы
    */
   async getKernelRoutes(table = 'main') {
-    const cmd = `ip -j route show table ${table}`;
+    const cmd = `ip route show table ${table}`;
     try {
-      const out = await Util.exec(cmd, { log: true });
-      return JSON.parse(out || '[]');
+      const out = await Util.exec(cmd, { log: true, timeout: 5000 });
+      return RouteManager._parseTextRoutes(out || '');
     } catch (err) {
       const msg = err.message || '';
-      // Таблица не существует — нормальная ситуация, вернуть пустой массив
+      // Таблица не существует — нормальная ситуация
       if (msg.includes('Invalid argument') || msg.includes('No such process') ||
           msg.includes('does not exist') || msg.includes('RTNETLINK')) {
         return [];
       }
-      // Всё остальное (ip не найден, -j не поддерживается, timeout и т.д.)
-      // — пробросить ошибку, чтобы клиент увидел что именно сломалось
       debug(`getKernelRoutes failed for table "${table}": ${msg}`);
       throw createError({ status: 500, message: `ip route error: ${msg}` });
     }
   }
 
   /**
+   * Парсинг текстового вывода `ip route show`.
+   * Формат строки:
+   *   <dst> [via <gw>] dev <dev> proto <proto> [scope <scope>] [src <src>] [metric <n>]
+   * Примеры:
+   *   default via 62.113.116.1 dev ens3 proto static onlink
+   *   10.8.0.0/24 dev wg0 proto kernel scope link src 10.8.0.1
+   */
+  static _parseTextRoutes(text) {
+    const routes = [];
+    for (const rawLine of text.split('\n')) {
+      // Строки с отступом — продолжение предыдущего маршрута (nexthops), пропускаем
+      if (rawLine.startsWith('\t') || rawLine.startsWith('  ')) continue;
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      const tokens = line.split(/\s+/);
+      if (tokens.length < 2) continue;
+
+      const route = { dst: tokens[0] };
+
+      // Извлекаем пары ключ-значение
+      for (let i = 1; i < tokens.length; i++) {
+        const key = tokens[i];
+        const val = tokens[i + 1];
+        if (!val) continue;
+        if (key === 'via')     { route.gateway  = val; i++; }
+        else if (key === 'dev')     { route.dev      = val; i++; }
+        else if (key === 'proto')   { route.protocol = val; i++; }
+        else if (key === 'metric')  { route.metric   = Number(val); i++; }
+        else if (key === 'scope')   { route.scope    = val; i++; }
+        else if (key === 'src')     { route.prefsrc  = val; i++; }
+        else if (key === 'table')   { route.table    = val; i++; }
+      }
+
+      routes.push(route);
+    }
+    return routes;
+  }
+
+  /**
    * Тест маршрута: ip route get <ip>
+   * Парсит текстовый вывод (без -j).
+   * Пример: "10.8.0.5 dev wg0 src 10.8.0.1 uid 0"
    */
   async testRoute(ip) {
-    if (!ip || !/^[\d.]+$/.test(ip)) {
+    if (!ip || !/^[\d.a-fA-F:]+$/.test(ip)) {
       throw createError({ status: 400, message: 'Invalid IP address' });
     }
-    const out = await Util.exec(`ip -j route get ${ip}`);
-    const result = JSON.parse(out || '[]');
-    return result[0] || null;
+    const out = await Util.exec(`ip route get ${ip}`, { timeout: 5000 });
+    if (!out) return null;
+    // ip route get возвращает одну строку (или несколько, если есть nexthop)
+    // Берём первую значимую строку
+    const line = out.split('\n').find(l => l.trim()) || '';
+    const tokens = line.trim().split(/\s+/);
+    if (!tokens.length) return null;
+
+    const result = { dst: tokens[0] };
+    for (let i = 1; i < tokens.length; i++) {
+      const k = tokens[i], v = tokens[i + 1];
+      if (!v) continue;
+      if (k === 'via')   { result.gateway = v; i++; }
+      if (k === 'dev')   { result.dev = v; i++; }
+      if (k === 'src')   { result.prefsrc = v; i++; }
+      if (k === 'proto') { result.protocol = v; i++; }
+      if (k === 'table') { result.table = v; i++; }
+    }
+    return result;
   }
 
   /**
