@@ -468,11 +468,16 @@ module.exports = class Server {
        * Получить список всех интерфейсов
        */
       .get('/api/tunnel-interfaces', defineEventHandler(async () => {
-        const manager = await InterfaceManager.getInstance();
-        const interfaces = manager.getAllInterfaces();
-        return {
-          interfaces: interfaces.map(iface => iface.toJSON()),
-        };
+        try {
+          const manager = await InterfaceManager.getInstance();
+          const interfaces = manager.getAllInterfaces();
+          return {
+            interfaces: interfaces.map(iface => iface.toJSON()),
+          };
+        } catch (err) {
+          console.error('GET /api/tunnel-interfaces error:', err.message, err.stack);
+          throw createError({ status: 500, message: err.message || 'Failed to load interfaces' });
+        }
       }))
 
       /**
@@ -519,7 +524,16 @@ module.exports = class Server {
        */
       .patch('/api/tunnel-interfaces/:id', defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id');
-        const updates = await readBody(event);
+        console.log(`PATCH /api/tunnel-interfaces/${id} received`);
+
+        let updates;
+        try {
+          updates = await readBody(event);
+          console.log(`PATCH /api/tunnel-interfaces/${id} body keys:`, updates ? Object.keys(updates) : 'null/undefined');
+        } catch (err) {
+          console.error(`PATCH /api/tunnel-interfaces/${id} readBody error:`, err.message);
+          throw createError({ status: 400, message: `Cannot parse request body: ${err.message}` });
+        }
 
         try {
           const manager = await InterfaceManager.getInstance();
@@ -527,7 +541,7 @@ module.exports = class Server {
           debug(`Interface updated: ${id}`);
           return { interface: iface.toJSON() };
         } catch (err) {
-          console.error(`PATCH /api/tunnel-interfaces/${id} error:`, err);
+          console.error(`PATCH /api/tunnel-interfaces/${id} error:`, err.message, err.stack);
           throw createError({ status: 500, message: err.message || 'Failed to update interface' });
         }
       }))
