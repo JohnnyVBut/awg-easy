@@ -1,5 +1,4 @@
 /* eslint-disable no-console */
-/* eslint-disable no-alert */
 /* eslint-disable no-undef */
 /* eslint-disable no-new */
 
@@ -255,6 +254,9 @@ new Vue({
       table: 'main',
     },
 
+    // Toast notifications
+    toasts: [],
+
     uiShowCharts: localStorage.getItem('uiShowCharts') === '1',
     uiTheme: localStorage.theme || 'auto',
     prefersDarkScheme: window.matchMedia('(prefers-color-scheme: dark)'),
@@ -351,6 +353,21 @@ new Vue({
         minute: 'numeric',
       }).format(value);
     },
+
+    // ========================================================================
+    // Toast notifications
+    // ========================================================================
+    showToast(message, type = 'success', duration = 7000) {
+      const id = Date.now() + Math.random();
+      this.toasts.push({ id, message, type });
+      setTimeout(() => this.dismissToast(id), duration);
+    },
+    dismissToast(id) {
+      const idx = this.toasts.findIndex(t => t.id === id);
+      if (idx !== -1) this.toasts.splice(idx, 1);
+    },
+
+
     async refresh({
       updateCharts = false,
     } = {}) {
@@ -448,7 +465,7 @@ new Vue({
           }
         })
         .catch((err) => {
-          alert(err.message || err.toString());
+          this.showToast(err.message || err.toString(), 'error');
         })
         .finally(() => {
           this.authenticating = false;
@@ -464,7 +481,7 @@ new Vue({
           this.clients = null;
         })
         .catch((err) => {
-          alert(err.message || err.toString());
+          this.showToast(err.message || err.toString(), 'error');
         });
     },
     createClient() {
@@ -473,42 +490,42 @@ new Vue({
       if (!name) return;
 
       this.api.createClient({ name, expiredDate })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     deleteClient(client) {
       this.api.deleteClient({ clientId: client.id })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     showOneTimeLink(client) {
       this.api.showOneTimeLink({ clientId: client.id })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     enableClient(client) {
       this.api.enableClient({ clientId: client.id })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     disableClient(client) {
       this.api.disableClient({ clientId: client.id })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     updateClientName(client, name) {
       this.api.updateClientName({ clientId: client.id, name })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     updateClientAddress(client, address) {
       this.api.updateClientAddress({ clientId: client.id, address })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     updateClientExpireDate(client, expireDate) {
       this.api.updateClientExpireDate({ clientId: client.id, expireDate })
-        .catch((err) => alert(err.message || err.toString()))
+        .catch((err) => this.showToast(err.message || err.toString(), 'error'))
         .finally(() => this.refresh().catch(console.error));
     },
     restoreConfig(e) {
@@ -518,13 +535,13 @@ new Vue({
         file.text()
           .then((content) => {
             this.api.restoreConfiguration(content)
-              .then((_result) => alert('The configuration was updated.'))
-              .catch((err) => alert(err.message || err.toString()))
+              .then((_result) => this.showToast('The configuration was updated.'))
+              .catch((err) => this.showToast(err.message || err.toString(), 'error'))
               .finally(() => this.refresh().catch(console.error));
           })
-          .catch((err) => alert(err.message || err.toString()));
+          .catch((err) => this.showToast(err.message || err.toString(), 'error'));
       } else {
-        alert('Failed to load your file!');
+        this.showToast('Failed to load your file!', 'error');
       }
     },
     toggleTheme() {
@@ -586,20 +603,20 @@ new Vue({
     async createTunnelInterface() {
       try {
         if (!this.interfaceCreate.name) {
-          alert('Please enter interface name');
+          this.showToast('Please enter interface name', 'error');
           return;
         }
 
         // Tunnel Address обязателен — нужен для авто-IP пиров и PostUp/PostDown
         if (!this.interfaceCreate.address || !this.interfaceCreate.address.includes('/')) {
-          alert('Please enter Tunnel Address in CIDR format (e.g. 10.100.0.1/24)');
+          this.showToast('Please enter Tunnel Address in CIDR format (e.g. 10.100.0.1/24)', 'error');
           return;
         }
 
         if (this.interfaceCreate.protocol === 'amneziawg-2.0') {
           if (!this.interfaceCreate.settings.h1 || !this.interfaceCreate.settings.h2 ||
               !this.interfaceCreate.settings.h3 || !this.interfaceCreate.settings.h4) {
-            alert('Please set H1-H4 parameters for AWG 2.0 (select a profile or enter manually)');
+            this.showToast('Please set H1-H4 parameters for AWG 2.0 (select a profile or enter manually)', 'error');
             return;
           }
         }
@@ -643,7 +660,7 @@ new Vue({
         }
       } catch (err) {
         console.error('Failed to create interface:', err);
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -687,14 +704,14 @@ new Vue({
     async saveInterfaceEdit() {
       const { id, name, address, listenPort, disableRoutes, protocol, settings } = this.interfaceEdit;
 
-      if (!name) { alert('Please enter a name'); return; }
+      if (!name) { this.showToast('Please enter a name', 'error'); return; }
       if (!address || !address.includes('/')) {
-        alert('Please enter Tunnel Address in CIDR format (e.g. 10.100.0.1/24)');
+        this.showToast('Please enter Tunnel Address in CIDR format (e.g. 10.100.0.1/24)', 'error');
         return;
       }
       if (protocol === 'amneziawg-2.0') {
         if (!settings.h1 || !settings.h2 || !settings.h3 || !settings.h4) {
-          alert('Please set H1-H4 parameters for AWG 2.0 (select a profile or enter manually)');
+          this.showToast('Please set H1-H4 parameters for AWG 2.0 (select a profile or enter manually)', 'error');
           return;
         }
       }
@@ -713,9 +730,10 @@ new Vue({
         const res = await this.api.updateTunnelInterface({ interfaceId: id, ...payload });
         this._applyInterfaceUpdate(res.interface);
         this.showInterfaceEdit = false;
+        this.showToast(`Interface "${name}" updated successfully`);
       } catch (err) {
         console.error('saveInterfaceEdit failed:', err);
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -733,9 +751,10 @@ new Vue({
           this.selectedInterfacePeers = [];
         }
         await this.loadTunnelInterfaces();
+        this.showToast(`Interface "${iface.name}" deleted`);
       } catch (err) {
         console.error('Delete failed:', err);
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -768,7 +787,7 @@ new Vue({
         if (data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Start failed:', err);
-        alert(`Start failed: ${err.message}`);
+        this.showToast(`Start failed: ${err.message}`, 'error');
       } finally {
         this.loadingInterfaceId = null;
       }
@@ -790,7 +809,7 @@ new Vue({
         if (data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Stop failed:', err);
-        alert(`Stop failed: ${err.message}`);
+        this.showToast(`Stop failed: ${err.message}`, 'error');
       } finally {
         this.loadingInterfaceId = null;
       }
@@ -812,7 +831,7 @@ new Vue({
         if (data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Restart failed:', err);
-        alert(`Restart failed: ${err.message}`);
+        this.showToast(`Restart failed: ${err.message}`, 'error');
       } finally {
         this.loadingInterfaceId = null;
       }
@@ -832,7 +851,7 @@ new Vue({
 
     async createPeer() {
       if (!this.activeInterfaceId) {
-        alert('No interface selected');
+        this.showToast('No interface selected', 'error');
         return;
       }
 
@@ -840,16 +859,16 @@ new Vue({
 
       // Validation
       if (!name || name.trim() === '') {
-        alert('Please enter a peer name');
+        this.showToast('Please enter a peer name', 'error');
         return;
       }
       if (mode === 'manual' && !publicKey) {
-        alert('Please enter the public key');
+        this.showToast('Please enter the public key', 'error');
         return;
       }
       // Interconnect requires explicit AllowedIPs (it routes a subnet, not just /32)
       if (peerType === 'interconnect' && !allowedIPs) {
-        alert('Please enter Allowed IPs for the interconnect peer (e.g., 192.168.2.0/24)');
+        this.showToast('Please enter Allowed IPs for the interconnect peer (e.g., 192.168.2.0/24)', 'error');
         return;
       }
 
@@ -885,11 +904,11 @@ new Vue({
         if (mode === 'generate' && peerType === 'client' && peerId) {
           this.qrcode = `./api/tunnel-interfaces/${interfaceId}/peers/${peerId}/qrcode.svg`;
         } else {
-          alert('Peer created!');
+          this.showToast('Peer created!');
         }
       } catch (err) {
         console.error('Failed to create peer:', err);
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -903,10 +922,10 @@ new Vue({
         if (!res.ok) throw new Error(res.statusText);
         await this.loadInterfacePeers(this.selectedInterface.id);
         await this.loadTunnelInterfaces();
-        alert('Peer deleted!');
+        this.showToast('Peer deleted!');
       } catch (err) {
         console.error('Delete failed:', err);
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -928,7 +947,7 @@ new Vue({
         window.URL.revokeObjectURL(url);
       } catch (err) {
         console.error('Download failed:', err);
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -973,9 +992,9 @@ new Vue({
     // ── Create Gateway ────────────────────────────────────────────────────────
     async createGateway() {
       const f = this.gatewayCreate;
-      if (!f.name.trim())      return alert('Gateway name is required');
-      if (!f.interface)        return alert('Interface is required');
-      if (!f.gatewayIP.trim()) return alert('Gateway IP is required');
+      if (!f.name.trim())      return this.showToast('Gateway name is required', 'error');
+      if (!f.interface)        return this.showToast('Interface is required', 'error');
+      if (!f.gatewayIP.trim()) return this.showToast('Gateway IP is required', 'error');
       try {
         await this.api.createGateway({
           name:             f.name.trim(),
@@ -996,7 +1015,7 @@ new Vue({
         };
         await this.loadGateways();
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1019,9 +1038,9 @@ new Vue({
 
     async saveGatewayEdit() {
       const f = this.gatewayEdit;
-      if (!f.name.trim())      return alert('Gateway name is required');
-      if (!f.interface)        return alert('Interface is required');
-      if (!f.gatewayIP.trim()) return alert('Gateway IP is required');
+      if (!f.name.trim())      return this.showToast('Gateway name is required', 'error');
+      if (!f.interface)        return this.showToast('Interface is required', 'error');
+      if (!f.gatewayIP.trim()) return this.showToast('Gateway IP is required', 'error');
       try {
         await this.api.updateGateway({
           gatewayId:        f.id,
@@ -1039,7 +1058,7 @@ new Vue({
         const res = await this.api.getGateways();
         this.gateways = res.gateways || [];
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1051,14 +1070,14 @@ new Vue({
         const res = await this.api.getGateways();
         this.gateways = res.gateways || [];
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
     // ── Create Gateway Group ──────────────────────────────────────────────────
     async createGatewayGroup() {
       const f = this.groupCreate;
-      if (!f.name.trim()) return alert('Group name is required');
+      if (!f.name.trim()) return this.showToast('Group name is required', 'error');
       try {
         await this.api.createGatewayGroup({
           name:        f.name.trim(),
@@ -1070,7 +1089,7 @@ new Vue({
         this.groupCreate = { name: '', trigger: 'packetloss', description: '', gateways: [] };
         await this.loadGatewayGroups();
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1088,7 +1107,7 @@ new Vue({
 
     async saveGroupEdit() {
       const f = this.groupEdit;
-      if (!f.name.trim()) return alert('Group name is required');
+      if (!f.name.trim()) return this.showToast('Group name is required', 'error');
       try {
         await this.api.updateGatewayGroup({
           groupId:     f.id,
@@ -1101,7 +1120,7 @@ new Vue({
         const res = await this.api.getGatewayGroups();
         this.gatewayGroups = res.groups || [];
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1113,7 +1132,7 @@ new Vue({
         const res = await this.api.getGatewayGroups();
         this.gatewayGroups = res.groups || [];
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1225,7 +1244,7 @@ new Vue({
         this.routeCreate = { description: '', destination: '', gateway: '', dev: '', metric: '', table: 'main' };
         await this.loadStaticRoutes();
       } catch (err) {
-        alert(err.message || 'Failed to create route');
+        this.showToast(err.message || 'Failed to create route', 'error');
       }
     },
 
@@ -1234,7 +1253,7 @@ new Vue({
         await this.api.toggleStaticRoute({ routeId: id, enabled });
         await this.loadStaticRoutes();
       } catch (err) {
-        alert(err.message || 'Failed to toggle route');
+        this.showToast(err.message || 'Failed to toggle route', 'error');
       }
     },
 
@@ -1244,7 +1263,7 @@ new Vue({
         await this.api.deleteStaticRoute({ routeId: id });
         await this.loadStaticRoutes();
       } catch (err) {
-        alert(err.message || 'Failed to delete route');
+        this.showToast(err.message || 'Failed to delete route', 'error');
       }
     },
 
@@ -1284,7 +1303,7 @@ new Vue({
         }
       } catch (err) {
         console.error('Failed to create peer:', err);
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1311,7 +1330,7 @@ new Vue({
         await this.api.enablePeer({ interfaceId: this._peerIfaceId(peer), peerId: peer.id });
         await this._refreshPeersOrAll();
       } catch (err) {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       }
     },
 
@@ -1320,7 +1339,7 @@ new Vue({
         await this.api.disablePeer({ interfaceId: this._peerIfaceId(peer), peerId: peer.id });
         await this._refreshPeersOrAll();
       } catch (err) {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       }
     },
 
@@ -1329,7 +1348,7 @@ new Vue({
         await this.api.updatePeerName({ interfaceId: this._peerIfaceId(peer), peerId: peer.id, name });
         await this._refreshPeersOrAll();
       } catch (err) {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       }
     },
 
@@ -1338,7 +1357,7 @@ new Vue({
         await this.api.updatePeerAddress({ interfaceId: this._peerIfaceId(peer), peerId: peer.id, address });
         await this._refreshPeersOrAll();
       } catch (err) {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       }
     },
 
@@ -1347,7 +1366,7 @@ new Vue({
         await this.api.updatePeerExpireDate({ interfaceId: this._peerIfaceId(peer), peerId: peer.id, expireDate });
         await this._refreshPeersOrAll();
       } catch (err) {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       }
     },
 
@@ -1356,7 +1375,7 @@ new Vue({
         await this.api.generatePeerOneTimeLink({ interfaceId: this._peerIfaceId(peer), peerId: peer.id });
         await this._refreshPeersOrAll();
       } catch (err) {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       }
     },
 
@@ -1371,7 +1390,7 @@ new Vue({
         await this._refreshPeersOrAll();
         await this.loadTunnelInterfaces();
       } catch (err) {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       }
     },
 
@@ -1521,7 +1540,7 @@ new Vue({
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
       } catch (err) {
-        alert(`Backup failed: ${err.message}`);
+        this.showToast(`Backup failed: ${err.message}`, 'error');
       }
     },
 
@@ -1535,11 +1554,11 @@ new Vue({
           return this.api.restoreTunnelInterface({ interfaceId: this.activeInterfaceId, file });
         })
         .then(() => {
-          alert('Configuration restored!');
+          this.showToast('Configuration restored!');
           this.refreshPeers();
           this.loadTunnelInterfaces();
         })
-        .catch((err) => alert(`Restore failed: ${err.message}`));
+        .catch((err) => this.showToast(`Restore failed: ${err.message}`, 'error'));
     },
 
     // ============================================================
@@ -1566,7 +1585,7 @@ new Vue({
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        alert(`Failed to export interface params: ${err.message}`);
+        this.showToast(`Failed to export interface params: ${err.message}`, 'error');
       }
     },
 
@@ -1595,12 +1614,12 @@ new Vue({
           // нужно передать его другой стороне через Export My Params.
           const pskWasInFile = !!data.presharedKey;
           if (pskWasInFile) {
-            alert('Peer imported! PSK taken from the file — both sides are in sync.\nThe tunnel should come up after both sides complete the exchange.');
+            this.showToast('Peer imported! PSK taken from the file — both sides are in sync.');
           } else {
-            alert('Peer imported! A PresharedKey was generated for this connection.\nNext step: click "Export My Params" and send the file to the remote side — it will include the PSK so they can use it when they Import JSON.');
+            this.showToast('Peer imported! PSK generated — export your params and send to the remote side.', 'success', 10000);
           }
         } catch (err) {
-          alert(`Failed to import peer: ${err.message}`);
+          this.showToast(`Failed to import peer: ${err.message}`, 'error');
         }
       };
       input.click();
@@ -1614,7 +1633,7 @@ new Vue({
         });
         await this.loadTunnelInterfaces();
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1638,7 +1657,7 @@ new Vue({
         this.settingsSaved = true;
         setTimeout(() => { this.settingsSaved = false; }, 2500);
       } catch (err) {
-        alert(`Failed to save settings: ${err.message}`);
+        this.showToast(`Failed to save settings: ${err.message}`, 'error');
       }
     },
 
@@ -1689,7 +1708,7 @@ new Vue({
         this.showTemplateModal = false;
         await this.loadSettings();
       } catch (err) {
-        alert(`Failed to save template: ${err.message}`);
+        this.showToast(`Failed to save template: ${err.message}`, 'error');
       }
     },
 
@@ -1698,7 +1717,7 @@ new Vue({
         await this.api.setDefaultTemplate({ templateId });
         await this.loadSettings();
       } catch (err) {
-        alert(`Failed: ${err.message}`);
+        this.showToast(`Failed: ${err.message}`, 'error');
       }
     },
 
@@ -1708,7 +1727,7 @@ new Vue({
         await this.api.deleteTemplate({ templateId });
         await this.loadSettings();
       } catch (err) {
-        alert(`Failed to delete template: ${err.message}`);
+        this.showToast(`Failed to delete template: ${err.message}`, 'error');
       }
     },
 
@@ -1761,7 +1780,7 @@ new Vue({
           await this.api.createTemplate(data);
           await this.loadSettings();
         } catch (err) {
-          alert(`Failed to import profile: ${err.message}`);
+          this.showToast(`Failed to import profile: ${err.message}`, 'error');
         }
       };
       input.click();
@@ -1813,7 +1832,7 @@ new Vue({
         this.refresh({
           updateCharts: this.updateCharts,
         }).catch((err) => {
-          alert(err.message || err.toString());
+          this.showToast(err.message || err.toString(), 'error');
         });
         // Load tunnel interfaces at startup (default page); then populate dashboard immediately
         this.loadTunnelInterfaces().then(() => {
@@ -1824,7 +1843,7 @@ new Vue({
         this.loadSettings();
       })
       .catch((err) => {
-        alert(err.message || err.toString());
+        this.showToast(err.message || err.toString(), 'error');
       });
 
     this.api.getRememberMeEnabled()
