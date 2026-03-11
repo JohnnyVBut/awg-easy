@@ -1,6 +1,6 @@
 # AWG-Easy 2.0 — Requirements
 
-> Статус: **реализация в процессе** | Последнее обновление: 2026-03-11 (Routing page: Status + Static Routes; fix: ip -j removed)
+> Статус: **реализация в процессе** | Последнее обновление: 2026-03-11 (Toast UI; fix: HTTP method uppercase; fix: ip -j removed)
 > Ветка: `feature/kernel-module` | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
 
 ---
@@ -83,6 +83,12 @@
   и позволяет увидеть хостовые таблицы (напр. `100 vpn_kz`), которых нет в контейнерном `/etc/iproute2/rt_tables`.
 - **RouteManager** хранит managed статические маршруты в `/etc/wireguard/data/routes.json`, восстанавливает при старте.
   Маршруты добавленные внешними скриптами (split routing) RouteManager не видит и не восстанавливает — это нормально.
+- **HTTP method в fetch() — ВСЕГДА uppercase** (`method.toUpperCase()` в `api.js` `call()`).
+  Node.js 22 llhttp отвергает lowercase методы (esp. `'patch'`) с 400 + TCP RST на уровне парсера,
+  до попадания в h3 — симптом: `ERR_CONNECTION_RESET` + ничего в docker logs.
+- **Toast-уведомления** вместо `alert()` — все 52 вызова заменены. Система: `toasts[]` в Vue data,
+  `showToast(msg, type, duration)` / `dismissToast(id)`. HTML: `<transition-group>` + CSS slide animation.
+  Зелёный = success, красный = error. Таймаут 7с (PSK-инструкция — 10с). Закрытие кнопкой ×.
 
 ---
 

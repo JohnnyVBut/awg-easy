@@ -290,6 +290,25 @@ const out = await Util.exec(`ip route get ${ip}`, { timeout: 5000 });
 - UI показывает вечный "Loading..." при переходе на страницу Routing
 - Через ~1 минуту (N×timeout) всё начинает работать — это таймауты Util.exec срабатывают
 
+### FIX-12: HTTP method в fetch() — ВСЕГДА uppercase (Node.js 22 llhttp)
+**Файл:** `src/www/js/api.js` → метод `call()` → `method: method.toUpperCase()`
+**Причина:** Node.js 22 использует llhttp HTTP parser, который **строго требует** uppercase.
+Fetch Standard нормализует GET/HEAD/POST/DELETE/OPTIONS/PUT, но **НЕ нормализует PATCH**.
+`fetch(..., { method: 'patch' })` отправляет `patch` lowercase → llhttp отвергает с 400 + TCP RST
+**до** попадания в h3/application код. Симптомы: `ERR_CONNECTION_RESET` + "в логах ничего нет".
+
+```javascript
+// ПРАВИЛЬНО: в call() — один раз покрывает все вызовы:
+async call({ method, path, body }) {
+  const res = await fetch(`./api${path}`, {
+    method: method.toUpperCase(), // Node.js 22 llhttp: HTTP method must be uppercase
+    ...
+  });
+}
+// НЕПРАВИЛЬНО: method: 'patch', method: 'put', method: 'delete' (lowercase)
+// Fetch Standard не нормализует PATCH — Node.js 22 отвергает на уровне HTTP парсера
+```
+
 ---
 
 ## Архитектура проекта
@@ -401,13 +420,16 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | `36b3191` | feature/kernel-module | fix(ui): show kernelRoutesError + loading indicator |
 | `ef5d5cc` | feature/kernel-module | fix(ui): parallel loading + kernelRoutesLoading state |
 | `b3c7153` | feature/kernel-module | fix: remove ALL ip -j usage — text parsing instead (hangs on some kernels) |
+| `dfc34c8` | feature/kernel-module | fix: toJSON() missing settings + api.js json error + Server.js try-catch |
+| `1579be6` | feature/kernel-module | fix: uppercase HTTP methods in api.js (Node.js 22 llhttp rejects lowercase) |
+| `d75d7d5` | feature/kernel-module | feat(ui): toast notification system — replace all alert() with toasts |
 
 ---
 
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `b3c7153`
+**Последний коммит:** `d75d7d5`
 
 ---
 
@@ -459,6 +481,7 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | Routing: Static tab (CRUD + toggle) | ✅ | персистентность в routes.json |
 | Routing: OSPF tab | ⏳ | placeholder "Coming soon" |
 | Routing: таблица 100 в дропдауне | ✅ TESTED | обнаруживается через ip rule show |
+| Toast-уведомления (правый верхний угол) | ✅ | зелёный (success) / красный (error), 7с, стекируются, dismiss × |
 | Gateways / Firewall | ⏳ | placeholder "Coming soon" |
 
 ### ❌ Что не реализовано
