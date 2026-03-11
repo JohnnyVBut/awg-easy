@@ -7,7 +7,7 @@ class API {
 
   async call({ method, path, body }) {
     const res = await fetch(`./api${path}`, {
-      method,
+      method: method.toUpperCase(), // Node.js 22 llhttp: HTTP method must be uppercase
       headers: {
         'Content-Type': 'application/json',
       },

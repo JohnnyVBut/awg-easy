@@ -524,12 +524,10 @@ module.exports = class Server {
        */
       .patch('/api/tunnel-interfaces/:id', defineEventHandler(async (event) => {
         const id = getRouterParam(event, 'id');
-        console.log(`PATCH /api/tunnel-interfaces/${id} received`);
 
         let updates;
         try {
           updates = await readBody(event);
-          console.log(`PATCH /api/tunnel-interfaces/${id} body keys:`, updates ? Object.keys(updates) : 'null/undefined');
         } catch (err) {
           console.error(`PATCH /api/tunnel-interfaces/${id} readBody error:`, err.message);
           throw createError({ status: 400, message: `Cannot parse request body: ${err.message}` });
