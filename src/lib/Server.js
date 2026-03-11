@@ -521,11 +521,15 @@ module.exports = class Server {
         const id = getRouterParam(event, 'id');
         const updates = await readBody(event);
 
-        const manager = await InterfaceManager.getInstance();
-        const iface = await manager.updateInterface(id, updates);
-
-        debug(`Interface updated: ${id}`);
-        return { interface: iface.toJSON() };
+        try {
+          const manager = await InterfaceManager.getInstance();
+          const iface = await manager.updateInterface(id, updates);
+          debug(`Interface updated: ${id}`);
+          return { interface: iface.toJSON() };
+        } catch (err) {
+          console.error(`PATCH /api/tunnel-interfaces/${id} error:`, err);
+          throw createError({ status: 500, message: err.message || 'Failed to update interface' });
+        }
       }))
 
       /**

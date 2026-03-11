@@ -850,6 +850,7 @@ class TunnelInterface {
       disableRoutes: this.data.disableRoutes,
       enabled: this.data.enabled,
       createdAt: this.data.createdAt,
+      settings: this.data.settings || null,
       peerCount: this.peers.size,
       peers: Array.from(this.peers.values()).map(p => p.toJSON()),
     };

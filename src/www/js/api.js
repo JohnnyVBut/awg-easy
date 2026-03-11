@@ -20,10 +20,16 @@ class API {
       return undefined;
     }
 
-    const json = await res.json();
+    let json;
+    try {
+      json = await res.json();
+    } catch (_) {
+      // Сервер вернул пустой или не-JSON body
+      throw new Error(`Server error ${res.status}: ${res.statusText}`);
+    }
 
     if (!res.ok) {
-      throw new Error(json.error || res.statusText);
+      throw new Error(json.message || json.error || res.statusText);
     }
 
     return json;
