@@ -315,11 +315,33 @@ class NatManager {
     return cmd;
   }
 
-  /** Добавить правило в ядро через iptables-nft. */
+  /**
+   * Добавить правило в ядро через iptables-nft (идемпотентно).
+   *
+   * --network host: iptables-правила живут в ядре хоста и выживают перезапуск
+   * контейнера. Простой `-A POSTROUTING` добавляет дубликат при каждом docker restart.
+   *
+   * Стратегия: сначала удалить ВСЕ существующие копии (loop `-D` до ошибки),
+   * затем добавить ровно одну. Это гарантирует идемпотентность и очищает
+   * дубликаты накопленные от предыдущих запусков.
+   */
   async _applyRule(rule) {
-    const cmd = this._buildCmd(rule, 'A');
-    debug(`Apply:  ${cmd}`);
-    await Util.exec(cmd);
+    const addCmd = this._buildCmd(rule, 'A');
+    const delCmd = this._buildCmd(rule, 'D');
+
+    // Удалить все существующие копии (каждый вызов -D удаляет первое совпадение)
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        await Util.exec(delCmd, { log: false, timeout: 5000 });
+      } catch {
+        break; // Копий больше нет — выходим
+      }
+    }
+
+    // Добавить ровно одну копию
+    debug(`Apply:  ${addCmd}`);
+    await Util.exec(addCmd);
   }
 
   /** Удалить правило из ядра через iptables-nft. */
