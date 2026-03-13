@@ -70,14 +70,16 @@ class NatManager {
       debug('No nat-rules.json found, starting fresh');
     }
 
-    // Восстановить enabled правила в ядро после перезапуска контейнера
+    // Восстановить enabled правила в ядро после перезапуска контейнера.
+    // _applyRule использует -C (check) перед -A: если правило уже есть в ядре
+    // (выжило после docker restart) — не добавляет дубликат и сохраняет счётчики
+    // pkts/bytes. Без -C каждый restart создавал бы новую копию с нулевыми счётчиками.
     for (const rule of this.rules) {
       if (!rule.enabled) continue;
       try {
         await this._applyRule(rule);
         debug(`Restored NAT rule "${rule.name}"`);
       } catch (err) {
-        // Правило уже может быть в ядре — не критично
         debug(`Failed to restore NAT rule "${rule.name}": ${err.message}`);
       }
     }
@@ -316,32 +318,20 @@ class NatManager {
   }
 
   /**
-   * Добавить правило в ядро через iptables-nft (идемпотентно).
-   *
-   * --network host: iptables-правила живут в ядре хоста и выживают перезапуск
-   * контейнера. Простой `-A POSTROUTING` добавляет дубликат при каждом docker restart.
-   *
-   * Стратегия: сначала удалить ВСЕ существующие копии (loop `-D` до ошибки),
-   * затем добавить ровно одну. Это гарантирует идемпотентность и очищает
-   * дубликаты накопленные от предыдущих запусков.
+   * Добавить правило в ядро через iptables-nft (идемпотентно: -C перед -A).
+   * После предварительной очистки в init() (_flushRule) дубликатов нет,
+   * поэтому -C здесь защищает только от случайного двойного вызова.
    */
   async _applyRule(rule) {
-    const addCmd = this._buildCmd(rule, 'A');
-    const delCmd = this._buildCmd(rule, 'D');
-
-    // Удалить все существующие копии (каждый вызов -D удаляет первое совпадение)
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      try {
-        await Util.exec(delCmd, { log: false, timeout: 5000 });
-      } catch {
-        break; // Копий больше нет — выходим
-      }
+    const checkCmd = this._buildCmd(rule, 'C');
+    const addCmd   = this._buildCmd(rule, 'A');
+    try {
+      await Util.exec(checkCmd, { log: false, timeout: 5000 });
+      debug(`Apply (already in kernel): ${addCmd}`);
+    } catch {
+      debug(`Apply:  ${addCmd}`);
+      await Util.exec(addCmd);
     }
-
-    // Добавить ровно одну копию
-    debug(`Apply:  ${addCmd}`);
-    await Util.exec(addCmd);
   }
 
   /** Удалить правило из ядра через iptables-nft. */
@@ -349,6 +339,22 @@ class NatManager {
     const cmd = this._buildCmd(rule, 'D');
     debug(`Remove: ${cmd}`);
     await Util.exec(cmd);
+  }
+
+  /**
+   * Удалить ВСЕ копии правила из ядра (loop -D до ошибки).
+   * Используется в init() для очистки дубликатов накопленных при предыдущих запусках.
+   */
+  async _flushRule(rule) {
+    const delCmd = this._buildCmd(rule, 'D');
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        await Util.exec(delCmd, { log: false, timeout: 5000 });
+      } catch {
+        break; // Копий больше нет
+      }
+    }
   }
 
   /** Сохранить правила в JSON-файл. */
