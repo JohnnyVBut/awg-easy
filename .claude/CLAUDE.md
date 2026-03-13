@@ -309,19 +309,40 @@ async call({ method, path, body }) {
 // Fetch Standard не нормализует PATCH — Node.js 22 отвергает на уровне HTTP парсера
 ```
 
-### FIX-13: RouteManager и NatManager — ОБЯЗАТЕЛЬНО eager init в Server constructor
-**Файл:** `src/lib/Server.js` → constructor (~строки 93-99)
-**Причина:** Оба менеджера используют lazy singleton (getInstance() инициализирует при первом вызове).
-Без eager init правила восстанавливаются только при первом открытии страницы Routing/NAT —
-при рестарте контейнера маршруты и NAT-правила в ядре отсутствуют.
+### FIX-13: Порядок инициализации — InterfaceManager ПЕРВЫМ, затем RouteManager + NatManager
+**Файл:** `src/lib/Server.js` → constructor (~строки 93-104)
+**Причина (двойной баг):**
+
+**Баг A** — lazy init: без eager init маршруты и NAT-правила восстанавливаются только при первом
+открытии страницы Routing/NAT. При рестарте контейнера они отсутствуют в ядре.
+
+**Баг B** — неправильный порядок: если RouteManager инициализируется ДО InterfaceManager,
+картина такова:
+1. RouteManager.init() добавляет `ip route add 10.x.x.x via ... dev wg10` — успешно
+2. InterfaceManager.init() (lazy, при первом API-запросе) запускает интерфейсы
+3. FIX-2: wg10 "already exists" → `awg-quick down wg10` → kernel удаляет ВСЕ маршруты на wg10
+4. `awg-quick up wg10` — интерфейс пересоздан, но без кастомных маршрутов
+5. Результат: маршруты в JSON есть, в ядре нет. Toggle → 500 (ip route del не находит маршрут)
+
+**Правильный порядок:** InterfaceManager → (RouteManager + NatManager параллельно).
+После start/restart интерфейса из UI: вызывать `rm.reapplyForDevice(id)`.
 
 ```javascript
-// ПРАВИЛЬНО — в конструкторе Server, сразу после TunnelManager:
-RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`));
-NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`));
+// ПРАВИЛЬНО — в конструкторе Server:
+InterfaceManager.getInstance()
+  .then(() => Promise.all([
+    RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`)),
+    NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`)),
+  ]))
+  .catch(err => debug(`InterfaceManager init error: ${err.message}`));
 
-// НЕПРАВИЛЬНО: без этих строк → после docker restart маршруты/NAT не применяются
-// до первого посещения страниц Routing/NAT пользователем
+// ПРАВИЛЬНО — в start и restart handlers:
+const rm = await RouteManager.getInstance();
+await rm.reapplyForDevice(id).catch(err => debug(`reapplyForDevice(${id}) failed: ${err.message}`));
+
+// НЕПРАВИЛЬНО:
+// RouteManager.getInstance();  // до InterfaceManager → маршруты стираются при down→up
+// Не вызывать reapplyForDevice после start/restart → маршруты пропадают при ручном рестарте
 ```
 
 ---

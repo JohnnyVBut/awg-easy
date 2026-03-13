@@ -90,15 +90,18 @@ module.exports = class Server {
     this.tunnelManager = new TunnelManager();
     const tunnelManager = this.tunnelManager; // Сохраняем ссылку для использования в handlers
 
-    // Инициализируем RouteManager eagerly — статические маршруты должны восстанавливаться
-    // при каждом старте контейнера, не только при первом открытии страницы Routing.
-    // Без этого ip route add выполняется лениво (при первом API-вызове) → при рестарте
-    // контейнера маршруты в таблице маршрутизации отсутствуют до открытия страницы.
-    RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`));
-
-    // Инициализируем NatManager eagerly — правила NAT должны восстанавливаться
-    // при каждом старте контейнера, не только при первом открытии страницы NAT.
-    NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`));
+    // Порядок инициализации важен (FIX-13):
+    // 1. InterfaceManager — поднимает WireGuard-интерфейсы (awg-quick up).
+    //    FIX-2: при "already exists" делает down→up, что стирает кастомные маршруты из ядра.
+    // 2. RouteManager — восстанавливает статические маршруты ПОСЛЕ того как интерфейсы стабилизировались.
+    // 3. NatManager — восстанавливает iptables-nft правила.
+    // Если порядок нарушен (RouteManager до InterfaceManager), маршруты удаляются down→up циклом.
+    InterfaceManager.getInstance()
+      .then(() => Promise.all([
+        RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`)),
+        NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`)),
+      ]))
+      .catch(err => debug(`InterfaceManager init error: ${err.message}`));
 
     app.use(fromNodeMiddleware(expressSession({
       secret: crypto.randomBytes(256).toString('hex'),
@@ -577,6 +580,11 @@ module.exports = class Server {
         const manager = await InterfaceManager.getInstance();
         const iface = await manager.startInterface(id);
 
+        // Восстановить статические маршруты через этот интерфейс:
+        // wg-quick up создаёт интерфейс заново — кастомные маршруты удаляются из ядра.
+        const rm = await RouteManager.getInstance();
+        await rm.reapplyForDevice(id).catch(err => debug(`reapplyForDevice(${id}) failed: ${err.message}`));
+
         debug(`Interface started: ${id}`);
         return { interface: iface.toJSON() };
       }))
@@ -602,6 +610,11 @@ module.exports = class Server {
         const id = getRouterParam(event, 'id');
         const manager = await InterfaceManager.getInstance();
         const iface = await manager.restartInterface(id);
+
+        // Восстановить статические маршруты через этот интерфейс:
+        // restart = down→up → кастомные маршруты ядро удаляет при down.
+        const rm = await RouteManager.getInstance();
+        await rm.reapplyForDevice(id).catch(err => debug(`reapplyForDevice(${id}) failed: ${err.message}`));
 
         debug(`Interface restarted: ${id}`);
         return { interface: iface.toJSON() };

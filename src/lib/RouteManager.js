@@ -299,12 +299,42 @@ class RouteManager {
     if (enabled && !route.enabled) {
       await this._kernelAdd(route);
     } else if (!enabled && route.enabled) {
-      await this._kernelDel(route);
+      try {
+        await this._kernelDel(route);
+      } catch (err) {
+        // Маршрут мог быть удалён из ядра внешне (например, wg-quick down) — не критично
+        debug(`_kernelDel in toggle failed (route may already be gone): ${err.message}`);
+      }
     }
 
     route.enabled = enabled;
     await this._save();
     return route;
+  }
+
+  /**
+   * Переприменить маршруты, привязанные к указанному сетевому интерфейсу.
+   *
+   * Вызывается после start/restart WireGuard-интерфейса: wg-quick down→up цикл
+   * удаляет все кастомные маршруты через этот интерфейс из таблицы ядра.
+   * После повторного подъёма интерфейса маршруты нужно восстановить.
+   *
+   * @param {string} devName - Имя интерфейса ('wg10', 'wg11', ...)
+   */
+  async reapplyForDevice(devName) {
+    const devRoutes = this.routes.filter(r => r.enabled && r.dev === devName);
+    if (!devRoutes.length) return;
+
+    debug(`Reapplying ${devRoutes.length} route(s) for device ${devName}`);
+    for (const route of devRoutes) {
+      try {
+        await this._kernelAdd(route);
+        debug(`Reapplied route ${route.destination} via ${devName}`);
+      } catch (err) {
+        // "File exists" = маршрут уже в ядре — нормально
+        debug(`Reapply route ${route.destination} via ${devName}: ${err.message}`);
+      }
+    }
   }
 
   // ─── Private ───────────────────────────────────────────────────────────────
