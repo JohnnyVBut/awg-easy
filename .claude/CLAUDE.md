@@ -310,39 +310,49 @@ async call({ method, path, body }) {
 ```
 
 ### FIX-13: Порядок инициализации — InterfaceManager ПЕРВЫМ, затем RouteManager + NatManager
-**Файл:** `src/lib/Server.js` → constructor (~строки 93-104)
-**Причина (двойной баг):**
+**Файлы:** `src/lib/Server.js` (конец конструктора), `src/lib/RouteManager.js`
+**Причина (тройной баг):**
 
-**Баг A** — lazy init: без eager init маршруты и NAT-правила восстанавливаются только при первом
-открытии страницы Routing/NAT. При рестарте контейнера они отсутствуют в ядре.
+**Баг A** — `ip route add dev wgX` падает если wgX ещё не существует.
 
-**Баг B** — неправильный порядок: если RouteManager инициализируется ДО InterfaceManager,
-картина такова:
-1. RouteManager.init() добавляет `ip route add 10.x.x.x via ... dev wg10` — успешно
-2. InterfaceManager.init() (lazy, при первом API-запросе) запускает интерфейсы
-3. FIX-2: wg10 "already exists" → `awg-quick down wg10` → kernel удаляет ВСЕ маршруты на wg10
-4. `awg-quick up wg10` — интерфейс пересоздан, но без кастомных маршрутов
-5. Результат: маршруты в JSON есть, в ядре нет. Toggle → 500 (ip route del не находит маршрут)
+**Баг B** — `RouteManager.getInstance()` запускался как отдельная строка параллельно с
+`InterfaceManager.getInstance()`. Маршруты добавлялись успешно (wgX оставался от предыдущего
+запуска контейнера), но затем InterfaceManager делал `awg-quick down wgX` (FIX-2) →
+ядро удаляло все маршруты → `awg-quick up wgX` → интерфейс без маршрутов.
+JSON: enabled=true, ядро: маршрута нет → toggle → 500.
 
-**Правильный порядок:** InterfaceManager → (RouteManager + NatManager параллельно).
-После start/restart интерфейса из UI: вызывать `rm.reapplyForDevice(id)`.
+**Баг C** — Попытка разместить chain в начале конструктора (до регистрации route-handlers)
+не работала — нужно размещать в КОНЦЕ конструктора, рядом с остальными eager init вызовами.
+
+**Решение:**
+- `RouteManager.init()`: только загружает JSON, маршруты в ядро НЕ применяет
+- `RouteManager.restoreAll()`: применяет enabled маршруты — вызывается явно после InterfaceManager
+- Server.js: chain `InterfaceManager → RouteManager.restoreAll() → NatManager.init()`
+  (в конце конструктора, рядом с другими eager-init, НЕ в начале)
+- start/restart handlers: `rm.reapplyForDevice(id)` для конкретного интерфейса
 
 ```javascript
-// ПРАВИЛЬНО — в конструкторе Server:
+// ПРАВИЛЬНО — в КОНЦЕ конструктора Server (после регистрации всех route handlers):
+GatewayManager.getInstance()...;  // независим, параллельно
+
 InterfaceManager.getInstance()
-  .then(() => Promise.all([
-    RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`)),
-    NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`)),
-  ]))
-  .catch(err => debug(`InterfaceManager init error: ${err.message}`));
+  .then(async () => {
+    debug('InterfaceManager initialized successfully');
+    // Интерфейсы подняты — безопасно применять маршруты
+    const rm = await RouteManager.getInstance();  // init() = только JSON
+    await rm.restoreAll();  // ip route add после того как интерфейсы существуют
+    await NatManager.getInstance();  // iptables-nft правила
+  })
+  .catch(err => debug('Error initializing InterfaceManager:', err));
 
 // ПРАВИЛЬНО — в start и restart handlers:
 const rm = await RouteManager.getInstance();
 await rm.reapplyForDevice(id).catch(err => debug(`reapplyForDevice(${id}) failed: ${err.message}`));
 
 // НЕПРАВИЛЬНО:
-// RouteManager.getInstance();  // до InterfaceManager → маршруты стираются при down→up
-// Не вызывать reapplyForDevice после start/restart → маршруты пропадают при ручном рестарте
+// RouteManager.getInstance() как отдельная строка — запускается параллельно с InterfaceManager
+// InterfaceManager chain в начале конструктора (до route handlers) — не работает
+// Маршруты в RouteManager.init() — применяются до того как интерфейс существует
 ```
 
 ---

@@ -90,18 +90,8 @@ module.exports = class Server {
     this.tunnelManager = new TunnelManager();
     const tunnelManager = this.tunnelManager; // Сохраняем ссылку для использования в handlers
 
-    // Порядок инициализации важен (FIX-13):
-    // 1. InterfaceManager — поднимает WireGuard-интерфейсы (awg-quick up).
-    //    FIX-2: при "already exists" делает down→up, что стирает кастомные маршруты из ядра.
-    // 2. RouteManager — восстанавливает статические маршруты ПОСЛЕ того как интерфейсы стабилизировались.
-    // 3. NatManager — восстанавливает iptables-nft правила.
-    // Если порядок нарушен (RouteManager до InterfaceManager), маршруты удаляются down→up циклом.
-    InterfaceManager.getInstance()
-      .then(() => Promise.all([
-        RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`)),
-        NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`)),
-      ]))
-      .catch(err => debug(`InterfaceManager init error: ${err.message}`));
+    // Примечание: порядок инициализации критичен (FIX-13).
+    // Правильная последовательность находится ниже, в блоке "Initialize *" перед listen().
 
     app.use(fromNodeMiddleware(expressSession({
       secret: crypto.randomBytes(256).toString('hex'),
@@ -1632,18 +1622,8 @@ module.exports = class Server {
     });
 
     // ========================================================================
-    // Initialize InterfaceManager (async: loads + auto-starts enabled interfaces)
-    // Must be called explicitly at startup — getInstance() is lazy otherwise,
-    // so user tunnel interfaces would only start after the first API request.
-    // ========================================================================
-    InterfaceManager.getInstance().then(() => {
-      debug('InterfaceManager initialized successfully');
-    }).catch((err) => {
-      debug('Error initializing InterfaceManager:', err);
-    });
-
-    // ========================================================================
     // Initialize GatewayManager (async: loads gateways + starts monitoring)
+    // Независим от InterfaceManager — запускаем параллельно.
     // ========================================================================
     GatewayManager.getInstance().then(() => {
       debug('GatewayManager initialized successfully');
@@ -1652,13 +1632,39 @@ module.exports = class Server {
     });
 
     // ========================================================================
-    // Initialize RouteManager (async: loads routes.json + applies enabled routes)
+    // Initialize InterfaceManager → RouteManager → NatManager  (FIX-13)
+    //
+    // ПОРЯДОК КРИТИЧЕН:
+    // 1. InterfaceManager поднимает WireGuard-интерфейсы (awg-quick up).
+    //    FIX-2: при "already exists" делает down→up — ядро удаляет ВСЕ
+    //    кастомные маршруты на этом интерфейсе.
+    // 2. `ip route add ... dev wgX` падает если wgX ещё не существует.
+    //    Поэтому маршруты нужно применять ТОЛЬКО после того как интерфейсы
+    //    стабилизировались. RouteManager.init() только загружает JSON;
+    //    restoreAll() применяет маршруты в ядро.
+    // 3. NatManager применяет iptables-nft правила после интерфейсов.
+    //
+    // ОШИБКА которую это исправляет: standalone RouteManager.getInstance()
+    // до этого запускался параллельно с InterfaceManager → маршруты
+    // добавлялись в ядро, затем InterfaceManager делал down wgX → маршруты
+    // исчезали, в JSON оставались с enabled:true. Итог: toggle → 500.
     // ========================================================================
-    RouteManager.getInstance().then(() => {
-      debug('RouteManager initialized successfully');
-    }).catch((err) => {
-      debug('Error initializing RouteManager:', err);
-    });
+    InterfaceManager.getInstance()
+      .then(async () => {
+        debug('InterfaceManager initialized successfully');
+
+        // Загружаем RouteManager (init: только JSON) + применяем маршруты
+        const rm = await RouteManager.getInstance();
+        await rm.restoreAll().catch(err => debug(`RouteManager restoreAll error: ${err.message}`));
+        debug('RouteManager initialized successfully');
+
+        // NatManager после InterfaceManager (NAT через интерфейсы)
+        await NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`));
+        debug('NatManager initialized successfully');
+      })
+      .catch((err) => {
+        debug('Error initializing InterfaceManager:', err);
+      });
 
     createServer(toNodeListener(app)).listen(PORT, WEBUI_HOST);
     debug(`Listening on http://${WEBUI_HOST}:${PORT}`);

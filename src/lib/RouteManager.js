@@ -17,7 +17,13 @@ class RouteManager {
   }
 
   /**
-   * Инициализация: загрузить JSON, применить enabled маршруты.
+   * Инициализация: загрузить JSON.
+   *
+   * Маршруты НЕ применяются в init() — только загрузка конфигурации.
+   * Применение выполняется в restoreAll(), которая вызывается ПОСЛЕ
+   * InterfaceManager.init() (FIX-13): wg-quick down→up (FIX-2) удаляет
+   * кастомные маршруты из ядра, и `ip route add dev wgX` падает если
+   * интерфейс ещё не создан.
    */
   async init() {
     debug('Initializing RouteManager...');
@@ -32,15 +38,28 @@ class RouteManager {
       this.routes = [];
       debug('No routes file found, starting fresh');
     }
+  }
 
-    // Применить enabled маршруты в ядро
-    for (const route of this.routes) {
-      if (!route.enabled) continue;
+  /**
+   * Восстановить все enabled маршруты в ядро.
+   *
+   * Вызывается ПОСЛЕ InterfaceManager.init() — когда WireGuard-интерфейсы
+   * уже существуют в ядре. Без этой гарантии `ip route add ... dev wgX`
+   * либо падает (интерфейс не существует), либо маршрут удаляется при
+   * последующем down→up цикле InterfaceManager.
+   *
+   * Также вызывается из reapplyForDevice() после ручного start/restart.
+   */
+  async restoreAll() {
+    const enabled = this.routes.filter(r => r.enabled);
+    if (!enabled.length) return;
+    debug(`Restoring ${enabled.length} enabled route(s) to kernel`);
+    for (const route of enabled) {
       try {
         await this._kernelAdd(route);
         debug(`Restored route ${route.destination}`);
       } catch (err) {
-        // Маршрут уже может быть в ядре — не критично
+        // "File exists" = маршрут уже в ядре — нормально
         debug(`Failed to restore route ${route.destination}: ${err.message}`);
       }
     }
