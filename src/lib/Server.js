@@ -90,6 +90,12 @@ module.exports = class Server {
     this.tunnelManager = new TunnelManager();
     const tunnelManager = this.tunnelManager; // Сохраняем ссылку для использования в handlers
 
+    // Инициализируем RouteManager eagerly — статические маршруты должны восстанавливаться
+    // при каждом старте контейнера, не только при первом открытии страницы Routing.
+    // Без этого ip route add выполняется лениво (при первом API-вызове) → при рестарте
+    // контейнера маршруты в таблице маршрутизации отсутствуют до открытия страницы.
+    RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`));
+
     // Инициализируем NatManager eagerly — правила NAT должны восстанавливаться
     // при каждом старте контейнера, не только при первом открытии страницы NAT.
     NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`));

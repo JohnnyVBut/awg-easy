@@ -309,6 +309,21 @@ async call({ method, path, body }) {
 // Fetch Standard не нормализует PATCH — Node.js 22 отвергает на уровне HTTP парсера
 ```
 
+### FIX-13: RouteManager и NatManager — ОБЯЗАТЕЛЬНО eager init в Server constructor
+**Файл:** `src/lib/Server.js` → constructor (~строки 93-99)
+**Причина:** Оба менеджера используют lazy singleton (getInstance() инициализирует при первом вызове).
+Без eager init правила восстанавливаются только при первом открытии страницы Routing/NAT —
+при рестарте контейнера маршруты и NAT-правила в ядре отсутствуют.
+
+```javascript
+// ПРАВИЛЬНО — в конструкторе Server, сразу после TunnelManager:
+RouteManager.getInstance().catch(err => debug(`RouteManager init error: ${err.message}`));
+NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`));
+
+// НЕПРАВИЛЬНО: без этих строк → после docker restart маршруты/NAT не применяются
+// до первого посещения страниц Routing/NAT пользователем
+```
+
 ---
 
 ## Архитектура проекта
