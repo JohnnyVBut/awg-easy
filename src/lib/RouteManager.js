@@ -276,7 +276,13 @@ class RouteManager {
     };
 
     // Применить в ядро
-    await this._kernelAdd(route);
+    try {
+      await this._kernelAdd(route);
+    } catch (err) {
+      // Извлекаем чистое сообщение ядра из stderr (напр. "Error: inet prefix is expected...")
+      const detail = (err.stderr || '').trim() || err.message;
+      throw createError({ status: 400, message: `ip route: ${detail}` });
+    }
 
     this.routes.push(route);
     await this._save();
@@ -316,7 +322,12 @@ class RouteManager {
     if (!route) throw createError({ status: 404, message: 'Route not found' });
 
     if (enabled && !route.enabled) {
-      await this._kernelAdd(route);
+      try {
+        await this._kernelAdd(route);
+      } catch (err) {
+        const detail = (err.stderr || '').trim() || err.message;
+        throw createError({ status: 400, message: `ip route: ${detail}` });
+      }
     } else if (!enabled && route.enabled) {
       try {
         await this._kernelDel(route);
