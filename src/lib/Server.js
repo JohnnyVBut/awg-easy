@@ -14,6 +14,7 @@ const TunnelManager = require('./TunnelManager');
 const InterfaceManager = require('./InterfaceManager');
 const GatewayManager = require('./GatewayManager');
 const RouteManager = require('./RouteManager');
+const NatManager = require('./NatManager');
 const Settings = require('./Settings');
 const Util = require('./Util');
 
@@ -88,6 +89,10 @@ module.exports = class Server {
     // ========================================================================
     this.tunnelManager = new TunnelManager();
     const tunnelManager = this.tunnelManager; // Сохраняем ссылку для использования в handlers
+
+    // Инициализируем NatManager eagerly — правила NAT должны восстанавливаться
+    // при каждом старте контейнера, не только при первом открытии страницы NAT.
+    NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`));
 
     app.use(fromNodeMiddleware(expressSession({
       secret: crypto.randomBytes(256).toString('hex'),
@@ -1381,6 +1386,96 @@ module.exports = class Server {
         const rm = await RouteManager.getInstance();
         await rm.deleteRoute(id);
         return { success: true };
+      }))
+
+      // ======================================================================
+      // NAT API — управление правилами Source NAT (POSTROUTING)
+      // ======================================================================
+
+      /**
+       * GET /api/nat/interfaces
+       * Список сетевых интерфейсов хоста для выбора outbound-интерфейса.
+       * Использует `ip -o link show` (текстовый вывод, без -j — см. FIX-11).
+       * Возвращает: { interfaces: [{ name: 'eth0' }, ...] }
+       */
+      .get('/api/nat/interfaces', defineEventHandler(async () => {
+        try {
+          const nm = await NatManager.getInstance();
+          const interfaces = await nm.getNetworkInterfaces();
+          return { interfaces };
+        } catch (err) {
+          throw createError({ status: 500, message: err.message });
+        }
+      }))
+
+      /**
+       * GET /api/nat/rules
+       * Список всех NAT правил.
+       * Возвращает: { rules: [...] }
+       */
+      .get('/api/nat/rules', defineEventHandler(async () => {
+        try {
+          const nm = await NatManager.getInstance();
+          return { rules: nm.getRules() };
+        } catch (err) {
+          throw createError({ status: 500, message: err.message });
+        }
+      }))
+
+      /**
+       * POST /api/nat/rules
+       * Создать новое NAT правило.
+       * Body: { name, source, outInterface, type, toSource, comment }
+       * Возвращает: { rule }
+       */
+      .post('/api/nat/rules', defineEventHandler(async (event) => {
+        try {
+          const body = await readBody(event);
+          const nm = await NatManager.getInstance();
+          const rule = await nm.addRule(body);
+          return { rule };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * PATCH /api/nat/rules/:id
+       * Обновить NAT правило или включить/выключить (если body = { enabled }).
+       * Toggle: body = { enabled: bool }
+       * Full update: body = { name, source, outInterface, type, toSource, comment }
+       * Возвращает: { rule }
+       */
+      .patch('/api/nat/rules/:id', defineEventHandler(async (event) => {
+        try {
+          const id = getRouterParam(event, 'id');
+          const body = await readBody(event);
+          const nm = await NatManager.getInstance();
+          // Если в body только поле enabled — это toggle
+          const isToggle = Object.keys(body).length === 1 && 'enabled' in body;
+          const rule = isToggle
+            ? await nm.toggleRule(id, body.enabled)
+            : await nm.updateRule(id, body);
+          return { rule };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * DELETE /api/nat/rules/:id
+       * Удалить NAT правило.
+       * Возвращает: { success: true }
+       */
+      .delete('/api/nat/rules/:id', defineEventHandler(async (event) => {
+        try {
+          const id = getRouterParam(event, 'id');
+          const nm = await NatManager.getInstance();
+          await nm.deleteRule(id);
+          return { success: true };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
       }));
 
     const safePathJoin = (base, target) => {

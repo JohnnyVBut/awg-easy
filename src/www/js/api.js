@@ -612,4 +612,81 @@ class API {
     });
   }
 
+  // ============================================================
+  // NAT API — Source NAT (POSTROUTING)
+  // ============================================================
+
+  /**
+   * Получить список сетевых интерфейсов хоста.
+   * Используется для выбора outbound-интерфейса при создании NAT правила.
+   * @returns {{ interfaces: Array<{name: string}> }}
+   */
+  async getNatInterfaces() {
+    return this.call({
+      method: 'get',
+      path: '/nat/interfaces',
+    });
+  }
+
+  /**
+   * Получить список NAT правил.
+   * @returns {{ rules: Array<object> }}
+   */
+  async getNatRules() {
+    return this.call({
+      method: 'get',
+      path: '/nat/rules',
+    });
+  }
+
+  /**
+   * Создать новое NAT правило.
+   * @param {object} data - { name, source, outInterface, type, toSource, comment }
+   * @returns {{ rule: object }}
+   */
+  async createNatRule(data) {
+    return this.call({
+      method: 'post',
+      path: '/nat/rules',
+      body: data,
+    });
+  }
+
+  /**
+   * Обновить NAT правило (полное обновление полей).
+   * @param {{ ruleId: string, name, source, outInterface, type, toSource, comment }}
+   * @returns {{ rule: object }}
+   */
+  async updateNatRule({ ruleId, ...updates }) {
+    return this.call({
+      method: 'patch',
+      path: `/nat/rules/${ruleId}`,
+      body: updates,
+    });
+  }
+
+  /**
+   * Включить / выключить NAT правило (toggle).
+   * @param {{ ruleId: string, enabled: boolean }}
+   * @returns {{ rule: object }}
+   */
+  async toggleNatRule({ ruleId, enabled }) {
+    return this.call({
+      method: 'patch',
+      path: `/nat/rules/${ruleId}`,
+      body: { enabled },
+    });
+  }
+
+  /**
+   * Удалить NAT правило.
+   * @param {{ ruleId: string }}
+   */
+  async deleteNatRule({ ruleId }) {
+    return this.call({
+      method: 'delete',
+      path: `/nat/rules/${ruleId}`,
+    });
+  }
+
 }

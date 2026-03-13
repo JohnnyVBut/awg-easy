@@ -376,6 +376,12 @@ GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 POST /api/tunnel-interfaces/:id/peers/:peerId/enable
 POST /api/tunnel-interfaces/:id/peers/:peerId/disable
 GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
+
+GET    /api/nat/interfaces        ← список сетевых интерфейсов хоста (ip -o link show)
+GET    /api/nat/rules             ← список NAT правил
+POST   /api/nat/rules             ← создать правило { name, source, outInterface, type, toSource, comment }
+PATCH  /api/nat/rules/:id         ← обновить правило | toggle: { enabled: bool }
+DELETE /api/nat/rules/:id         ← удалить правило
 ```
 
 ---
@@ -390,7 +396,8 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | Interfaces | `'interfaces'` | ✅ динамические вкладки, per-interface view (info + peers) |
 | Gateways | `'gateways'` | ⏳ placeholder ("Coming soon") |
 | Routing | `'routing'` | ✅ Status (kernel routes + route test) + Static routes CRUD + OSPF placeholder |
-| Firewall / NAT | `'firewall'` | ⏳ placeholder ("Coming soon") |
+| NAT | `'nat'` | ✅ Outbound NAT CRUD + toggle + Port Forwarding placeholder |
+| Firewall | `'firewall'` | ⏳ placeholder ("Coming soon") |
 | Settings | `'settings'` | ✅ Global Settings + AWG2 Templates |
 | Administration | `'administration'` | ✅ Admin Tunnel (бывший Clients tab) |
 
@@ -423,13 +430,14 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | `dfc34c8` | feature/kernel-module | fix: toJSON() missing settings + api.js json error + Server.js try-catch |
 | `1579be6` | feature/kernel-module | fix: uppercase HTTP methods in api.js (Node.js 22 llhttp rejects lowercase) |
 | `d75d7d5` | feature/kernel-module | feat(ui): toast notification system — replace all alert() with toasts |
+| (pending) | feature/kernel-module | feat: NAT page — Outbound Source NAT CRUD (NatManager, API, UI) |
 
 ---
 
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `d75d7d5`
+**Последний коммит:** `d75d7d5` + NAT feature (не закоммичено)
 
 ---
 
@@ -454,6 +462,11 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | Routing API: GET /api/routing/tables | ✅ | список таблиц |
 | Routing API: GET /api/routing/test | ✅ | route get |
 | Routing API: GET/POST/PATCH/DELETE /api/routing/routes | ✅ | static routes CRUD |
+| NatManager: addRule/updateRule/deleteRule/toggleRule | ✅ | персистентность в nat-rules.json |
+| NatManager: getNetworkInterfaces | ✅ | ip -o link show (без -j, text parse) |
+| NatManager: eager init в Server constructor | ✅ | правила применяются при старте контейнера |
+| NAT API: GET /api/nat/interfaces | ✅ | список интерфейсов хоста |
+| NAT API: GET/POST/PATCH/DELETE /api/nat/rules | ✅ | CRUD правил, toggle через PATCH {enabled} |
 
 ### ✅ Что работает — Frontend
 
@@ -482,13 +495,18 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 | Routing: OSPF tab | ⏳ | placeholder "Coming soon" |
 | Routing: таблица 100 в дропдауне | ✅ TESTED | обнаруживается через ip rule show |
 | Toast-уведомления (правый верхний угол) | ✅ | зелёный (success) / красный (error), 7с, стекируются, dismiss × |
+| NAT: Outbound NAT tab (CRUD таблица правил + toggle) | ✅ | |
+| NAT: Add Rule modal (any/subnet/IP source, MASQUERADE/SNAT) | ✅ | |
+| NAT: Edit Rule modal | ✅ | |
+| NAT: Port Forwarding tab | ⏳ | placeholder "Coming soon" |
 | Gateways / Firewall | ⏳ | placeholder "Coming soon" |
 
 ### ❌ Что не реализовано
 
 1. **Admin Instance backend** — `src/lib/AdminInstance.js` (управление wg0/admin-туннелем через новую архитектуру)
 2. **Gateways** — backend + UI
-3. **Firewall/NAT** — backend + UI
+3. **Firewall** — backend + UI
+4. **Port Forwarding (DNAT)** — backend + UI (страница NAT, вкладка Port Forwarding)
 
 ---
 

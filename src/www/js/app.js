@@ -108,7 +108,8 @@ new Vue({
       { id: 'interfaces', label: 'Interfaces' },
       { id: 'gateways', label: 'Gateways' },
       { id: 'routing', label: 'Routing' },
-      { id: 'firewall', label: 'Firewall / NAT' },
+      { id: 'nat', label: 'NAT' },
+      { id: 'firewall', label: 'Firewall' },
       { id: 'settings', label: 'Settings' },
       { id: 'administration', label: 'Administration' },
     ],
@@ -252,6 +253,33 @@ new Vue({
       dev: '',
       metric: '',
       table: 'main',
+    },
+
+    // NAT page
+    activeNatTab: 'outbound',     // 'outbound' | 'portforward'
+    natRules: [],                 // список NAT правил
+    natInterfaces: [],            // список сетевых интерфейсов хоста
+    natRulesLoading: false,
+    showNatRuleCreate: false,     // модал создания правила
+    showNatRuleEdit: false,       // модал редактирования правила
+    natRuleCreate: {
+      name: '',
+      sourceType: 'any',          // 'any' | 'subnet' | 'ip'
+      sourceValue: '',            // значение при sourceType !== 'any'
+      outInterface: '',
+      type: 'MASQUERADE',         // 'MASQUERADE' | 'SNAT'
+      toSource: '',               // целевой IP при type === 'SNAT'
+      comment: '',
+    },
+    natRuleEdit: {
+      id: null,
+      name: '',
+      sourceType: 'any',
+      sourceValue: '',
+      outInterface: '',
+      type: 'MASQUERADE',
+      toSource: '',
+      comment: '',
     },
 
     // Toast notifications
@@ -582,6 +610,11 @@ new Vue({
         this.loadRoutingTables();
         this.loadKernelRoutes();
         this.loadStaticRoutes();
+      }
+      if (pageId === 'nat') {
+        // Загружаем интерфейсы и правила параллельно
+        this.loadNatInterfaces();
+        this.loadNatRules();
       }
     },
 
@@ -1264,6 +1297,156 @@ new Vue({
         await this.loadStaticRoutes();
       } catch (err) {
         this.showToast(err.message || 'Failed to delete route', 'error');
+      }
+    },
+
+    // ========================================================================
+    // NAT Methods
+    // ========================================================================
+
+    switchNatTab(tab) {
+      this.activeNatTab = tab;
+    },
+
+    async loadNatInterfaces() {
+      try {
+        const res = await this.api.getNatInterfaces();
+        this.natInterfaces = res.interfaces || [];
+        // Если выходной интерфейс не выбран — выбираем первый непустой
+        if (!this.natRuleCreate.outInterface && this.natInterfaces.length > 0) {
+          this.natRuleCreate.outInterface = this.natInterfaces[0].name;
+        }
+      } catch (err) {
+        console.error('loadNatInterfaces error:', err);
+        this.natInterfaces = [];
+      }
+    },
+
+    async loadNatRules() {
+      this.natRulesLoading = true;
+      try {
+        const res = await this.api.getNatRules();
+        this.natRules = res.rules || [];
+      } catch (err) {
+        console.error('loadNatRules error:', err);
+        this.natRules = [];
+      } finally {
+        this.natRulesLoading = false;
+      }
+    },
+
+    /**
+     * Открыть модал редактирования NAT правила.
+     * Конвертирует rule.source в sourceType + sourceValue для UI.
+     */
+    openNatRuleEdit(rule) {
+      let sourceType = 'any';
+      let sourceValue = '';
+      if (rule.source) {
+        sourceType = rule.source.includes('/') ? 'subnet' : 'ip';
+        sourceValue = rule.source;
+      }
+      this.natRuleEdit = {
+        id:           rule.id,
+        name:         rule.name,
+        sourceType,
+        sourceValue,
+        outInterface: rule.outInterface,
+        type:         rule.type,
+        toSource:     rule.toSource || '',
+        comment:      rule.comment || '',
+      };
+      this.showNatRuleEdit = true;
+    },
+
+    /**
+     * Вычислить итоговое значение source из полей формы.
+     * sourceType='any'    → '' (без -s в iptables)
+     * sourceType='subnet' → sourceValue (CIDR)
+     * sourceType='ip'     → sourceValue (single IP)
+     */
+    _natFormSource(form) {
+      if (form.sourceType === 'any') return '';
+      return (form.sourceValue || '').trim();
+    },
+
+    /**
+     * Отображаемая строка source для таблицы правил.
+     */
+    _natRuleSourceLabel(rule) {
+      if (!rule.source) return 'any';
+      return rule.source;
+    },
+
+    /**
+     * Отображаемая строка type для таблицы правил.
+     */
+    _natRuleTypeLabel(rule) {
+      if (rule.type === 'MASQUERADE') return 'MASQUERADE';
+      return `SNAT → ${rule.toSource}`;
+    },
+
+    async createNatRule() {
+      try {
+        const data = {
+          name:         this.natRuleCreate.name,
+          source:       this._natFormSource(this.natRuleCreate),
+          outInterface: this.natRuleCreate.outInterface,
+          type:         this.natRuleCreate.type,
+          toSource:     this.natRuleCreate.type === 'SNAT' ? this.natRuleCreate.toSource : null,
+          comment:      this.natRuleCreate.comment,
+        };
+        await this.api.createNatRule(data);
+        // Сброс формы
+        this.showNatRuleCreate = false;
+        this.natRuleCreate = {
+          name: '', sourceType: 'any', sourceValue: '',
+          outInterface: this.natInterfaces.length > 0 ? this.natInterfaces[0].name : '',
+          type: 'MASQUERADE', toSource: '', comment: '',
+        };
+        await this.loadNatRules();
+        this.showToast('NAT rule created', 'success');
+      } catch (err) {
+        this.showToast(err.message || 'Failed to create NAT rule', 'error');
+      }
+    },
+
+    async saveNatRule() {
+      try {
+        const data = {
+          name:         this.natRuleEdit.name,
+          source:       this._natFormSource(this.natRuleEdit),
+          outInterface: this.natRuleEdit.outInterface,
+          type:         this.natRuleEdit.type,
+          toSource:     this.natRuleEdit.type === 'SNAT' ? this.natRuleEdit.toSource : null,
+          comment:      this.natRuleEdit.comment,
+        };
+        await this.api.updateNatRule({ ruleId: this.natRuleEdit.id, ...data });
+        this.showNatRuleEdit = false;
+        await this.loadNatRules();
+        this.showToast('NAT rule updated', 'success');
+      } catch (err) {
+        this.showToast(err.message || 'Failed to update NAT rule', 'error');
+      }
+    },
+
+    async toggleNatRule(rule) {
+      try {
+        await this.api.toggleNatRule({ ruleId: rule.id, enabled: !rule.enabled });
+        await this.loadNatRules();
+      } catch (err) {
+        this.showToast(err.message || 'Failed to toggle NAT rule', 'error');
+      }
+    },
+
+    async deleteNatRule(rule) {
+      if (!confirm(`Delete NAT rule "${rule.name}"?`)) return;
+      try {
+        await this.api.deleteNatRule({ ruleId: rule.id });
+        await this.loadNatRules();
+        this.showToast('NAT rule deleted', 'success');
+      } catch (err) {
+        this.showToast(err.message || 'Failed to delete NAT rule', 'error');
       }
     },
 

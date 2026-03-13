@@ -1,6 +1,6 @@
 # AWG-Easy 2.0 — Requirements
 
-> Статус: **реализация в процессе** | Последнее обновление: 2026-03-11 (Toast UI; fix: HTTP method uppercase; fix: ip -j removed)
+> Статус: **реализация в процессе** | Последнее обновление: 2026-03-12 (NAT page: Outbound Source NAT CRUD)
 > Ветка: `feature/kernel-module` | Репо: `git@github.com:JohnnyVBut/awg-easy.git`
 
 ---
@@ -28,7 +28,8 @@
 | **Interfaces** | `'interfaces'` | ✅ Работает | Динамические вкладки, per-interface view (info + peers) |
 | **Gateways** | `'gateways'` | ⏳ Placeholder | "Coming soon" |
 | **Routing** | `'routing'` | ✅ Работает | Status (kernel routes + route test) + Static CRUD + OSPF placeholder |
-| **Firewall / NAT** | `'firewall'` | ⏳ Placeholder | "Coming soon" |
+| **NAT** | `'nat'` | ✅ Работает | Outbound NAT CRUD + toggle; Port Forwarding placeholder |
+| **Firewall** | `'firewall'` | ⏳ Placeholder | "Coming soon" |
 | **Settings** | `'settings'` | ✅ Работает | Global Settings + AWG2 Templates |
 | **Administration** | `'administration'` | ✅ Работает | Admin Tunnel (бывший Clients tab) |
 
@@ -536,3 +537,100 @@ this.tunnelInterfaces[idx] = updatedItem;  // Vue 2 не увидит измен
 | `src/www/css/app.css` | Скомпилированный Tailwind (не редактировать вручную, многие классы отсутствуют) |
 
 При добавлении новой страницы: добавить элемент в `sidebarMenu[]`, добавить `v-if="activePage === '...'"` секцию в `<main>`, добавить данные и методы в `app.js`, добавить API методы в `api.js`.
+
+---
+
+## Анализ миграции на Go+Fiber
+
+> Дата анализа: 2026-03-12
+
+### Что переписывается / что остаётся
+
+**Фронтенд — не трогается** (6 354 строки): `app.js`, `api.js`, `index.html`, `i18n.js`, `app.css` остаются as-is. Единственное требование — сохранить идентичный API-контракт (JSON-ответы).
+
+**Бэкенд — полный переписыш** (~6 500 строк Node.js → ~9 000–11 000 строк Go, Go многословнее):
+
+| Файл | Строк | Сложность |
+|------|-------|-----------|
+| `Server.js` | 1 555 | Средняя — 50+ роутов, сессии |
+| `TunnelInterface.js` | 860 | **Высокая** — mutex, AWG-специфика |
+| `WireGuard.js` | 564 | Средняя — легаси, но рабочий |
+| `InterfaceManager.js` | 378 | Низкая |
+| `RouteManager.js` | 354 | Средняя — текстовый парсинг `ip` |
+| `Peer.js` | 330 | Низкая |
+| `Settings.js` | 284 | Низкая |
+| TunnelManager + WanTunnel + Gateways | ~1 000 | Средняя |
+| `Util.js` | 91 | Низкая |
+
+### Прямые соответствия (простые замены)
+
+| Node.js | Go | Примечание |
+|---------|-----|-----------|
+| `h3` | `gofiber/fiber` | почти 1:1 синтаксис роутинга |
+| `bcryptjs` | `golang.org/x/crypto/bcrypt` | идентично |
+| `uuid` | `google/uuid` | идентично |
+| `qrcode` | `skip/go-qrcode` | идентично |
+| `fs.promises.readFile/writeFile` | `os.ReadFile/WriteFile` | проще |
+| `childProcess.exec` + timeout + SIGKILL | `exec.CommandContext` + `context.WithTimeout` | **чище в Go** |
+| `express-session` | `gofiber/contrib/session` | plug-and-play |
+| `debug` | `log/slog` или `zerolog` | конфигурируется явнее |
+
+### Ключевой выигрыш: Promise-chain mutex → sync.Mutex
+
+```javascript
+// JS (FIX-8/9): хак через Promise chain
+this._reloadMutex = this._reloadMutex
+  .then(async () => { await this.restart(); })
+  .catch(() => {});
+```
+
+```go
+// Go: нативный sync.Mutex — надёжнее и проще
+type TunnelInterface struct { mu sync.Mutex }
+func (t *TunnelInterface) kernelSetPeer(peer *Peer) error {
+    t.mu.Lock(); defer t.mu.Unlock()
+    return t.reload()
+}
+```
+
+Go-mutex — это улучшение, не проблема. Устраняет весь класс deadlock-рисков.
+
+### Что усложняется в Go
+
+1. **Типизация везде** — structs + json tags на каждую модель, ~1.5–2x объём кода
+2. **Error handling** — нет try/catch, везде `if err != nil`
+3. **Session middleware** — менее "магическое", чем express-session, но прозрачнее
+
+### Оценка трудоёмкости
+
+| Компонент | Дней |
+|-----------|------|
+| Fiber router, сессии, static serving | 2–3 |
+| Settings + Templates | 1–2 |
+| Peer model | 1–2 |
+| InterfaceManager | 1–2 |
+| RouteManager | 2 |
+| TunnelInterface (самый сложный) | 5–7 |
+| WireGuard.js (легаси) | 2–3 |
+| Gateway/Monitor | 2–3 |
+| Dockerfile (Go multi-stage build) | 0.5 |
+| Integration testing (preserve all FIX-*) | 3–5 |
+| **Итого** | **~20–30 рабочих дней** |
+
+### Выигрыш от миграции
+
+| Параметр | Node.js | Go |
+|----------|---------|-----|
+| Docker image | ~200 MB (node_modules) | ~15–20 MB (статический бинарь) |
+| RAM idle | ~80–150 MB | ~15–30 MB |
+| Startup | ~2–3 сек | ~100–200 мс |
+| Mutex | Promise chain hack | Нативный sync.Mutex |
+| Type safety | Runtime errors | Compile-time |
+
+### Главный риск
+
+**Сохранение всех 12 критических фиксов** (`_reloadMutex`, `ip -j` запрет, `awg syncconf` вместо `awg set peer`, iptables-nft, etc.). Каждый из них должен быть осознанно воспроизведён — механически перевести их нельзя.
+
+### Вывод
+
+**Технически достижимо, экономически спорно.** Фронтенд (50% кодовой базы) не меняется. Выигрыш — меньший Docker-образ и нативные примитивы конкурентности. При наличии опытного Go-разработчика — 4–6 недель с тестированием на реальном железе.

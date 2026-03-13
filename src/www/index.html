@@ -2524,10 +2524,381 @@
         </div>
 
         <!-- ============================================================== -->
-        <!-- Firewall / NAT Page (placeholder)                              -->
+        <!-- NAT Page                                                       -->
+        <!-- ============================================================== -->
+        <div v-if="activePage === 'nat'">
+
+          <!-- Tab bar: Outbound NAT | Port Forwarding -->
+          <div class="flex gap-2 mb-4">
+            <button @click="switchNatTab('outbound')"
+              :class="activeNatTab === 'outbound' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
+              class="px-4 py-2 rounded-lg font-medium transition text-sm">
+              Outbound NAT
+            </button>
+            <button
+              class="px-4 py-2 rounded-lg font-medium transition text-sm bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200"
+              style="opacity:0.5; cursor:not-allowed;" disabled>
+              Port Forwarding
+            </button>
+          </div>
+
+          <!-- ── OUTBOUND NAT TAB ──────────────────────────────────────── -->
+          <div v-if="activeNatTab === 'outbound'" style="display:flex; flex-direction:column; gap:16px;">
+
+            <!-- Header -->
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xl font-semibold dark:text-neutral-200">Outbound NAT Rules</h2>
+                <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">
+                  Source NAT (POSTROUTING) — rewrite source IP of outgoing packets.
+                </p>
+              </div>
+              <button @click="showNatRuleCreate = true; loadNatInterfaces()"
+                class="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium transition">
+                + Add Rule
+              </button>
+            </div>
+
+            <!-- Loading state -->
+            <div v-if="natRulesLoading" class="text-sm text-gray-400 dark:text-neutral-400" style="padding:16px 0;">
+              Loading...
+            </div>
+
+            <!-- Empty state -->
+            <div v-if="!natRulesLoading && natRules.length === 0"
+              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800"
+              style="padding:40px 24px;">
+              No NAT rules configured. Click <strong>+ Add Rule</strong> to create one.
+            </div>
+
+            <!-- Rules list -->
+            <div v-if="natRules.length > 0"
+              class="bg-white dark:bg-neutral-800 rounded-lg shadow-sm"
+              style="overflow:hidden;">
+
+              <!-- Table header -->
+              <div class="flex items-center text-xs font-semibold text-gray-500 dark:text-neutral-400"
+                style="padding:8px 16px; border-bottom:1px solid #e5e7eb;">
+                <span style="width:16px; flex-shrink:0;"></span>
+                <span style="flex:2; padding-left:12px;">Name</span>
+                <span style="flex:2;">Source</span>
+                <span style="flex:1.5;">Out Interface</span>
+                <span style="flex:2;">NAT Type</span>
+                <span style="flex:2;" class="text-gray-400 dark:text-neutral-500">Comment</span>
+                <span style="width:72px; flex-shrink:0;"></span>
+              </div>
+
+              <!-- Rule rows -->
+              <div v-for="(rule, idx) in natRules" :key="rule.id"
+                class="flex items-center"
+                :style="idx > 0 ? 'border-top:1px solid #e5e7eb;' : ''"
+                style="padding:12px 16px; gap:0;">
+
+                <!-- Enable/disable dot -->
+                <span @click="toggleNatRule(rule)"
+                  class="cursor-pointer shrink-0"
+                  :title="rule.enabled ? 'Disable' : 'Enable'">
+                  <span v-if="rule.enabled"
+                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px #bbf7d0;"></span>
+                  <span v-else
+                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#d1d5db;border:2px solid #9ca3af;"></span>
+                </span>
+
+                <!-- Name -->
+                <div style="flex:2; padding-left:12px; min-width:0;">
+                  <div class="font-medium dark:text-neutral-200 truncate">{{ rule.name }}</div>
+                </div>
+
+                <!-- Source -->
+                <div style="flex:2; min-width:0;">
+                  <span v-if="!rule.source"
+                    class="text-xs rounded-full font-medium"
+                    style="padding:2px 8px; display:inline-block; background:#f3f4f6; color:#6b7280;">
+                    any
+                  </span>
+                  <span v-else class="font-mono text-sm dark:text-neutral-300">{{ rule.source }}</span>
+                </div>
+
+                <!-- Out Interface -->
+                <div style="flex:1.5; min-width:0;">
+                  <span class="font-mono text-sm font-medium dark:text-neutral-200">{{ rule.outInterface }}</span>
+                </div>
+
+                <!-- NAT Type badge -->
+                <div style="flex:2; min-width:0;">
+                  <span class="text-xs rounded-full font-medium"
+                    style="padding:2px 8px; display:inline-block;"
+                    :style="rule.type === 'MASQUERADE'
+                      ? 'background:#dbeafe; color:#1d4ed8;'
+                      : 'background:#fef3c7; color:#92400e;'">
+                    {{ _natRuleTypeLabel(rule) }}
+                  </span>
+                </div>
+
+                <!-- Comment -->
+                <div style="flex:2; min-width:0;">
+                  <span v-if="rule.comment" class="text-xs text-gray-400 dark:text-neutral-500 truncate" style="display:block;">
+                    {{ rule.comment }}
+                  </span>
+                  <span v-else class="text-gray-300 dark:text-neutral-600">—</span>
+                </div>
+
+                <!-- Actions: Edit + Delete -->
+                <div style="width:72px; flex-shrink:0; display:flex; gap:4px; justify-content:flex-end;">
+                  <button @click="openNatRuleEdit(rule)"
+                    class="text-blue-600 dark:text-blue-400"
+                    style="background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px;"
+                    title="Edit rule">✎</button>
+                  <button @click="deleteNatRule(rule)"
+                    class="text-red-600"
+                    style="background:none; border:none; cursor:pointer; padding:4px 6px; font-size:16px;"
+                    title="Delete rule">✕</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Info note -->
+            <div class="text-xs text-gray-400 dark:text-neutral-500" style="padding:0 4px;">
+              Note: WireGuard/AmneziaWG interface rules (PostUp/PostDown MASQUERADE) are managed separately and are not shown here.
+            </div>
+
+          </div><!-- /outbound tab -->
+
+          <!-- ── PORT FORWARDING TAB ───────────────────────────────────── -->
+          <div v-if="activeNatTab === 'portforward'" class="text-center text-gray-500 dark:text-neutral-400" style="padding:60px 0;">
+            <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Port Forwarding</h2>
+            <p class="text-lg">Coming soon</p>
+          </div>
+
+        </div><!-- /nat page -->
+
+        <!-- ── Add NAT Rule Modal ──────────────────────────────────────── -->
+        <div v-if="showNatRuleCreate && activePage === 'nat'"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showNatRuleCreate = false">
+
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:500px; margin:0 auto;">
+            <!-- Header -->
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-xl font-medium dark:text-neutral-200">Add NAT Rule</h2>
+            </div>
+
+            <!-- Body -->
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+
+              <!-- Name -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Rule Name *</label>
+                <input v-model="natRuleCreate.name" type="text" placeholder="e.g. VPN clients → internet"
+                  class="w-full mt-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+              </div>
+
+              <!-- Source -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Source</label>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleCreate.sourceType" value="any" />
+                    Any (0.0.0.0/0)
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleCreate.sourceType" value="subnet" />
+                    Subnet (CIDR)
+                    <input v-if="natRuleCreate.sourceType === 'subnet'"
+                      v-model="natRuleCreate.sourceValue"
+                      type="text" placeholder="e.g. 10.8.0.0/24"
+                      class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                      style="width:160px;" />
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleCreate.sourceType" value="ip" />
+                    Single IP
+                    <input v-if="natRuleCreate.sourceType === 'ip'"
+                      v-model="natRuleCreate.sourceValue"
+                      type="text" placeholder="e.g. 10.8.0.5"
+                      class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                      style="width:160px;" />
+                  </label>
+                </div>
+              </div>
+
+              <!-- Outbound Interface -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Outbound Interface *</label>
+                <select v-model="natRuleCreate.outInterface"
+                  class="w-full mt-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                  <option v-for="iface in natInterfaces" :key="iface.name" :value="iface.name">
+                    {{ iface.name }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- NAT Type -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">NAT Type *</label>
+                <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleCreate.type" value="MASQUERADE" />
+                    <div>
+                      <span class="font-medium">MASQUERADE</span>
+                      <span class="text-gray-400 dark:text-neutral-500 text-xs ml-2">— auto IP of outbound interface</span>
+                    </div>
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleCreate.type" value="SNAT" />
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium">SNAT</span>
+                      <span class="text-gray-400 dark:text-neutral-500 text-xs">→ to IP:</span>
+                      <input v-if="natRuleCreate.type === 'SNAT'"
+                        v-model="natRuleCreate.toSource"
+                        type="text" placeholder="e.g. 1.2.3.4"
+                        class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                        style="width:140px;" />
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Comment -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Comment <span class="text-gray-400 font-normal">(optional)</span></label>
+                <input v-model="natRuleCreate.comment" type="text" placeholder="Optional description"
+                  class="w-full mt-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+              </div>
+
+            </div><!-- /body -->
+
+            <!-- Footer -->
+            <div class="dark:border-neutral-600" style="padding:12px 24px 20px; border-top-width:1px; display:flex; gap:8px; justify-content:flex-end;">
+              <button @click="showNatRuleCreate = false"
+                class="px-4 py-2 rounded text-sm border border-gray-300 dark:border-neutral-500 dark:text-neutral-300">
+                Cancel
+              </button>
+              <button @click="createNatRule"
+                class="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium">
+                Create Rule
+              </button>
+            </div>
+          </div>
+        </div><!-- /Add NAT Rule Modal -->
+
+        <!-- ── Edit NAT Rule Modal ─────────────────────────────────────── -->
+        <div v-if="showNatRuleEdit && activePage === 'nat'"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showNatRuleEdit = false">
+
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:500px; margin:0 auto;">
+            <!-- Header -->
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-xl font-medium dark:text-neutral-200">Edit NAT Rule</h2>
+            </div>
+
+            <!-- Body -->
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+
+              <!-- Name -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Rule Name *</label>
+                <input v-model="natRuleEdit.name" type="text"
+                  class="w-full mt-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+              </div>
+
+              <!-- Source -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Source</label>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleEdit.sourceType" value="any" />
+                    Any (0.0.0.0/0)
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleEdit.sourceType" value="subnet" />
+                    Subnet (CIDR)
+                    <input v-if="natRuleEdit.sourceType === 'subnet'"
+                      v-model="natRuleEdit.sourceValue"
+                      type="text" placeholder="e.g. 10.8.0.0/24"
+                      class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                      style="width:160px;" />
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleEdit.sourceType" value="ip" />
+                    Single IP
+                    <input v-if="natRuleEdit.sourceType === 'ip'"
+                      v-model="natRuleEdit.sourceValue"
+                      type="text" placeholder="e.g. 10.8.0.5"
+                      class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                      style="width:160px;" />
+                  </label>
+                </div>
+              </div>
+
+              <!-- Outbound Interface -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Outbound Interface *</label>
+                <select v-model="natRuleEdit.outInterface"
+                  class="w-full mt-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                  <option v-for="iface in natInterfaces" :key="iface.name" :value="iface.name">
+                    {{ iface.name }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- NAT Type -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">NAT Type *</label>
+                <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleEdit.type" value="MASQUERADE" />
+                    <div>
+                      <span class="font-medium">MASQUERADE</span>
+                      <span class="text-gray-400 dark:text-neutral-500 text-xs ml-2">— auto IP of outbound interface</span>
+                    </div>
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleEdit.type" value="SNAT" />
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium">SNAT</span>
+                      <span class="text-gray-400 dark:text-neutral-500 text-xs">→ to IP:</span>
+                      <input v-if="natRuleEdit.type === 'SNAT'"
+                        v-model="natRuleEdit.toSource"
+                        type="text" placeholder="e.g. 1.2.3.4"
+                        class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                        style="width:140px;" />
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Comment -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Comment <span class="text-gray-400 font-normal">(optional)</span></label>
+                <input v-model="natRuleEdit.comment" type="text"
+                  class="w-full mt-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+              </div>
+
+            </div><!-- /body -->
+
+            <!-- Footer -->
+            <div class="dark:border-neutral-600" style="padding:12px 24px 20px; border-top-width:1px; display:flex; gap:8px; justify-content:flex-end;">
+              <button @click="showNatRuleEdit = false"
+                class="px-4 py-2 rounded text-sm border border-gray-300 dark:border-neutral-500 dark:text-neutral-300">
+                Cancel
+              </button>
+              <button @click="saveNatRule"
+                class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium">
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div><!-- /Edit NAT Rule Modal -->
+
+        <!-- ============================================================== -->
+        <!-- Firewall Page (placeholder)                                     -->
         <!-- ============================================================== -->
         <div v-if="activePage === 'firewall'" class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
-          <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Firewall / NAT</h2>
+          <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Firewall</h2>
           <p class="text-lg">Coming soon</p>
         </div>
 
