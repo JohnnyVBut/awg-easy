@@ -43,10 +43,11 @@ COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
 # Install packages offline from files pre-fetched in stage 1.
-# No network access needed here — avoids TLS/DPI issues on RU servers.
-# --allow-untrusted: packages are unsigned local files (fetched over HTTPS in stage 1).
+# --no-network: prevents apk from fetching APKINDEX (even for local installs apk tries
+#   to refresh the index from /etc/apk/repositories — this hangs on RU servers).
+# --allow-untrusted: local .apk files have no repo signature (fetched over HTTPS in stage 1).
 COPY --from=build_node_modules /apk-cache /apk-cache
-RUN apk add --no-cache --allow-untrusted /apk-cache/*.apk && rm -rf /apk-cache
+RUN apk add --no-cache --no-network --allow-untrusted /apk-cache/*.apk && rm -rf /apk-cache
 
 # Copy Node 22 binary from build stage (apk would install Alpine's older version)
 COPY --from=build_node_modules /usr/local/bin/node /usr/local/bin/node
