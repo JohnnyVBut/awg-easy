@@ -8,6 +8,17 @@ RUN npm config set registry https://registry.npmmirror.com && \
     npm install --omit=dev && \
     mv node_modules /node_modules
 
+# Pre-fetch Alpine packages here (node:22-alpine has newer apk/TLS stack).
+# Final stage installs them offline — zero network needed there.
+# -R = recursive, pulls all transitive dependencies.
+RUN printf '%s\n' \
+        'https://mirror.yandex.ru/mirrors/alpine/latest-stable/main' \
+        'https://mirror.yandex.ru/mirrors/alpine/latest-stable/community' \
+        > /etc/apk/repositories && \
+    mkdir /apk-cache && \
+    apk fetch --no-cache -R -o /apk-cache \
+        dumb-init iptables iproute2 libstdc++ libgcc
+
 # Copy build result to a new image.
 # This saves a lot of disk space.
 # Kernel mode: amneziawg.ko must be loaded on the Docker host.
@@ -31,24 +42,11 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
-# Override Alpine repos with HTTP (not HTTPS) mirrors.
-# RU servers have DPI/TLS inspection that kills large HTTPS downloads (Docker Hub also
-# fails with TLS handshake timeout). Plain HTTP bypasses TLS inspection.
-# Uses latest-stable symlink — no /etc/alpine-release detection needed.
-# iptables-legacy and dpkg NOT needed: all iptables calls use iptables-nft directly (FIX-1).
-# libstdc++ + libgcc required by Node 22 binary (dynamically linked against C++ stdlib).
-RUN printf '%s\n' \
-        'http://mirror.yandex.ru/mirrors/alpine/latest-stable/main' \
-        'http://mirror.yandex.ru/mirrors/alpine/latest-stable/community' \
-        'http://mirrors.aliyun.com/alpine/latest-stable/main' \
-        'http://mirrors.aliyun.com/alpine/latest-stable/community' \
-        > /etc/apk/repositories && \
-    apk add --no-cache \
-    dumb-init \
-    iptables \
-    iproute2 \
-    libstdc++ \
-    libgcc
+# Install packages offline from files pre-fetched in stage 1.
+# No network access needed here — avoids TLS/DPI issues on RU servers.
+# --allow-untrusted: packages are unsigned local files (fetched over HTTPS in stage 1).
+COPY --from=build_node_modules /apk-cache /apk-cache
+RUN apk add --no-cache --allow-untrusted /apk-cache/*.apk && rm -rf /apk-cache
 
 # Copy Node 22 binary from build stage (apk would install Alpine's older version)
 COPY --from=build_node_modules /usr/local/bin/node /usr/local/bin/node
