@@ -31,17 +31,17 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
-# Override Alpine repos — direct overwrite (no sed, no version detection).
-# Uses latest-stable symlink → works regardless of exact Alpine version in base image.
-# Primary: Yandex (direct server, fastest from RU, ~200ms RTT confirmed).
-# Fallback: Aliyun (CDN, confirmed reachable from RU, ~1.1s RTT).
+# Override Alpine repos with HTTP (not HTTPS) mirrors.
+# RU servers have DPI/TLS inspection that kills large HTTPS downloads (Docker Hub also
+# fails with TLS handshake timeout). Plain HTTP bypasses TLS inspection.
+# Uses latest-stable symlink — no /etc/alpine-release detection needed.
 # iptables-legacy and dpkg NOT needed: all iptables calls use iptables-nft directly (FIX-1).
 # libstdc++ + libgcc required by Node 22 binary (dynamically linked against C++ stdlib).
 RUN printf '%s\n' \
-        'https://mirror.yandex.ru/mirrors/alpine/latest-stable/main' \
-        'https://mirror.yandex.ru/mirrors/alpine/latest-stable/community' \
-        'https://mirrors.aliyun.com/alpine/latest-stable/main' \
-        'https://mirrors.aliyun.com/alpine/latest-stable/community' \
+        'http://mirror.yandex.ru/mirrors/alpine/latest-stable/main' \
+        'http://mirror.yandex.ru/mirrors/alpine/latest-stable/community' \
+        'http://mirrors.aliyun.com/alpine/latest-stable/main' \
+        'http://mirrors.aliyun.com/alpine/latest-stable/community' \
         > /etc/apk/repositories && \
     apk add --no-cache \
     dumb-init \
