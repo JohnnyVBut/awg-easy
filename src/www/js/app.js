@@ -1572,7 +1572,7 @@ new Vue({
         description: alias.description || '',
         type: alias.type,
         entries: alias.type !== 'ipset' ? (alias.entries || []).join('\n') : '',
-        genSource: 'country',
+        genSource: alias.generatorOpts?.asnList ? 'asn-list' : alias.generatorOpts?.asn ? 'asn' : 'country',
         genCountry: alias.generatorOpts?.country || '',
         genAsn: alias.generatorOpts?.asn || '',
         genAsnList: alias.generatorOpts?.asnList || '',
