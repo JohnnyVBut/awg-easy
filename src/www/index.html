@@ -3226,12 +3226,6 @@
                   </td>
                   <td style="padding:10px 12px;">
                     <div class="flex gap-2 justify-end">
-                      <label v-if="alias.type === 'ipset'"
-                        class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 cursor-pointer transition">
-                        Upload
-                        <input type="file" class="hidden" accept=".txt,.csv"
-                          @change="e => uploadAliasFile(alias.id, e.target.files[0])">
-                      </label>
                       <button @click="openAliasEdit(alias)"
                         class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 transition">
                         Edit
@@ -3376,6 +3370,15 @@
                 <div v-if="aliasGeneratingId === aliasEdit.id && aliasGenerateJobStatus" class="text-xs text-gray-500 dark:text-neutral-400 mt-1">
                   Status: {{ aliasGenerateJobStatus.status }}
                   <span v-if="aliasGenerateJobStatus.entryCount"> — {{ aliasGenerateJobStatus.entryCount }} entries</span>
+                </div>
+                <!-- Upload from file -->
+                <div style="margin-top:12px; border-top:1px solid rgba(0,0,0,0.1); padding-top:12px;">
+                  <p class="text-xs text-gray-500 dark:text-neutral-400 mb-2">Or upload from a .txt file (one CIDR per line):</p>
+                  <label class="inline-block bg-gray-200 dark:bg-neutral-500 text-gray-700 dark:text-neutral-200 rounded px-3 py-2 text-sm font-medium cursor-pointer transition">
+                    📂 Upload file
+                    <input type="file" class="hidden" accept=".txt,.csv"
+                      @change="e => { uploadAliasFile(aliasEdit.id, e.target.files[0]); e.target.value=''; }">
+                  </label>
                 </div>
               </div>
             </div>
