@@ -15,6 +15,9 @@ const InterfaceManager = require('./InterfaceManager');
 const GatewayManager = require('./GatewayManager');
 const RouteManager = require('./RouteManager');
 const NatManager = require('./NatManager');
+const AliasManager = require('./AliasManager');
+const IpsetManager = require('./IpsetManager');
+const PolicyManager = require('./PolicyManager');
 const Settings = require('./Settings');
 const AwgParamGenerator = require('./AwgParamGenerator');
 const Util = require('./Util');
@@ -1523,6 +1526,207 @@ module.exports = class Server {
         } catch (err) {
           throw createError({ status: err.statusCode || 500, message: err.message });
         }
+      }))
+
+      // ======================================================================
+      // Aliases API  (Firewall → Aliases)
+      // ======================================================================
+
+      /**
+       * GET /api/aliases
+       * Список всех алиасов.
+       */
+      .get('/api/aliases', defineEventHandler(async () => {
+        const am = await AliasManager.getInstance();
+        return { aliases: am.getAllAliases() };
+      }))
+
+      /**
+       * POST /api/aliases
+       * Создать алиас.
+       * Body: { name, type, entries?, description? }
+       */
+      .post('/api/aliases', defineEventHandler(async (event) => {
+        try {
+          const body = await readBody(event).catch(() => ({}));
+          const am = await AliasManager.getInstance();
+          const alias = await am.createAlias(body);
+          return { alias };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * PATCH /api/aliases/:id
+       * Обновить алиас (name, description, entries).
+       */
+      .patch('/api/aliases/:id', defineEventHandler(async (event) => {
+        try {
+          const id   = getRouterParam(event, 'id');
+          const body = await readBody(event).catch(() => ({}));
+          const am = await AliasManager.getInstance();
+          const alias = await am.updateAlias(id, body);
+          return { alias };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * DELETE /api/aliases/:id
+       * Удалить алиас (для ipset — уничтожает kernel set).
+       */
+      .delete('/api/aliases/:id', defineEventHandler(async (event) => {
+        try {
+          const id = getRouterParam(event, 'id');
+          const am = await AliasManager.getInstance();
+          await am.deleteAlias(id);
+          return { success: true };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * POST /api/aliases/:id/upload
+       * Загрузить префиксы из txt-файла в ipset.
+       * Multipart: field "file" с txt-файлом (один CIDR/IP на строку).
+       */
+      .post('/api/aliases/:id/upload', defineEventHandler(async (event) => {
+        try {
+          const id = getRouterParam(event, 'id');
+          const am = await AliasManager.getInstance();
+
+          // Читаем multipart body
+          const { readMultipartFormData } = await import('h3');
+          const parts = await readMultipartFormData(event);
+          if (!parts || !parts.length) {
+            throw createError({ status: 400, message: 'No file uploaded' });
+          }
+          const filePart = parts.find(p => p.name === 'file' || p.filename);
+          if (!filePart) {
+            throw createError({ status: 400, message: 'Field "file" not found in multipart' });
+          }
+
+          // Сохранить во временный файл
+          const tmpPath = `/tmp/alias_upload_${id}_${Date.now()}.txt`;
+          const { writeFile, unlink } = require('node:fs/promises');
+          await writeFile(tmpPath, filePart.data);
+
+          try {
+            const alias = await am.uploadFromFile(id, tmpPath);
+            return { alias };
+          } finally {
+            await unlink(tmpPath).catch(() => {});
+          }
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * POST /api/aliases/:id/generate
+       * Запустить генерацию ipset через prefixes.py.
+       * Body: { country? | asn? | asnList? }
+       * Возвращает: { jobId }
+       */
+      .post('/api/aliases/:id/generate', defineEventHandler(async (event) => {
+        try {
+          const id   = getRouterParam(event, 'id');
+          const body = await readBody(event).catch(() => ({}));
+          const am = await AliasManager.getInstance();
+          const jobId = am.startGenerate(id, {
+            country: body.country || null,
+            asn:     body.asn     || null,
+            asnList: body.asnList || null,
+          });
+          return { jobId };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * GET /api/aliases/:id/generate/:jobId
+       * Статус generation job.
+       * Возвращает: { status: 'running'|'done'|'error', entryCount?, error? }
+       */
+      .get('/api/aliases/:id/generate/:jobId', defineEventHandler(async (event) => {
+        const id    = getRouterParam(event, 'id');
+        const jobId = getRouterParam(event, 'jobId');
+        const am = await AliasManager.getInstance();
+        const status = am.getGenerateJobStatus(jobId);
+        if (!status) {
+          throw createError({ status: 404, message: `Job ${jobId} not found` });
+        }
+        return status;
+      }))
+
+      // ======================================================================
+      // Policy Rules API  (Routing → Policy)
+      // ======================================================================
+
+      /**
+       * GET /api/policy/rules
+       * Список всех PBR-правил.
+       */
+      .get('/api/policy/rules', defineEventHandler(async () => {
+        const pm = await PolicyManager.getInstance();
+        return { rules: pm.getRules() };
+      }))
+
+      /**
+       * POST /api/policy/rules
+       * Создать новое PBR-правило.
+       * Body: { name, source, destination, gatewayId?, gatewayGroupId?, priority?, fwmark? }
+       */
+      .post('/api/policy/rules', defineEventHandler(async (event) => {
+        try {
+          const body = await readBody(event).catch(() => ({}));
+          const pm = await PolicyManager.getInstance();
+          const rule = await pm.addRule(body);
+          return { rule };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * PATCH /api/policy/rules/:id
+       * Обновить правило или переключить enabled.
+       * Body: { enabled: bool } для toggle, или полные данные правила для update.
+       */
+      .patch('/api/policy/rules/:id', defineEventHandler(async (event) => {
+        try {
+          const id   = getRouterParam(event, 'id');
+          const body = await readBody(event).catch(() => ({}));
+          const pm = await PolicyManager.getInstance();
+
+          if (body.enabled !== undefined && Object.keys(body).length === 1) {
+            const rule = await pm.toggleRule(id, Boolean(body.enabled));
+            return { rule };
+          }
+          const rule = await pm.updateRule(id, body);
+          return { rule };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * DELETE /api/policy/rules/:id
+       * Удалить PBR-правило (+ убрать kernel-стек).
+       */
+      .delete('/api/policy/rules/:id', defineEventHandler(async (event) => {
+        try {
+          const id = getRouterParam(event, 'id');
+          const pm = await PolicyManager.getInstance();
+          await pm.deleteRule(id);
+          return { success: true };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
       }));
 
     const safePathJoin = (base, target) => {
@@ -1699,6 +1903,21 @@ module.exports = class Server {
         // NatManager после InterfaceManager (NAT через интерфейсы)
         await NatManager.getInstance().catch(err => debug(`NatManager init error: ${err.message}`));
         debug('NatManager initialized successfully');
+
+        // IpsetManager: восстановить ipset-ы из .save файлов.
+        // Должен быть до AliasManager (AliasManager.init() вызывает IpsetManager.getInstance()).
+        await IpsetManager.getInstance().catch(err => debug(`IpsetManager init error: ${err.message}`));
+        debug('IpsetManager initialized successfully');
+
+        // AliasManager: загрузить алиасы с диска.
+        await AliasManager.getInstance().catch(err => debug(`AliasManager init error: ${err.message}`));
+        debug('AliasManager initialized successfully');
+
+        // PolicyManager: восстановить PBR-правила (mangle + ip rule + ip route) в ядро.
+        // Последний в цепочке — зависит от InterfaceManager (wg-интерфейсы), GatewayManager,
+        // AliasManager и IpsetManager. GatewayManager уже готов (параллельная ветка выше).
+        await PolicyManager.getInstance().catch(err => debug(`PolicyManager init error: ${err.message}`));
+        debug('PolicyManager initialized successfully');
       })
       .catch((err) => {
         debug('Error initializing InterfaceManager:', err);

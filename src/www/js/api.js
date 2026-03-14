@@ -708,4 +708,129 @@ class API {
     });
   }
 
+  // ============================================================
+  // Aliases API — Firewall Aliases (host / network / ipset)
+  // ============================================================
+
+  /**
+   * Получить список всех алиасов.
+   * @returns {{ aliases: Array<object> }}
+   */
+  async getAliases() {
+    return this.call({ method: 'get', path: '/aliases' });
+  }
+
+  /**
+   * Создать новый алиас.
+   * @param {{ name, type, entries?, description? }} data
+   * @returns {{ alias: object }}
+   */
+  async createAlias(data) {
+    return this.call({ method: 'post', path: '/aliases', body: data });
+  }
+
+  /**
+   * Обновить алиас.
+   * @param {{ aliasId: string, name?, description?, entries? }}
+   * @returns {{ alias: object }}
+   */
+  async updateAlias({ aliasId, ...updates }) {
+    return this.call({ method: 'patch', path: `/aliases/${aliasId}`, body: updates });
+  }
+
+  /**
+   * Удалить алиас (для ipset — уничтожает kernel set).
+   * @param {{ aliasId: string }}
+   */
+  async deleteAlias({ aliasId }) {
+    return this.call({ method: 'delete', path: `/aliases/${aliasId}` });
+  }
+
+  /**
+   * Загрузить префиксы из txt-файла в ipset-алиас.
+   * @param {{ aliasId: string, file: File }}  — file — File object из <input type=file>
+   * @returns {{ alias: object }}
+   */
+  async uploadAliasFile({ aliasId, file }) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`./api/aliases/${aliasId}/upload`, {
+      method: 'POST',
+      body: formData,
+      // Content-Type не задаём — браузер сам выставит multipart/form-data с boundary
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.message || json.error || res.statusText);
+    return json;
+  }
+
+  /**
+   * Запустить генерацию ipset через prefixes.py (async job).
+   * @param {{ aliasId: string, country?, asn?, asnList? }}
+   * @returns {{ jobId: string }}
+   */
+  async generateAlias({ aliasId, country, asn, asnList }) {
+    return this.call({
+      method: 'post',
+      path: `/aliases/${aliasId}/generate`,
+      body: { country, asn, asnList },
+    });
+  }
+
+  /**
+   * Получить статус generation job.
+   * @param {{ aliasId: string, jobId: string }}
+   * @returns {{ status: 'running'|'done'|'error', entryCount?, error? }}
+   */
+  async getAliasJobStatus({ aliasId, jobId }) {
+    return this.call({ method: 'get', path: `/aliases/${aliasId}/generate/${jobId}` });
+  }
+
+  // ============================================================
+  // Policy Rules API — Policy-Based Routing
+  // ============================================================
+
+  /**
+   * Получить список всех PBR-правил.
+   * @returns {{ rules: Array<object> }}
+   */
+  async getPolicyRules() {
+    return this.call({ method: 'get', path: '/policy/rules' });
+  }
+
+  /**
+   * Создать PBR-правило.
+   * @param {{ name, source, destination, gatewayId?, gatewayGroupId?, priority?, fwmark? }} data
+   * @returns {{ rule: object }}
+   */
+  async createPolicyRule(data) {
+    return this.call({ method: 'post', path: '/policy/rules', body: data });
+  }
+
+  /**
+   * Обновить PBR-правило (полные данные) или переключить enabled.
+   * @param {{ ruleId: string, ...updates }}
+   * @returns {{ rule: object }}
+   */
+  async updatePolicyRule({ ruleId, ...updates }) {
+    return this.call({ method: 'patch', path: `/policy/rules/${ruleId}`, body: updates });
+  }
+
+  /**
+   * Включить / выключить PBR-правило.
+   * @param {{ ruleId: string, enabled: boolean }}
+   * @returns {{ rule: object }}
+   */
+  async togglePolicyRule({ ruleId, enabled }) {
+    return this.call({ method: 'patch', path: `/policy/rules/${ruleId}`, body: { enabled } });
+  }
+
+  /**
+   * Удалить PBR-правило (+ убирает kernel-стек: mangle + ip rule + ip route table).
+   * @param {{ ruleId: string }}
+   */
+  async deletePolicyRule({ ruleId }) {
+    return this.call({ method: 'delete', path: `/policy/rules/${ruleId}` });
+  }
+
 }

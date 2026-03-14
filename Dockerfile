@@ -17,7 +17,7 @@ RUN printf '%s\n' \
         > /etc/apk/repositories && \
     mkdir /apk-cache && \
     apk fetch --no-cache -R -o /apk-cache \
-        dumb-init iptables iproute2 libstdc++ libgcc
+        dumb-init iptables iproute2 ipset libstdc++ libgcc
 
 # Copy build result to a new image.
 # This saves a lot of disk space.

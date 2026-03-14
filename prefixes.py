@@ -8,18 +8,37 @@ import urllib.parse
 import urllib.request
 
 
-API_URL = "https://stat.ripe.net/data/country-resource-list/data.json"
+COUNTRY_API_URL  = "https://stat.ripe.net/data/country-resource-list/data.json"
+ASN_API_URL      = "https://stat.ripe.net/data/announced-prefixes/data.json"
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Fetch IPv4 prefixes for a country from RIPEstat and aggregate them."
+        description="Fetch IPv4 prefixes from RIPEstat and aggregate them.\n"
+                    "Source: --country OR --asn / --asn-list (mutually exclusive).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
+
+    # ── источник ────────────────────────────────────────────────────────────
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
         "-c", "--country",
-        default="RU",
-        help="2-letter ISO country code (default: RU)"
+        metavar="CC",
+        help="2-letter ISO country code (e.g. RU, DE, US)"
     )
+    source.add_argument(
+        "-a", "--asn",
+        metavar="ASN",
+        type=lambda s: s.lstrip("Aa Ss"),   # принимаем 'AS12345' и '12345'
+        help="Single AS number (e.g. AS12345 or 12345)"
+    )
+    source.add_argument(
+        "--asn-list",
+        metavar="ASN1,ASN2,...",
+        help="Comma-separated list of AS numbers (e.g. 12345,20485,3216)"
+    )
+
+    # ── вывод / поведение ────────────────────────────────────────────────────
     parser.add_argument(
         "-o", "--output",
         help="Write aggregated prefixes to output file (default: stdout)"
@@ -28,7 +47,7 @@ def parse_args():
         "--timeout",
         type=int,
         default=30,
-        help="HTTP timeout in seconds (default: 30)"
+        help="HTTP timeout in seconds per request (default: 30)"
     )
     parser.add_argument(
         "--strict",
@@ -53,6 +72,8 @@ def parse_args():
     return parser.parse_args()
 
 
+# ── нормализация ────────────────────────────────────────────────────────────
+
 def normalize_country_code(country: str) -> str:
     cc = country.strip().upper()
     if len(cc) != 2 or not cc.isalpha():
@@ -60,56 +81,94 @@ def normalize_country_code(country: str) -> str:
     return cc
 
 
-def fetch_country_ipv4_entries(country: str, timeout: int):
-    params = {
-        "resource": country,
-        "v4_format": "prefix",  # ask RIPEstat to return IPv4 as prefixes
-    }
-    url = f"{API_URL}?{urllib.parse.urlencode(params)}"
+def normalize_asn(asn: str) -> str:
+    """Привести ASN к числовому виду (без префикса AS)."""
+    s = str(asn).strip().upper().lstrip("AS")
+    if not s.isdigit():
+        raise ValueError(f"Invalid AS number: {asn!r}")
+    return s
 
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "cidr-aggregator/1.0"
-        }
-    )
 
+def parse_asn_list(raw: str) -> list:
+    """Разобрать строку вида '12345,AS20485, 3216' в список числовых строк."""
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if not parts:
+        raise ValueError("--asn-list is empty")
+    return [normalize_asn(p) for p in parts]
+
+
+# ── запросы к RIPEstat ──────────────────────────────────────────────────────
+
+def _http_get(url: str, timeout: int) -> dict:
+    req = urllib.request.Request(url, headers={"User-Agent": "cidr-aggregator/2.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         status = getattr(resp, "status", 200)
         if status != 200:
             raise RuntimeError(f"HTTP error: {status}")
-
         body = resp.read().decode("utf-8")
-
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Invalid JSON received from API: {e}") from e
-
+        raise RuntimeError(f"Invalid JSON from API: {e}") from e
     if payload.get("status") not in (None, "ok"):
         raise RuntimeError(f"API returned non-ok status: {payload.get('status')}")
+    return payload
 
+
+def fetch_country_ipv4_entries(country: str, timeout: int):
+    """Загрузить IPv4-префиксы для страны через country-resource-list."""
+    params = {"resource": country, "v4_format": "prefix"}
+    url = f"{COUNTRY_API_URL}?{urllib.parse.urlencode(params)}"
+    payload = _http_get(url, timeout)
     data = payload.get("data", {})
-    resources = data.get("resources", {})
-    ipv4_entries = resources.get("ipv4", [])
-
-    if not isinstance(ipv4_entries, list):
+    entries = data.get("resources", {}).get("ipv4", [])
+    if not isinstance(entries, list):
         raise RuntimeError("Unexpected API format: data.resources.ipv4 is not a list")
+    return entries, url
 
-    return ipv4_entries, url
 
+def fetch_asn_ipv4_entries(asn: str, timeout: int):
+    """Загрузить IPv4-префиксы для одного ASN через announced-prefixes."""
+    params = {"resource": f"AS{asn}"}
+    url = f"{ASN_API_URL}?{urllib.parse.urlencode(params)}"
+    payload = _http_get(url, timeout)
+    data = payload.get("data", {})
+    prefixes_raw = data.get("prefixes", [])
+    if not isinstance(prefixes_raw, list):
+        raise RuntimeError(f"Unexpected API format for AS{asn}: data.prefixes is not a list")
+    # Каждый элемент: { "prefix": "1.2.3.0/24", "timelines": [...] }
+    # Берём только IPv4 (без ':')
+    entries = [
+        item["prefix"]
+        for item in prefixes_raw
+        if isinstance(item, dict) and "prefix" in item and ":" not in item["prefix"]
+    ]
+    return entries, url
+
+
+def fetch_asn_list_ipv4_entries(asn_list: list, timeout: int):
+    """Загрузить и объединить IPv4-префиксы для нескольких ASN."""
+    all_entries = []
+    urls = []
+    for asn in asn_list:
+        entries, url = fetch_asn_ipv4_entries(asn, timeout)
+        all_entries.extend(entries)
+        urls.append(url)
+        if not entries:
+            print(f"  Warning: AS{asn} returned no IPv4 prefixes", file=sys.stderr)
+    return all_entries, urls
+
+
+# ── разбор префиксов ────────────────────────────────────────────────────────
 
 def parse_range(line: str):
     left, right = line.split("-", 1)
     start_ip = ipaddress.ip_address(left.strip())
-    end_ip = ipaddress.ip_address(right.strip())
-
+    end_ip   = ipaddress.ip_address(right.strip())
     if start_ip.version != end_ip.version:
         raise ValueError("Range start and end IP versions do not match")
-
     if int(start_ip) > int(end_ip):
         raise ValueError("Range start IP is greater than end IP")
-
     return list(ipaddress.summarize_address_range(start_ip, end_ip))
 
 
@@ -117,10 +176,8 @@ def parse_entry(entry: str, strict: bool):
     entry = entry.strip()
     if not entry:
         return []
-
     if "-" in entry:
         return parse_range(entry)
-
     return [ipaddress.ip_network(entry, strict=strict)]
 
 
@@ -135,13 +192,11 @@ def parse_entries(entries, strict: bool):
         try:
             parsed = parse_entry(raw, strict=strict)
             networks.extend(parsed)
-
             if "-" in raw:
                 range_entries += 1
                 expanded_from_ranges += len(parsed)
             else:
                 cidr_entries += 1
-
         except ValueError as e:
             invalid_entries.append((idx, raw, str(e)))
 
@@ -153,6 +208,8 @@ def parse_entries(entries, strict: bool):
     }
     return networks, stats
 
+
+# ── агрегация ────────────────────────────────────────────────────────────────
 
 def deduplicate_networks(networks):
     unique = sorted(
@@ -181,9 +238,10 @@ def aggregate_networks(networks):
     return result, len(agg_v4), len(agg_v6)
 
 
+# ── вывод ────────────────────────────────────────────────────────────────────
+
 def write_output(networks, output_path=None):
     lines = [str(n) for n in networks]
-
     if output_path:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
@@ -194,13 +252,18 @@ def write_output(networks, output_path=None):
             print(line)
 
 
-def print_stats(country, source_url, source_count, parse_stats, parsed_count, dedup_count, final_count):
+def print_stats(source_label, source_urls, source_count, parse_stats,
+                parsed_count, dedup_count, final_count):
     reduced = dedup_count - final_count
     reduction_pct = (reduced / dedup_count * 100.0) if dedup_count else 0.0
 
     print("\n=== Statistics ===", file=sys.stderr)
-    print(f"Country code                : {country}", file=sys.stderr)
-    print(f"Source URL                  : {source_url}", file=sys.stderr)
+    print(f"Source                      : {source_label}", file=sys.stderr)
+    if isinstance(source_urls, list):
+        for u in source_urls:
+            print(f"  URL                       : {u}", file=sys.stderr)
+    else:
+        print(f"Source URL                  : {source_urls}", file=sys.stderr)
     print(f"Raw entries from API        : {source_count}", file=sys.stderr)
     print(f"CIDR entries parsed         : {parse_stats['cidr_entries']}", file=sys.stderr)
     print(f"Range entries parsed        : {parse_stats['range_entries']}", file=sys.stderr)
@@ -217,27 +280,48 @@ def print_stats(country, source_url, source_count, parse_stats, parsed_count, de
             print(f"  entry {idx}: {entry!r} -> {err}", file=sys.stderr)
 
 
+# ── точка входа ──────────────────────────────────────────────────────────────
+
 def main():
     args = parse_args()
 
     try:
-        country = normalize_country_code(args.country)
+        # ── выбрать источник ─────────────────────────────────────────────────
+        if args.country:
+            country = normalize_country_code(args.country)
+            raw_entries, source_url = fetch_country_ipv4_entries(country, timeout=args.timeout)
+            source_label = f"Country {country}"
+            source_urls  = source_url
+            if not raw_entries:
+                raise RuntimeError(f"No IPv4 entries returned for country {country}")
 
-        raw_entries, source_url = fetch_country_ipv4_entries(country, timeout=args.timeout)
-        if not raw_entries:
-            raise RuntimeError(f"No IPv4 entries returned for country {country}")
+        elif args.asn:
+            asn = normalize_asn(args.asn)
+            raw_entries, source_url = fetch_asn_ipv4_entries(asn, timeout=args.timeout)
+            source_label = f"AS{asn}"
+            source_urls  = [source_url]
+            if not raw_entries:
+                raise RuntimeError(f"No IPv4 prefixes announced by AS{asn}")
 
-        raw_networks, parse_stats = parse_entries(raw_entries, strict=args.strict)
-        deduped_networks, duplicates_removed = deduplicate_networks(raw_networks)
-        aggregated_networks, _, _ = aggregate_networks(deduped_networks)
+        else:  # --asn-list
+            asn_list = parse_asn_list(args.asn_list)
+            raw_entries, source_urls = fetch_asn_list_ipv4_entries(asn_list, timeout=args.timeout)
+            source_label = f"ASN list: {', '.join('AS'+a for a in asn_list)}"
+            if not raw_entries:
+                raise RuntimeError(f"No IPv4 prefixes returned for ASN list: {args.asn_list}")
+
+        # ── обработка ────────────────────────────────────────────────────────
+        raw_networks, parse_stats   = parse_entries(raw_entries, strict=args.strict)
+        deduped_networks, dup_count = deduplicate_networks(raw_networks)
+        aggregated_networks, _, _   = aggregate_networks(deduped_networks)
 
         if not args.stats_only:
             write_output(aggregated_networks, args.output)
 
         if not args.quiet:
             print_stats(
-                country=country,
-                source_url=source_url,
+                source_label=source_label,
+                source_urls=source_urls,
                 source_count=len(raw_entries),
                 parse_stats=parse_stats,
                 parsed_count=len(raw_networks),
@@ -245,7 +329,7 @@ def main():
                 final_count=len(aggregated_networks),
             )
             if args.show_source_count:
-                print(f"Duplicates removed          : {duplicates_removed}", file=sys.stderr)
+                print(f"Duplicates removed          : {dup_count}", file=sys.stderr)
 
     except urllib.error.HTTPError as e:
         print(f"HTTP error while fetching data: {e.code} {e.reason}", file=sys.stderr)
