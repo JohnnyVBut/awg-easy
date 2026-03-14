@@ -283,6 +283,12 @@
                           :title="$t('lastSeen') + dateTime(new Date(client.latestHandshakeAt))">
                           {{!uiTrafficStats ? " · " : ""}}{{new Date(client.latestHandshakeAt) | timeago}}
                         </span>
+                        <!-- Public IP -->
+                        <span v-if="client.endpoint"
+                          class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
+                          :title="'Public IP: ' + peerPublicIP(client.endpoint)">
+                          · {{peerPublicIP(client.endpoint)}}
+                        </span>
                       </div>
                       <div v-if="enableOneTimeLinks && client.oneTimeLink !== null && client.oneTimeLink !== ''" :ref="'client-' + client.id + '-link'" class="text-gray-400 text-xs">
                         <a :href="'./cnf/' + client.oneTimeLink + ''">{{document.location.protocol}}//{{document.location.host}}/cnf/{{client.oneTimeLink}}</a>
@@ -690,11 +696,11 @@
                               :title="'Last seen: ' + dateTime(new Date(peer.latestHandshakeAt))">
                               {{!uiTrafficStats ? " · " : ""}}{{new Date(peer.latestHandshakeAt) | timeago}}
                             </span>
-                            <!-- Runtime endpoint -->
-                            <span v-if="peer.peerType === 'interconnect' && peer.runtimeEndpoint"
+                            <!-- Runtime endpoint: full IP:port for interconnect, IP only for client -->
+                            <span v-if="peer.runtimeEndpoint"
                               class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
-                              :title="'Connected from: ' + peer.runtimeEndpoint">
-                              · {{peer.runtimeEndpoint}}
+                              :title="peer.peerType === 'interconnect' ? 'Connected from: ' + peer.runtimeEndpoint : 'Public IP: ' + peerPublicIP(peer.runtimeEndpoint)">
+                              · {{peer.peerType === 'interconnect' ? peer.runtimeEndpoint : peerPublicIP(peer.runtimeEndpoint)}}
                             </span>
                           </div>
                         </div>
@@ -1015,11 +1021,11 @@
                             :title="'Last seen: ' + dateTime(new Date(peer.latestHandshakeAt))">
                             {{!uiTrafficStats ? " · " : ""}}{{new Date(peer.latestHandshakeAt) | timeago}}
                           </span>
-                          <!-- Runtime endpoint (S2S peers only) -->
-                          <span v-if="peer.peerType === 'interconnect' && peer.runtimeEndpoint"
+                          <!-- Runtime endpoint: full IP:port for interconnect, IP only for client -->
+                          <span v-if="peer.runtimeEndpoint"
                             class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
-                            :title="'Connected from: ' + peer.runtimeEndpoint">
-                            · {{peer.runtimeEndpoint}}
+                            :title="peer.peerType === 'interconnect' ? 'Connected from: ' + peer.runtimeEndpoint : 'Public IP: ' + peerPublicIP(peer.runtimeEndpoint)">
+                            · {{peer.peerType === 'interconnect' ? peer.runtimeEndpoint : peerPublicIP(peer.runtimeEndpoint)}}
                           </span>
                         </div>
                         <!-- One-time link -->

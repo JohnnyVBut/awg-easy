@@ -1499,6 +1499,17 @@ new Vue({
       return (peer && peer.interfaceId) || this.activeInterfaceId;
     },
 
+    // Extracts the IP address from an "IP:port" endpoint string (handles IPv4 and IPv6)
+    peerPublicIP(endpoint) {
+      if (!endpoint) return '';
+      if (endpoint.startsWith('[')) {
+        // IPv6: [::1]:51820 → ::1
+        return endpoint.slice(1, endpoint.indexOf(']'));
+      }
+      // IPv4: 1.2.3.4:51820 → 1.2.3.4
+      return endpoint.split(':')[0];
+    },
+
     // Refresh peers: if an interface tab is selected, refresh that interface; otherwise refresh all (dashboard)
     async _refreshPeersOrAll(opts = {}) {
       if (this.activeInterfaceId) {
