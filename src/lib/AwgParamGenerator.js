@@ -135,7 +135,7 @@ function mkQUICi(iv, host) {
     'mkQUICi'
   );
 
-  return `<b 0x${hex}><rc ${sniRc}><c><t><r ${rLen}>`;
+  return `<b 0x${hex}><rc ${sniRc}><t><r ${rLen}>`;
 }
 
 /**
@@ -156,7 +156,7 @@ function mkQUIC0(iv, host) {
     'mkQUIC0'
   );
 
-  return `<b 0x${hex}><t><r ${rLen}><rc ${ticketHint}><c>`;
+  return `<b 0x${hex}><t><r ${rLen}><rc ${ticketHint}>`;
 }
 
 /**
@@ -180,7 +180,7 @@ function mkTLS(iv, host) {
     'mkTLS'
   );
 
-  return `<b 0x${hex}><rc ${sniRc}><r ${rLen}><c><t>`;
+  return `<b 0x${hex}><rc ${sniRc}><r ${rLen}><t>`;
 }
 
 /**
@@ -223,7 +223,7 @@ function mkDTLS(iv, host) {
     'mkDTLS'
   );
 
-  return `<b 0x${hex}><rc ${sniRc}><c><t><r ${rLen}>`;
+  return `<b 0x${hex}><rc ${sniRc}><t><r ${rLen}>`;
 }
 
 /**
@@ -245,7 +245,7 @@ function mkHTTP3(iv, host) {
     'mkHTTP3'
   );
 
-  return `<b 0x${hex}><rc ${sniLen}><r ${rLen}><c><t>`;
+  return `<b 0x${hex}><rc ${sniLen}><r ${rLen}><t>`;
 }
 
 /**
@@ -270,7 +270,7 @@ function mkSIP(iv, host) {
   const rcVal = Math.min(host.length + rnd(8, 24) * iv, 150);
   const rLen = Math.min(rnd(5, 30) * iv, 120);
 
-  return `<b 0x${hex}><rc ${rcVal}><c><t><r ${rLen}>`;
+  return `<b 0x${hex}><rc ${rcVal}><t><r ${rLen}>`;
 }
 
 /**
@@ -285,16 +285,16 @@ function mkEntropy(idx, iv) {
   const b = iv >= 2 ? `<b 0x${rh(rnd(4, 8 * iv))}>` : '';
   const r = `<r ${rLen}>`;
   const t = `<t>`;
-  const c = `<c>`;
   const rc = `<rc ${rcLen}>`;
   const rd = `<rd ${rdLen}>`;
 
+  // <c> (counter tag) excluded — causes issues with some AWG clients (per AmneziaWG-Architect notice)
   const patterns = [
-    b + r + t + rc + c + rd,
-    c + t + b + r + rc + rd,
-    rc + b + r + c + t + rd,
-    t + r + c + rc + b + rd,
-    r + rc + b + t + c + rd,
+    b + r + t + rc + rd,
+    t + b + r + rc + rd,
+    rc + b + r + t + rd,
+    t + r + rc + b + rd,
+    r + rc + b + t + rd,
   ];
 
   const res = patterns[(idx + rnd(0, 4)) % patterns.length];
