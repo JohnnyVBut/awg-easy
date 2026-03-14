@@ -43,16 +43,25 @@
           </div>
           <!-- Menu items -->
           <div style="padding: 0 8px;" class="flex-grow">
-            <button v-for="page in sidebarMenu" :key="page.id"
-              @click="switchPage(page.id)"
-              @mouseenter="hoverPage = page.id"
-              @mouseleave="hoverPage = null"
-              :class="activePage === page.id ? 'bg-gray-200 dark:bg-neutral-600 text-gray-900 dark:text-white font-semibold' : 'text-gray-600 dark:text-neutral-400'"
-              :style="hoverPage === page.id && activePage !== page.id ? 'background-color: rgba(0,0,0,0.05);' : ''"
-              class="w-full text-left text-sm cursor-pointer rounded transition"
-              style="padding: 10px 12px; margin-bottom: 2px; display: block;">
-              {{ page.label }}
-            </button>
+            <template v-for="page in sidebarMenu" :key="page.id">
+              <!-- Section header (non-clickable divider) -->
+              <div v-if="page.type === 'header'"
+                class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500"
+                style="padding: 12px 12px 4px; margin-top: 4px;">
+                {{ page.label }}
+              </div>
+              <!-- Regular menu item -->
+              <button v-else
+                @click="switchPage(page.id)"
+                @mouseenter="hoverPage = page.id"
+                @mouseleave="hoverPage = null"
+                :class="activePage === page.id ? 'bg-gray-200 dark:bg-neutral-600 text-gray-900 dark:text-white font-semibold' : 'text-gray-600 dark:text-neutral-400'"
+                :style="hoverPage === page.id && activePage !== page.id ? 'background-color: rgba(0,0,0,0.05);' : ''"
+                class="w-full text-left text-sm cursor-pointer rounded transition"
+                style="padding: 10px 12px; margin-bottom: 2px; display: block;">
+                {{ page.label }}
+              </button>
+            </template>
           </div>
           <!-- Bottom controls -->
           <div style="padding: 12px 16px; border-top: 1px solid #e5e7eb;">
@@ -282,12 +291,6 @@
                         <span class="text-gray-400 dark:text-neutral-500 whitespace-nowrap" v-if="client.latestHandshakeAt"
                           :title="$t('lastSeen') + dateTime(new Date(client.latestHandshakeAt))">
                           {{!uiTrafficStats ? " · " : ""}}{{new Date(client.latestHandshakeAt) | timeago}}
-                        </span>
-                        <!-- Public IP -->
-                        <span v-if="client.endpoint"
-                          class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
-                          :title="'Public IP: ' + peerPublicIP(client.endpoint)">
-                          · {{peerPublicIP(client.endpoint)}}
                         </span>
                       </div>
                       <div v-if="enableOneTimeLinks && client.oneTimeLink !== null && client.oneTimeLink !== ''" :ref="'client-' + client.id + '-link'" class="text-gray-400 text-xs">
@@ -696,11 +699,11 @@
                               :title="'Last seen: ' + dateTime(new Date(peer.latestHandshakeAt))">
                               {{!uiTrafficStats ? " · " : ""}}{{new Date(peer.latestHandshakeAt) | timeago}}
                             </span>
-                            <!-- Runtime endpoint: full IP:port for interconnect, IP only for client -->
-                            <span v-if="peer.runtimeEndpoint"
+                            <!-- Runtime endpoint -->
+                            <span v-if="peer.peerType === 'interconnect' && peer.runtimeEndpoint"
                               class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
-                              :title="peer.peerType === 'interconnect' ? 'Connected from: ' + peer.runtimeEndpoint : 'Public IP: ' + peerPublicIP(peer.runtimeEndpoint)">
-                              · {{peer.peerType === 'interconnect' ? peer.runtimeEndpoint : peerPublicIP(peer.runtimeEndpoint)}}
+                              :title="'Connected from: ' + peer.runtimeEndpoint">
+                              · {{peer.runtimeEndpoint}}
                             </span>
                           </div>
                         </div>
@@ -1021,11 +1024,11 @@
                             :title="'Last seen: ' + dateTime(new Date(peer.latestHandshakeAt))">
                             {{!uiTrafficStats ? " · " : ""}}{{new Date(peer.latestHandshakeAt) | timeago}}
                           </span>
-                          <!-- Runtime endpoint: full IP:port for interconnect, IP only for client -->
-                          <span v-if="peer.runtimeEndpoint"
+                          <!-- Runtime endpoint (S2S peers only) -->
+                          <span v-if="peer.peerType === 'interconnect' && peer.runtimeEndpoint"
                             class="text-gray-400 dark:text-neutral-500 whitespace-nowrap"
-                            :title="peer.peerType === 'interconnect' ? 'Connected from: ' + peer.runtimeEndpoint : 'Public IP: ' + peerPublicIP(peer.runtimeEndpoint)">
-                            · {{peer.peerType === 'interconnect' ? peer.runtimeEndpoint : peerPublicIP(peer.runtimeEndpoint)}}
+                            :title="'Connected from: ' + peer.runtimeEndpoint">
+                            · {{peer.runtimeEndpoint}}
                           </span>
                         </div>
                         <!-- One-time link -->
@@ -1624,14 +1627,6 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                   </svg>
                   Import JSON
-                </button>
-                <button @click="openGenerateModal()"
-                  class="px-4 py-2 text-sm font-medium rounded transition flex items-center gap-1.5 border border-yellow-500 text-yellow-600 dark:text-yellow-400 dark:border-yellow-500"
-                  title="Auto-generate AWG2 obfuscation parameters (port of AmneziaWG-Architect)">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                  </svg>
-                  Generate
                 </button>
                 <button @click="openTemplateCreate()"
                   class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition text-sm font-medium flex items-center gap-1.5">
@@ -2456,20 +2451,13 @@
             </div>
           </div>
 
-          <!-- ── OSPF TAB ───────────────────────────────────────────────── -->
-          <div v-if="activeRoutingTab === 'ospf'" class="text-center text-gray-500 dark:text-neutral-400" style="padding:60px 0;">
-            <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">OSPF</h2>
-            <p class="text-lg">Coming soon</p>
-          </div>
-
-          <!-- ── POLICY TAB ─────────────────────────────────────────────── -->
+          <!-- ── POLICY TAB ───────────────────────────────────────────── -->
           <div v-if="activeRoutingTab === 'policy'" style="display:flex; flex-direction:column; gap:16px;">
-
-            <!-- Toolbar -->
+            <!-- Header -->
             <div class="flex items-center justify-between">
-              <h3 class="text-lg font-medium dark:text-neutral-200">Policy Rules</h3>
-              <button @click="showPolicyCreate = true"
-                class="bg-blue-600 text-white rounded-lg text-sm font-medium"
+              <h2 class="text-xl font-semibold dark:text-neutral-200">Policy Rules</h2>
+              <button @click="showPolicyCreate = true; _resetPolicyCreate()"
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm transition"
                 style="padding:8px 16px;">
                 + Add Rule
               </button>
@@ -2478,85 +2466,52 @@
             <!-- Loading -->
             <div v-if="policyRulesLoading" class="text-gray-500 dark:text-neutral-400 text-sm">Loading...</div>
 
-            <!-- Empty state -->
-            <div v-if="!policyRulesLoading && policyRules.length === 0"
-              class="text-center text-gray-500 dark:text-neutral-400 rounded-lg"
-              style="padding:40px; border:2px dashed #d1d5db;">
-              No policy rules yet.<br>
-              <span class="text-sm">Add a rule to route traffic based on source, destination, and gateway.</span>
+            <!-- Empty -->
+            <div v-else-if="!policyRules.length" class="text-gray-500 dark:text-neutral-400 text-sm" style="padding:24px 0;">
+              No policy rules yet. Policy rules steer traffic based on source/destination to specific gateways using fwmark + ip rule.
             </div>
 
-            <!-- Rules table -->
-            <div v-if="policyRules.length > 0" class="rounded-lg overflow-hidden" style="border:1px solid #e5e7eb;">
+            <!-- Table -->
+            <div v-else class="bg-white dark:bg-neutral-700 rounded-lg overflow-hidden" style="border:1px solid #e5e7eb;">
               <table class="w-full text-sm">
-                <thead class="bg-gray-50 dark:bg-neutral-700">
-                  <tr>
-                    <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Name</th>
-                    <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Source</th>
-                    <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Destination</th>
-                    <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Gateway</th>
-                    <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Mark/Prio</th>
-                    <th class="text-right font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Actions</th>
+                <thead>
+                  <tr class="bg-gray-50 dark:bg-neutral-600 text-gray-500 dark:text-neutral-400 text-xs uppercase">
+                    <th class="text-left font-medium" style="padding:10px 12px;">Name</th>
+                    <th class="text-left font-medium" style="padding:10px 12px;">Source</th>
+                    <th class="text-left font-medium" style="padding:10px 12px;">Destination</th>
+                    <th class="text-left font-medium" style="padding:10px 12px;">Gateway</th>
+                    <th class="text-left font-medium" style="padding:10px 12px;">Mark</th>
+                    <th class="text-left font-medium" style="padding:10px 12px;">Status</th>
+                    <th style="padding:10px 12px;"></th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="rule in policyRules" :key="rule.id"
-                    class="border-t dark:border-neutral-600"
-                    :class="rule.enabled ? 'bg-white dark:bg-neutral-800' : 'bg-gray-50 dark:bg-neutral-700 opacity-60'">
-                    <td style="padding:10px 14px;">
-                      <span class="font-medium dark:text-neutral-200">{{ rule.name }}</span>
-                    </td>
-                    <td style="padding:10px 14px;" class="text-gray-600 dark:text-neutral-400 text-xs">
-                      <span v-if="rule.source && rule.source.type === 'any'">any</span>
-                      <span v-else-if="rule.source && rule.source.type === 'cidr'">{{ rule.source.value }}</span>
-                      <span v-else-if="rule.source && rule.source.type === 'alias'">
-                        <span class="rounded text-xs" style="background:#dbeafe;color:#1d4ed8;padding:2px 6px;">
-                          {{ (aliases.find(a => a.id === rule.source.aliasId) || {}).name || rule.source.aliasId }}
-                        </span>
+                    class="dark:border-neutral-600" style="border-top-width:1px;">
+                    <td class="dark:text-neutral-200 font-medium" style="padding:10px 12px;">{{ rule.name }}</td>
+                    <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">{{ _policyEndpointLabel(rule.source) }}</td>
+                    <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">{{ _policyEndpointLabel(rule.destination) }}</td>
+                    <td class="text-gray-600 dark:text-neutral-400" style="padding:10px 12px;">{{ _gatewayLabel(rule) }}</td>
+                    <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">{{ rule.fwmark }}</td>
+                    <td style="padding:10px 12px;">
+                      <span :class="rule.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
+                        class="text-xs font-medium rounded-full" style="padding:2px 8px;">
+                        {{ rule.enabled ? 'enabled' : 'disabled' }}
                       </span>
                     </td>
-                    <td style="padding:10px 14px;" class="text-gray-600 dark:text-neutral-400 text-xs">
-                      <span v-if="rule.destination && rule.destination.invert" class="text-red-500 font-bold mr-1">NOT</span>
-                      <span v-if="rule.destination && rule.destination.type === 'any'">any</span>
-                      <span v-else-if="rule.destination && rule.destination.type === 'cidr'">{{ rule.destination.value }}</span>
-                      <span v-else-if="rule.destination && rule.destination.type === 'alias'">
-                        <span class="rounded text-xs" style="background:#dbeafe;color:#1d4ed8;padding:2px 6px;">
-                          {{ (aliases.find(a => a.id === rule.destination.aliasId) || {}).name || rule.destination.aliasId }}
-                        </span>
-                      </span>
-                    </td>
-                    <td style="padding:10px 14px;" class="text-xs">
-                      <span v-if="rule.gatewayId">
-                        <span class="rounded" style="background:#d1fae5;color:#065f46;padding:2px 6px;">
-                          {{ (gateways.find(g => g.id === rule.gatewayId) || {}).name || rule.gatewayId }}
-                        </span>
-                      </span>
-                      <span v-else-if="rule.gatewayGroupId">
-                        <span class="rounded" style="background:#ede9fe;color:#5b21b6;padding:2px 6px;">
-                          {{ (gatewayGroups.find(g => g.id === rule.gatewayGroupId) || {}).name || rule.gatewayGroupId }}
-                        </span>
-                      </span>
-                    </td>
-                    <td style="padding:10px 14px;" class="text-xs text-gray-500 dark:text-neutral-400">
-                      mark={{ rule.fwmark }}<br>prio={{ rule.priority }}
-                    </td>
-                    <td style="padding:10px 14px; text-align:right;">
-                      <div class="flex items-center justify-end gap-2">
-                        <!-- Toggle -->
+                    <td style="padding:10px 12px;">
+                      <div class="flex gap-2 justify-end">
                         <button @click="togglePolicyRule(rule)"
-                          :title="rule.enabled ? 'Disable' : 'Enable'"
-                          class="rounded text-xs font-medium"
-                          :style="rule.enabled ? 'background:#dcfce7;color:#166534;padding:3px 8px;' : 'background:#fee2e2;color:#991b1b;padding:3px 8px;'">
-                          {{ rule.enabled ? 'ON' : 'OFF' }}
+                          class="text-xs rounded px-2 py-1 transition"
+                          :class="rule.enabled ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'">
+                          {{ rule.enabled ? 'Disable' : 'Enable' }}
                         </button>
                         <button @click="openPolicyEdit(rule)"
-                          class="rounded text-xs font-medium"
-                          style="background:#e0e7ff;color:#3730a3;padding:3px 8px;">
+                          class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 transition">
                           Edit
                         </button>
                         <button @click="deletePolicyRule(rule)"
-                          class="rounded text-xs font-medium"
-                          style="background:#fee2e2;color:#991b1b;padding:3px 8px;">
+                          class="text-xs bg-red-100 text-red-600 rounded px-2 py-1 transition">
                           Delete
                         </button>
                       </div>
@@ -2565,8 +2520,200 @@
                 </tbody>
               </table>
             </div>
-          </div><!-- /policy tab -->
+          </div>
 
+          <!-- ── OSPF TAB ───────────────────────────────────────────────── -->
+          <div v-if="activeRoutingTab === 'ospf'" class="text-center text-gray-500 dark:text-neutral-400" style="padding:60px 0;">
+            <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">OSPF</h2>
+            <p class="text-lg">Coming soon</p>
+          </div>
+
+        </div>
+
+        <!-- ── Create Policy Rule Modal ────────────────────────────────── -->
+        <div v-if="showPolicyCreate && activePage === 'routing'"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showPolicyCreate = false">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-xl font-medium dark:text-neutral-200">Add Policy Rule</h2>
+            </div>
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+              <!-- Name -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
+                <input v-model="policyCreate.name" type="text" placeholder="e.g. RU → KZ Gateway"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+              <!-- Source -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Source</label>
+                <div class="flex gap-2 mt-1">
+                  <select v-model="policyCreate.source.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="policyCreate.source.type === 'alias'" v-model="policyCreate.source.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="policyCreate.source.type === 'cidr'" v-model="policyCreate.source.value"
+                    type="text" placeholder="10.0.0.0/8"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <label v-if="policyCreate.source.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
+                  <input type="checkbox" v-model="policyCreate.source.invert"> Invert (NOT)
+                </label>
+              </div>
+              <!-- Destination -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Destination</label>
+                <div class="flex gap-2 mt-1">
+                  <select v-model="policyCreate.destination.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="policyCreate.destination.type === 'alias'" v-model="policyCreate.destination.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="policyCreate.destination.type === 'cidr'" v-model="policyCreate.destination.value"
+                    type="text" placeholder="10.0.0.0/8"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <label v-if="policyCreate.destination.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
+                  <input type="checkbox" v-model="policyCreate.destination.invert"> Invert (NOT)
+                </label>
+              </div>
+              <!-- Gateway -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Gateway *</label>
+                <label class="flex items-center gap-2 mt-1 mb-2 text-sm text-gray-600 dark:text-neutral-400">
+                  <input type="checkbox" v-model="policyCreate.useGroup"> Use Gateway Group
+                </label>
+                <select v-if="!policyCreate.useGroup" v-model="policyCreate.gatewayId"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                  <option value="">— select gateway —</option>
+                  <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.gatewayIP }})</option>
+                </select>
+                <select v-else v-model="policyCreate.gatewayGroupId"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                  <option value="">— select group —</option>
+                  <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+              <button @click="showPolicyCreate = false"
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Cancel
+              </button>
+              <button @click="createPolicyRule()"
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Edit Policy Rule Modal ──────────────────────────────────── -->
+        <div v-if="showPolicyEdit && activePage === 'routing'"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showPolicyEdit = false">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-xl font-medium dark:text-neutral-200">Edit Policy Rule</h2>
+            </div>
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+              <!-- Name -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
+                <input v-model="policyEdit.name" type="text"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+              <!-- Source -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Source</label>
+                <div class="flex gap-2 mt-1">
+                  <select v-model="policyEdit.source.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="policyEdit.source.type === 'alias'" v-model="policyEdit.source.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="policyEdit.source.type === 'cidr'" v-model="policyEdit.source.value"
+                    type="text"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <label v-if="policyEdit.source.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
+                  <input type="checkbox" v-model="policyEdit.source.invert"> Invert (NOT)
+                </label>
+              </div>
+              <!-- Destination -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Destination</label>
+                <div class="flex gap-2 mt-1">
+                  <select v-model="policyEdit.destination.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="policyEdit.destination.type === 'alias'" v-model="policyEdit.destination.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="policyEdit.destination.type === 'cidr'" v-model="policyEdit.destination.value"
+                    type="text"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <label v-if="policyEdit.destination.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
+                  <input type="checkbox" v-model="policyEdit.destination.invert"> Invert (NOT)
+                </label>
+              </div>
+              <!-- Gateway -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Gateway *</label>
+                <label class="flex items-center gap-2 mt-1 mb-2 text-sm text-gray-600 dark:text-neutral-400">
+                  <input type="checkbox" v-model="policyEdit.useGroup"> Use Gateway Group
+                </label>
+                <select v-if="!policyEdit.useGroup" v-model="policyEdit.gatewayId"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                  <option value="">— select gateway —</option>
+                  <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.gatewayIP }})</option>
+                </select>
+                <select v-else v-model="policyEdit.gatewayGroupId"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                  <option value="">— select group —</option>
+                  <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+              <button @click="showPolicyEdit = false"
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Cancel
+              </button>
+              <button @click="savePolicyEdit()"
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Save
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- ── Add Static Route Modal ──────────────────────────────────── -->
@@ -3019,88 +3166,78 @@
         </div><!-- /Edit NAT Rule Modal -->
 
         <!-- ============================================================== -->
-        <!-- Firewall → Aliases Page                                         -->
+        <!-- ============================================================== -->
+        <!-- Firewall Aliases Page                                          -->
         <!-- ============================================================== -->
         <div v-if="activePage === 'firewall-aliases'" style="display:flex; flex-direction:column; gap:16px;">
-
-          <!-- Toolbar -->
+          <!-- Header -->
           <div class="flex items-center justify-between">
-            <h2 class="text-xl font-medium dark:text-neutral-200">Firewall Aliases</h2>
-            <button @click="showAliasCreate = true"
-              class="bg-blue-600 text-white rounded-lg text-sm font-medium"
+            <h1 class="text-2xl font-bold dark:text-neutral-200">Firewall Aliases</h1>
+            <button @click="showAliasCreate = true; _resetAliasCreate()"
+              class="bg-blue-600 text-white rounded-lg font-medium text-sm transition"
               style="padding:8px 16px;">
-              + New Alias
+              + Add Alias
             </button>
           </div>
-          <p class="text-sm text-gray-500 dark:text-neutral-400">
-            Named sets of IP addresses and networks. Used in Policy Rules and Firewall Rules.
-          </p>
+          <p class="text-sm text-gray-500 dark:text-neutral-400">Named groups of IP addresses or CIDR networks. Can be referenced in Policy Rules and Firewall Rules.</p>
 
           <!-- Loading -->
           <div v-if="aliasesLoading" class="text-gray-500 dark:text-neutral-400 text-sm">Loading...</div>
 
-          <!-- Empty state -->
-          <div v-if="!aliasesLoading && aliases.length === 0"
-            class="text-center text-gray-500 dark:text-neutral-400 rounded-lg"
-            style="padding:40px; border:2px dashed #d1d5db;">
-            No aliases defined.<br>
-            <span class="text-sm">Create aliases to group IPs, networks, or large prefix sets (ipset).</span>
+          <!-- Empty -->
+          <div v-else-if="!aliases.length" class="text-gray-500 dark:text-neutral-400 text-sm" style="padding:24px 0;">
+            No aliases yet. Create one to use in Policy Rules or Firewall Rules.
           </div>
 
-          <!-- Aliases table -->
-          <div v-if="aliases.length > 0" class="rounded-lg overflow-hidden" style="border:1px solid #e5e7eb;">
+          <!-- Table -->
+          <div v-else class="bg-white dark:bg-neutral-700 rounded-lg overflow-hidden" style="border:1px solid #e5e7eb;">
             <table class="w-full text-sm">
-              <thead class="bg-gray-50 dark:bg-neutral-700">
-                <tr>
-                  <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Name</th>
-                  <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Type</th>
-                  <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Entries</th>
-                  <th class="text-left font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Last Updated</th>
-                  <th class="text-right font-medium text-gray-600 dark:text-neutral-300" style="padding:10px 14px;">Actions</th>
+              <thead>
+                <tr class="bg-gray-50 dark:bg-neutral-600 text-gray-500 dark:text-neutral-400 text-xs uppercase">
+                  <th class="text-left font-medium" style="padding:10px 12px;">Name</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Type</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Entries</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Description</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Updated</th>
+                  <th style="padding:10px 12px;"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="alias in aliases" :key="alias.id"
-                  class="border-t dark:border-neutral-600 bg-white dark:bg-neutral-800">
-                  <td style="padding:10px 14px;">
-                    <span class="font-medium dark:text-neutral-200">{{ alias.name }}</span>
-                    <div v-if="alias.description" class="text-xs text-gray-400 dark:text-neutral-500 mt-1">{{ alias.description }}</div>
-                  </td>
-                  <td style="padding:10px 14px;">
-                    <span class="rounded text-xs font-medium"
-                      :style="alias.type === 'ipset'   ? 'background:#fef3c7;color:#92400e;padding:2px 8px;' :
-                              alias.type === 'network' ? 'background:#dbeafe;color:#1d4ed8;padding:2px 8px;' :
-                                                         'background:#f3f4f6;color:#374151;padding:2px 8px;'">
+                  class="dark:border-neutral-600" style="border-top-width:1px;">
+                  <td class="dark:text-neutral-200 font-medium" style="padding:10px 12px;">{{ alias.name }}</td>
+                  <td style="padding:10px 12px;">
+                    <span class="text-xs font-medium rounded-full px-2 py-1"
+                      :class="alias.type === 'ipset' ? 'bg-purple-100 text-purple-700' : alias.type === 'network' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'">
                       {{ alias.type }}
                     </span>
                   </td>
-                  <td style="padding:10px 14px;" class="text-gray-600 dark:text-neutral-400 text-sm">
-                    <span v-if="aliasGeneratingId === alias.id" class="text-blue-500 text-xs">
-                      ⟳ generating...
+                  <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">
+                    <span v-if="alias.type === 'ipset'">
+                      <span v-if="aliasGeneratingId === alias.id" class="text-blue-500">⟳ generating...</span>
+                      <span v-else-if="alias.entryCount > 0">{{ alias.entryCount }} prefixes</span>
+                      <span v-else class="text-gray-400 dark:text-neutral-500 italic">empty — upload or generate</span>
                     </span>
-                    <span v-else>{{ alias.entryCount || 0 }}</span>
+                    <span v-else>{{ (alias.entries || []).length }} entries</span>
                   </td>
-                  <td style="padding:10px 14px;" class="text-xs text-gray-400 dark:text-neutral-500">
-                    {{ alias.lastUpdated ? new Date(alias.lastUpdated).toLocaleString() : '—' }}
+                  <td class="text-gray-500 dark:text-neutral-400 text-xs" style="padding:10px 12px;">{{ alias.description || '—' }}</td>
+                  <td class="text-gray-400 dark:text-neutral-500 text-xs" style="padding:10px 12px;">
+                    {{ alias.lastUpdated ? new Date(alias.lastUpdated).toLocaleDateString() : '—' }}
                   </td>
-                  <td style="padding:10px 14px; text-align:right;">
-                    <div class="flex items-center justify-end gap-2">
-                      <!-- Upload (только для ipset) -->
+                  <td style="padding:10px 12px;">
+                    <div class="flex gap-2 justify-end">
                       <label v-if="alias.type === 'ipset'"
-                        class="rounded text-xs font-medium cursor-pointer"
-                        style="background:#e0e7ff;color:#3730a3;padding:3px 8px;">
+                        class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 cursor-pointer transition">
                         Upload
-                        <input type="file" accept=".txt" style="display:none;"
-                          @change="uploadAliasFile(alias, $event)">
+                        <input type="file" class="hidden" accept=".txt,.csv"
+                          @change="e => uploadAliasFile(alias.id, e.target.files[0])">
                       </label>
                       <button @click="openAliasEdit(alias)"
-                        class="rounded text-xs font-medium"
-                        style="background:#f3f4f6;color:#374151;padding:3px 8px;">
+                        class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 transition">
                         Edit
                       </button>
                       <button @click="deleteAlias(alias)"
-                        class="rounded text-xs font-medium"
-                        style="background:#fee2e2;color:#991b1b;padding:3px 8px;">
+                        class="text-xs bg-red-100 text-red-600 rounded px-2 py-1 transition">
                         Delete
                       </button>
                     </div>
@@ -3109,384 +3246,157 @@
               </tbody>
             </table>
           </div>
-        </div><!-- /firewall-aliases -->
+        </div>
 
         <!-- ── Create Alias Modal ─────────────────────────────────────── -->
-        <div v-if="showAliasCreate"
+        <div v-if="showAliasCreate && activePage === 'firewall-aliases'"
           class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
           style="padding:40px 24px;"
           @click.self="showAliasCreate = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:500px; margin:0 auto;">
-            <!-- Header -->
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
             <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
-              <h2 class="text-xl font-medium dark:text-neutral-200">New Alias</h2>
-            </div>
-            <!-- Body -->
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Name</label>
-                <input v-model="aliasCreate.name" type="text" placeholder="ru_nets"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Type</label>
-                <div class="flex gap-2">
-                  <button v-for="t in ['host','network','ipset']" :key="t"
-                    @click="aliasCreate.type = t"
-                    :class="aliasCreate.type === t ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">{{ t }}</button>
-                </div>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Description</label>
-                <input v-model="aliasCreate.description" type="text" placeholder="Optional description"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-              </div>
-              <!-- host / network: textarea -->
-              <div v-if="aliasCreate.type !== 'ipset'">
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                  {{ aliasCreate.type === 'host' ? 'IP Addresses' : 'Networks (CIDR)' }}
-                  <span class="text-gray-400 font-normal"> — one per line</span>
-                </label>
-                <textarea v-model="aliasCreate.entries" rows="5" placeholder="192.168.72.0/24&#10;10.100.0.0/24"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm font-mono"
-                  style="padding:8px 12px;"></textarea>
-              </div>
-              <!-- ipset: generate source -->
-              <div v-if="aliasCreate.type === 'ipset'">
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Prefix Source</label>
-                <div class="flex gap-2 mb-2">
-                  <button v-for="s in [{v:'country',l:'Country'},{v:'asn',l:'ASN'},{v:'asnList',l:'ASN List'}]" :key="s.v"
-                    @click="aliasCreate.generateSource = s.v"
-                    :class="aliasCreate.generateSource === s.v ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">{{ s.l }}</button>
-                </div>
-                <input v-if="aliasCreate.generateSource === 'country'" v-model="aliasCreate.generateCountry"
-                  type="text" placeholder="RU"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <input v-if="aliasCreate.generateSource === 'asn'" v-model="aliasCreate.generateAsn"
-                  type="text" placeholder="AS12345 or 12345"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <input v-if="aliasCreate.generateSource === 'asnList'" v-model="aliasCreate.generateAsnList"
-                  type="text" placeholder="12345, 20485, 3216"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
-                  Creates the alias first, then starts prefix generation from RIPEstat.
-                </p>
-              </div>
-              <!-- Buttons -->
-              <div class="flex justify-end gap-2" style="margin-top:8px;">
-                <button @click="showAliasCreate = false"
-                  class="rounded-lg text-sm font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200"
-                  style="padding:8px 16px;">Cancel</button>
-                <button @click="createAlias()"
-                  class="rounded-lg text-sm font-medium bg-blue-600 text-white"
-                  style="padding:8px 16px;">
-                  {{ aliasCreate.type === 'ipset' ? 'Create & Generate' : 'Create' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div><!-- /create alias modal -->
-
-        <!-- ── Edit Alias Modal ───────────────────────────────────────── -->
-        <div v-if="showAliasEdit"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
-          @click.self="showAliasEdit = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:500px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
-              <h2 class="text-xl font-medium dark:text-neutral-200">Edit Alias</h2>
-            </div>
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Name</label>
-                <input v-model="aliasEdit.name" type="text"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Description</label>
-                <input v-model="aliasEdit.description" type="text"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-              </div>
-              <div v-if="aliasEdit.type !== 'ipset'">
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                  Entries <span class="text-gray-400 font-normal">— one per line</span>
-                </label>
-                <textarea v-model="aliasEdit.entries" rows="5"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm font-mono"
-                  style="padding:8px 12px;"></textarea>
-              </div>
-              <!-- ipset: re-generate -->
-              <div v-if="aliasEdit.type === 'ipset'">
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Regenerate from RIPEstat</label>
-                <div class="flex gap-2 mb-2">
-                  <button v-for="s in [{v:'country',l:'Country'},{v:'asn',l:'ASN'},{v:'asnList',l:'ASN List'}]" :key="s.v"
-                    @click="aliasEdit.generateSource = s.v"
-                    :class="aliasEdit.generateSource === s.v ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">{{ s.l }}</button>
-                </div>
-                <input v-if="aliasEdit.generateSource === 'country'" v-model="aliasEdit.generateCountry"
-                  type="text" placeholder="RU"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <input v-if="aliasEdit.generateSource === 'asn'" v-model="aliasEdit.generateAsn"
-                  type="text" placeholder="AS12345"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <input v-if="aliasEdit.generateSource === 'asnList'" v-model="aliasEdit.generateAsnList"
-                  type="text" placeholder="12345, 20485"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <button @click="startAliasGenerate(aliasEdit)"
-                  class="mt-2 rounded-lg text-sm font-medium"
-                  style="background:#fef3c7;color:#92400e;padding:8px 16px;">
-                  ⟳ Regenerate
-                </button>
-                <!-- Job status -->
-                <div v-if="aliasGeneratingId === aliasEdit.id && aliasGenerateJobStatus" class="mt-2 text-sm">
-                  <span v-if="aliasGenerateJobStatus.status === 'running'" class="text-blue-500">⟳ Generating...</span>
-                  <span v-if="aliasGenerateJobStatus.status === 'done'" class="text-green-600">
-                    ✓ Done: {{ aliasGenerateJobStatus.entryCount }} prefixes
-                  </span>
-                  <span v-if="aliasGenerateJobStatus.status === 'error'" class="text-red-500">
-                    ✗ {{ aliasGenerateJobStatus.error }}
-                  </span>
-                </div>
-              </div>
-              <div class="flex justify-end gap-2" style="margin-top:8px;">
-                <button @click="showAliasEdit = false"
-                  class="rounded-lg text-sm font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200"
-                  style="padding:8px 16px;">Cancel</button>
-                <button @click="saveAliasEdit()"
-                  class="rounded-lg text-sm font-medium bg-blue-600 text-white"
-                  style="padding:8px 16px;">Save</button>
-              </div>
-            </div>
-          </div>
-        </div><!-- /edit alias modal -->
-
-        <!-- ── Create Policy Rule Modal ───────────────────────────────── -->
-        <div v-if="showPolicyCreate && activePage === 'routing'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
-          @click.self="showPolicyCreate = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:520px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
-              <h2 class="text-xl font-medium dark:text-neutral-200">Add Policy Rule</h2>
+              <h2 class="text-xl font-medium dark:text-neutral-200">Create Alias</h2>
             </div>
             <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
               <!-- Name -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Name</label>
-                <input v-model="policyCreate.name" type="text" placeholder="Non-RU → KZ"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
+                <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
+                <input v-model="aliasCreate.name" type="text" placeholder="e.g. russian_ips"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
               </div>
-              <!-- Source -->
+              <!-- Description -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Source</label>
-                <div class="flex gap-2 mb-2">
-                  <button v-for="t in ['any','alias','cidr']" :key="t"
-                    @click="policyCreate.sourceType = t"
-                    :class="policyCreate.sourceType === t ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">{{ t }}</button>
-                </div>
-                <select v-if="policyCreate.sourceType === 'alias'" v-model="policyCreate.sourceAliasId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select alias...</option>
-                  <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }} ({{ a.type }})</option>
-                </select>
-                <input v-if="policyCreate.sourceType === 'cidr'" v-model="policyCreate.sourceCidr"
-                  type="text" placeholder="192.168.72.0/24"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
+                <label class="text-sm font-medium dark:text-neutral-300">Description</label>
+                <input v-model="aliasCreate.description" type="text" placeholder="Optional"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
               </div>
-              <!-- Destination -->
+              <!-- Type -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Destination</label>
-                <div class="flex gap-2 mb-2">
-                  <button v-for="t in ['any','alias','cidr']" :key="t"
-                    @click="policyCreate.destType = t"
-                    :class="policyCreate.destType === t ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">{{ t }}</button>
-                </div>
-                <select v-if="policyCreate.destType === 'alias'" v-model="policyCreate.destAliasId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select alias...</option>
-                  <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }} ({{ a.type }})</option>
-                </select>
-                <input v-if="policyCreate.destType === 'cidr'" v-model="policyCreate.destCidr"
-                  type="text" placeholder="0.0.0.0/0"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <label v-if="policyCreate.destType !== 'any'" class="flex items-center gap-2 mt-2 text-sm text-gray-700 dark:text-neutral-300">
-                  <input type="checkbox" v-model="policyCreate.destInvert">
-                  Invert (match traffic NOT in this set)
-                </label>
-              </div>
-              <!-- Gateway -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Route via</label>
-                <div class="flex gap-2 mb-2">
-                  <button @click="policyCreate.gatewayType = 'gateway'"
-                    :class="policyCreate.gatewayType === 'gateway' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">Gateway</button>
-                  <button @click="policyCreate.gatewayType = 'group'"
-                    :class="policyCreate.gatewayType === 'group' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">Gateway Group</button>
-                </div>
-                <select v-if="policyCreate.gatewayType === 'gateway'" v-model="policyCreate.gatewayId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select gateway...</option>
-                  <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.interface }})</option>
-                </select>
-                <select v-if="policyCreate.gatewayType === 'group'" v-model="policyCreate.gatewayGroupId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select group...</option>
-                  <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+                <label class="text-sm font-medium dark:text-neutral-300">Type</label>
+                <select v-model="aliasCreate.type"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1">
+                  <option value="host">Host — list of single IP addresses</option>
+                  <option value="network">Network — list of CIDR prefixes</option>
+                  <option value="ipset">ipset — large kernel set (upload file or generate)</option>
                 </select>
               </div>
-              <!-- Priority -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                  Priority <span class="text-gray-400 font-normal">(optional, auto if empty)</span>
-                </label>
-                <input v-model="policyCreate.priority" type="number" min="1" max="32000" placeholder="100"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
+              <!-- Entries (host/network) -->
+              <div v-if="aliasCreate.type !== 'ipset'">
+                <label class="text-sm font-medium dark:text-neutral-300">Entries (one per line)</label>
+                <textarea v-model="aliasCreate.entries" rows="5"
+                  :placeholder="aliasCreate.type === 'host' ? '192.168.1.1\n10.0.0.5' : '10.0.0.0/8\n192.168.0.0/16'"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1 font-mono"></textarea>
               </div>
-              <div class="flex justify-end gap-2" style="margin-top:8px;">
-                <button @click="showPolicyCreate = false"
-                  class="rounded-lg text-sm font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200"
-                  style="padding:8px 16px;">Cancel</button>
-                <button @click="createPolicyRule()"
-                  class="rounded-lg text-sm font-medium bg-blue-600 text-white"
-                  style="padding:8px 16px;">Create</button>
+              <!-- ipset: generate section -->
+              <div v-if="aliasCreate.type === 'ipset'" class="bg-gray-50 dark:bg-neutral-600 rounded-lg" style="padding:12px;">
+                <p class="text-sm font-medium dark:text-neutral-300 mb-2">Generate after creation (optional)</p>
+                <select v-model="aliasCreate.genSource"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mb-2">
+                  <option value="country">By Country</option>
+                  <option value="asn">By ASN</option>
+                  <option value="asn-list">By ASN List</option>
+                </select>
+                <input v-if="aliasCreate.genSource === 'country'" v-model="aliasCreate.genCountry"
+                  type="text" placeholder="RU"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm font-mono" />
+                <input v-if="aliasCreate.genSource === 'asn'" v-model="aliasCreate.genAsn"
+                  type="text" placeholder="AS12345"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm font-mono" />
+                <input v-if="aliasCreate.genSource === 'asn-list'" v-model="aliasCreate.genAsnList"
+                  type="text" placeholder="12345,20485,3216"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm font-mono" />
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Generation runs in background (~30-60s via RIPEstat API)</p>
               </div>
             </div>
+            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+              <button @click="showAliasCreate = false"
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Cancel
+              </button>
+              <button @click="createAlias()"
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Create
+              </button>
+            </div>
           </div>
-        </div><!-- /create policy modal -->
+        </div>
 
-        <!-- ── Edit Policy Rule Modal ─────────────────────────────────── -->
-        <div v-if="showPolicyEdit && activePage === 'routing'"
+        <!-- ── Edit Alias Modal ───────────────────────────────────────── -->
+        <div v-if="showAliasEdit && activePage === 'firewall-aliases'"
           class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
           style="padding:40px 24px;"
-          @click.self="showPolicyEdit = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:520px; margin:0 auto;">
+          @click.self="showAliasEdit = false">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
             <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
-              <h2 class="text-xl font-medium dark:text-neutral-200">Edit Policy Rule</h2>
+              <h2 class="text-xl font-medium dark:text-neutral-200">Edit Alias</h2>
             </div>
             <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+              <!-- Name -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Name</label>
-                <input v-model="policyEdit.name" type="text"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
+                <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
+                <input v-model="aliasEdit.name" type="text"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
               </div>
-              <!-- Source -->
+              <!-- Description -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Source</label>
-                <div class="flex gap-2 mb-2">
-                  <button v-for="t in ['any','alias','cidr']" :key="t"
-                    @click="policyEdit.sourceType = t"
-                    :class="policyEdit.sourceType === t ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">{{ t }}</button>
+                <label class="text-sm font-medium dark:text-neutral-300">Description</label>
+                <input v-model="aliasEdit.description" type="text"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+              <!-- Entries (host/network) -->
+              <div v-if="aliasEdit.type !== 'ipset'">
+                <label class="text-sm font-medium dark:text-neutral-300">Entries (one per line)</label>
+                <textarea v-model="aliasEdit.entries" rows="6"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1 font-mono"></textarea>
+              </div>
+              <!-- ipset: regenerate section -->
+              <div v-if="aliasEdit.type === 'ipset'" class="bg-gray-50 dark:bg-neutral-600 rounded-lg" style="padding:12px;">
+                <p class="text-sm font-medium dark:text-neutral-300 mb-2">Regenerate prefixes</p>
+                <select v-model="aliasEdit.genSource"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mb-2">
+                  <option value="country">By Country</option>
+                  <option value="asn">By ASN</option>
+                  <option value="asn-list">By ASN List</option>
+                </select>
+                <input v-if="aliasEdit.genSource === 'country'" v-model="aliasEdit.genCountry"
+                  type="text" placeholder="RU"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm font-mono mb-2" />
+                <input v-if="aliasEdit.genSource === 'asn'" v-model="aliasEdit.genAsn"
+                  type="text" placeholder="AS12345"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm font-mono mb-2" />
+                <input v-if="aliasEdit.genSource === 'asn-list'" v-model="aliasEdit.genAsnList"
+                  type="text" placeholder="12345,20485,3216"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm font-mono mb-2" />
+                <button @click="startAliasGenerate(aliasEdit)"
+                  :disabled="aliasGeneratingId === aliasEdit.id"
+                  class="bg-purple-600 text-white rounded px-3 py-2 text-sm font-medium transition"
+                  :style="aliasGeneratingId === aliasEdit.id ? 'opacity:0.6;cursor:not-allowed;' : ''">
+                  {{ aliasGeneratingId === aliasEdit.id ? 'Generating...' : 'Generate Now' }}
+                </button>
+                <div v-if="aliasGeneratingId === aliasEdit.id && aliasGenerateJobStatus" class="text-xs text-gray-500 dark:text-neutral-400 mt-1">
+                  Status: {{ aliasGenerateJobStatus.status }}
+                  <span v-if="aliasGenerateJobStatus.entryCount"> — {{ aliasGenerateJobStatus.entryCount }} entries</span>
                 </div>
-                <select v-if="policyEdit.sourceType === 'alias'" v-model="policyEdit.sourceAliasId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select alias...</option>
-                  <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }} ({{ a.type }})</option>
-                </select>
-                <input v-if="policyEdit.sourceType === 'cidr'" v-model="policyEdit.sourceCidr"
-                  type="text" placeholder="192.168.72.0/24"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-              </div>
-              <!-- Destination -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Destination</label>
-                <div class="flex gap-2 mb-2">
-                  <button v-for="t in ['any','alias','cidr']" :key="t"
-                    @click="policyEdit.destType = t"
-                    :class="policyEdit.destType === t ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">{{ t }}</button>
-                </div>
-                <select v-if="policyEdit.destType === 'alias'" v-model="policyEdit.destAliasId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select alias...</option>
-                  <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }} ({{ a.type }})</option>
-                </select>
-                <input v-if="policyEdit.destType === 'cidr'" v-model="policyEdit.destCidr"
-                  type="text" placeholder="0.0.0.0/0"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                <label v-if="policyEdit.destType !== 'any'" class="flex items-center gap-2 mt-2 text-sm text-gray-700 dark:text-neutral-300">
-                  <input type="checkbox" v-model="policyEdit.destInvert">
-                  Invert (match traffic NOT in this set)
-                </label>
-              </div>
-              <!-- Gateway -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Route via</label>
-                <div class="flex gap-2 mb-2">
-                  <button @click="policyEdit.gatewayType = 'gateway'"
-                    :class="policyEdit.gatewayType === 'gateway' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">Gateway</button>
-                  <button @click="policyEdit.gatewayType = 'group'"
-                    :class="policyEdit.gatewayType === 'group' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-                    class="px-3 py-1 rounded text-sm font-medium">Gateway Group</button>
-                </div>
-                <select v-if="policyEdit.gatewayType === 'gateway'" v-model="policyEdit.gatewayId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select gateway...</option>
-                  <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.interface }})</option>
-                </select>
-                <select v-if="policyEdit.gatewayType === 'group'" v-model="policyEdit.gatewayGroupId"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-                  <option value="">Select group...</option>
-                  <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
-                </select>
-              </div>
-              <!-- Priority -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Priority</label>
-                <input v-model="policyEdit.priority" type="number" min="1" max="32000"
-                  class="w-full rounded-lg border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-white text-sm"
-                  style="padding:8px 12px;">
-              </div>
-              <div class="flex justify-end gap-2" style="margin-top:8px;">
-                <button @click="showPolicyEdit = false"
-                  class="rounded-lg text-sm font-medium bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200"
-                  style="padding:8px 16px;">Cancel</button>
-                <button @click="savePolicyEdit()"
-                  class="rounded-lg text-sm font-medium bg-blue-600 text-white"
-                  style="padding:8px 16px;">Save</button>
               </div>
             </div>
+            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+              <button @click="showAliasEdit = false"
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Cancel
+              </button>
+              <button @click="saveAliasEdit()"
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Save
+              </button>
+            </div>
           </div>
-        </div><!-- /edit policy modal -->
+        </div>
 
         <!-- ============================================================== -->
-        <!-- Firewall Rules Page (placeholder)                               -->
+        <!-- Firewall Rules Page (placeholder)                              -->
         <!-- ============================================================== -->
         <div v-if="activePage === 'firewall'" class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
-          <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Firewall</h2>
+          <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Firewall Rules</h2>
           <p class="text-lg">Coming soon</p>
         </div>
 
@@ -3607,132 +3517,6 @@
                   {{ templateEditTarget ? 'Save Changes' : 'Create Template' }}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Generate AWG2 Profile Modal -->
-        <div v-if="showGenerateModal"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
-          @click.self="showGenerateModal = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
-
-            <!-- Header -->
-            <div style="padding:24px 24px 16px; border-bottom:1px solid #e5e7eb;" class="dark:border-neutral-600">
-              <div class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold dark:text-neutral-100">⚡ Generate AWG2 Profile</h2>
-                <button @click="showGenerateModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-200">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
-                </button>
-              </div>
-              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">
-                Port of <a href="https://github.com/JohnnyVBut/AmneziaWG-Architect" target="_blank" class="underline">AmneziaWG-Architect</a>. Generates obfuscation parameters (H1-H4, S1-S4, Jc/Jmin/Jmax, I1-I5 CPS signatures).
-              </p>
-            </div>
-
-            <!-- Form -->
-            <div class="dark:text-neutral-200" style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
-
-              <!-- Protocol Profile -->
-              <div>
-                <label class="block text-sm font-medium mb-1">Protocol Profile</label>
-                <select v-model="generateForm.profile"
-                  class="w-full border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                  <option value="random">Random (any profile)</option>
-                  <option value="quic_initial">QUIC Initial (RFC 9000)</option>
-                  <option value="quic_0rtt">QUIC 0-RTT</option>
-                  <option value="tls_client_hello">TLS 1.3 ClientHello</option>
-                  <option value="dtls">DTLS 1.2 ClientHello</option>
-                  <option value="http3">HTTP/3 over QUIC</option>
-                  <option value="sip">SIP REGISTER</option>
-                  <option value="wireguard_noise">Noise_IK (WireGuard)</option>
-                </select>
-              </div>
-
-              <!-- Intensity -->
-              <div>
-                <label class="block text-sm font-medium mb-1">Intensity</label>
-                <div class="flex gap-2">
-                  <button v-for="lvl in ['low','medium','high']" :key="lvl"
-                    @click="generateForm.intensity = lvl"
-                    :class="generateForm.intensity === lvl
-                      ? 'bg-yellow-500 text-white border-yellow-500'
-                      : 'border-gray-300 dark:border-neutral-500 dark:text-neutral-300'"
-                    class="flex-1 py-2 text-sm font-medium rounded border capitalize transition">
-                    {{ lvl }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Custom host -->
-              <div>
-                <label class="block text-sm font-medium mb-1">Custom Host <span class="text-gray-400 font-normal">(optional, for SNI)</span></label>
-                <input v-model="generateForm.host" type="text" placeholder="e.g. yandex.ru"
-                  class="w-full border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-neutral-100 rounded px-3 py-2 text-sm"/>
-                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Leave empty for a random host from the pool.</p>
-              </div>
-
-              <!-- Generate button -->
-              <button @click="generateParams()" :disabled="generatingParams"
-                class="w-full py-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-60 text-white rounded font-medium text-sm transition flex items-center justify-center gap-2">
-                <svg v-if="generatingParams" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                </svg>
-                <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                </svg>
-                {{ generatingParams ? 'Generating...' : 'Generate' }}
-              </button>
-
-              <!-- Preview -->
-              <div v-if="generatedParams" class="bg-gray-50 dark:bg-neutral-800 rounded p-3 text-xs font-mono" style="display:flex; flex-direction:column; gap:6px;">
-                <div class="text-gray-500 dark:text-neutral-400 font-sans text-xs font-medium mb-1">
-                  Preview — Profile: <span class="text-yellow-600 dark:text-yellow-400">{{ generatedParams.profile }}</span>
-                </div>
-                <div class="flex flex-wrap gap-x-4 gap-y-1">
-                  <span><span class="text-gray-400">Jc=</span>{{ generatedParams.jc }}</span>
-                  <span><span class="text-gray-400">Jmin=</span>{{ generatedParams.jmin }}</span>
-                  <span><span class="text-gray-400">Jmax=</span>{{ generatedParams.jmax }}</span>
-                </div>
-                <div class="flex flex-wrap gap-x-4 gap-y-1">
-                  <span><span class="text-gray-400">S1=</span>{{ generatedParams.s1 }}</span>
-                  <span><span class="text-gray-400">S2=</span>{{ generatedParams.s2 }}</span>
-                  <span><span class="text-gray-400">S3=</span>{{ generatedParams.s3 }}</span>
-                  <span><span class="text-gray-400">S4=</span>{{ generatedParams.s4 }}</span>
-                </div>
-                <div style="display:flex; flex-direction:column; gap:2px;">
-                  <span class="truncate"><span class="text-gray-400">H1=</span>{{ generatedParams.h1 }}</span>
-                  <span class="truncate"><span class="text-gray-400">H2=</span>{{ generatedParams.h2 }}</span>
-                  <span class="truncate"><span class="text-gray-400">H3=</span>{{ generatedParams.h3 }}</span>
-                  <span class="truncate"><span class="text-gray-400">H4=</span>{{ generatedParams.h4 }}</span>
-                </div>
-                <div class="break-all"><span class="text-gray-400">I1=</span>{{ generatedParams.i1 }}</div>
-              </div>
-
-              <!-- Save section (shown after generation) -->
-              <div v-if="generatedParams" class="dark:border-neutral-600" style="border-top:1px solid #e5e7eb; padding-top:16px; display:flex; flex-direction:column; gap:10px;">
-                <input v-model="generateForm.saveName" type="text" placeholder="Template name..."
-                  class="w-full border border-gray-300 dark:border-neutral-500 dark:bg-neutral-600 dark:text-neutral-100 rounded px-3 py-2 text-sm"/>
-                <div class="flex gap-2">
-                  <button @click="generateParams()" :disabled="generatingParams"
-                    class="flex-1 py-2 border border-gray-300 dark:border-neutral-500 dark:text-neutral-300 rounded text-sm transition">
-                    Regenerate
-                  </button>
-                  <button @click="useGeneratedInForm()"
-                    class="flex-1 py-2 border border-purple-400 text-purple-600 dark:text-purple-400 dark:border-purple-500 rounded text-sm transition">
-                    Edit &amp; Save
-                  </button>
-                  <button @click="saveGeneratedTemplate()" :disabled="!generateForm.saveName.trim()"
-                    class="flex-1 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white rounded text-sm font-medium transition">
-                    Save
-                  </button>
-                </div>
-              </div>
-
             </div>
           </div>
         </div>
