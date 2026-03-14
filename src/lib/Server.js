@@ -16,6 +16,7 @@ const GatewayManager = require('./GatewayManager');
 const RouteManager = require('./RouteManager');
 const NatManager = require('./NatManager');
 const Settings = require('./Settings');
+const AwgParamGenerator = require('./AwgParamGenerator');
 const Util = require('./Util');
 
 const {
@@ -1157,6 +1158,43 @@ module.exports = class Server {
         const settings = await Settings.getInstance();
         const awgSettings = settings.applyTemplate(id);
         return { settings: awgSettings };
+      }))
+
+      /**
+       * POST /api/templates/generate
+       * Генерировать AWG 2.0 параметры обфускации (порт AmneziaWG-Architect).
+       * Body: { profile?, intensity?, host?, iterCount?, jc?, saveName? }
+       *   profile:    'random' | 'quic_initial' | 'quic_0rtt' | 'tls_client_hello'
+       *               | 'dtls' | 'http3' | 'sip' | 'wireguard_noise'
+       *   intensity:  'low' | 'medium' | 'high'
+       *   host:       string — кастомный хост для SNI (опционально)
+       *   iterCount:  number — счётчик неудачных попыток (0 = базовый)
+       *   jc:         number — базовое Jc (0-10, default 6)
+       *   saveName:   string — если передан, сразу сохраняет как шаблон с этим именем
+       * Returns: { params, profiles } | { params, profiles, template } если saveName
+       */
+      .post('/api/templates/generate', defineEventHandler(async (event) => {
+        const body = await readBody(event).catch(() => ({}));
+        const params = AwgParamGenerator.generate({
+          profile:    body.profile    || 'random',
+          intensity:  body.intensity  || 'medium',
+          host:       body.host       || '',
+          iterCount:  Number(body.iterCount) || 0,
+          jc:         Number(body.jc) || 6,
+        });
+
+        const profiles = AwgParamGenerator.PROFILES;
+
+        if (body.saveName) {
+          const settings = await Settings.getInstance();
+          const template = await settings.createTemplate({
+            name: body.saveName,
+            ...params,
+          });
+          return { params, profiles, template };
+        }
+
+        return { params, profiles };
       }))
 
       // ========================================================================

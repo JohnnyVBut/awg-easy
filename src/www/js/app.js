@@ -199,6 +199,18 @@ new Vue({
       i1: '', i2: '', i3: '', i4: '', i5: '',
     },
 
+    // Generate modal
+    showGenerateModal: false,
+    generateForm: {
+      profile: 'random',
+      intensity: 'medium',
+      host: '',
+      saveName: '',
+    },
+    generatedParams: null,   // preview результата
+    generatingParams: false, // loading indicator
+    generateProfiles: [],    // список профилей с сервера
+
     // Gateways
     gateways: [],
     gatewayGroups: [],
@@ -1978,6 +1990,67 @@ new Vue({
         }
       };
       input.click();
+    },
+
+    // ── Generate modal ────────────────────────────────────────────────────────
+
+    openGenerateModal() {
+      this.generateForm = { profile: 'random', intensity: 'medium', host: '', saveName: '' };
+      this.generatedParams = null;
+      this.showGenerateModal = true;
+    },
+
+    async generateParams() {
+      this.generatingParams = true;
+      try {
+        const res = await this.api.generateTemplate({
+          profile:   this.generateForm.profile,
+          intensity: this.generateForm.intensity,
+          host:      this.generateForm.host || undefined,
+        });
+        this.generatedParams = res.params;
+        if (!this.generateProfiles.length && res.profiles) {
+          this.generateProfiles = res.profiles;
+        }
+      } catch (err) {
+        this.showToast(`Generate failed: ${err.message}`, 'error');
+      } finally {
+        this.generatingParams = false;
+      }
+    },
+
+    async saveGeneratedTemplate() {
+      if (!this.generatedParams) return;
+      const name = this.generateForm.saveName.trim();
+      if (!name) {
+        this.showToast('Enter a template name before saving', 'error');
+        return;
+      }
+      try {
+        await this.api.createTemplate({ name, ...this.generatedParams });
+        await this.loadSettings();
+        this.showGenerateModal = false;
+        this.showToast(`Profile "${name}" saved`, 'success');
+      } catch (err) {
+        this.showToast(`Save failed: ${err.message}`, 'error');
+      }
+    },
+
+    useGeneratedInForm() {
+      if (!this.generatedParams) return;
+      const p = this.generatedParams;
+      this.templateForm = {
+        name: this.generateForm.saveName || '',
+        isDefault: false,
+        jc: p.jc, jmin: p.jmin, jmax: p.jmax,
+        s1: p.s1, s2: p.s2, s3: p.s3, s4: p.s4,
+        h1: p.h1, h2: p.h2, h3: p.h3, h4: p.h4,
+        i1: p.i1 || '', i2: p.i2 || '', i3: p.i3 || '',
+        i4: p.i4 || '', i5: p.i5 || '',
+      };
+      this.templateEditTarget = null;
+      this.showGenerateModal = false;
+      this.showTemplateModal = true;
     },
 
     /**

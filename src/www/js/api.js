@@ -277,6 +277,25 @@ class API {
     });
   }
 
+  /**
+   * generateTemplate — сгенерировать AWG 2.0 параметры (порт AmneziaWG-Architect).
+   * @param {object} opts
+   * @param {string} [opts.profile]    — профиль CPS ('random', 'quic_initial', 'tls_client_hello', ...)
+   * @param {string} [opts.intensity]  — интенсивность ('low', 'medium', 'high')
+   * @param {string} [opts.host]       — кастомный хост для SNI
+   * @param {number} [opts.iterCount]  — счётчик попыток
+   * @param {number} [opts.jc]         — базовое Jc
+   * @param {string} [opts.saveName]   — если задан, сохраняет как шаблон
+   * @returns {{ params, profiles[, template] }}
+   */
+  async generateTemplate({ profile, intensity, host, iterCount, jc, saveName } = {}) {
+    return this.call({
+      method: 'post',
+      path: '/templates/generate',
+      body: { profile, intensity, host, iterCount, jc, saveName },
+    });
+  }
+
   // ============================================================
   // Tunnel Interfaces API
   // ============================================================

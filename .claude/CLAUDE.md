@@ -355,6 +355,49 @@ await rm.reapplyForDevice(id).catch(err => debug(`reapplyForDevice(${id}) failed
 // Маршруты в RouteManager.init() — применяются до того как интерфейс существует
 ```
 
+### FIX-14: NAT rules — идемпотентность через `iptables -C` (deduplication)
+**Файл:** `src/lib/NatManager.js` → метод `_applyRule()`
+**Причина:** При рестарте контейнера `--network host` → iptables-цепочки сохраняются в ядре.
+Повторный `iptables-nft -t nat -A POSTROUTING ...` добавлял дублирующее правило.
+Счётчики пакетов/байт у дублей обнулялись и путали статистику.
+
+```javascript
+// ПРАВИЛЬНО — проверка перед добавлением:
+async _applyRule(rule) {
+  const cmd = this._buildIptablesCmd(rule);
+  // -C = check: exit 0 если правило есть, exit 1 если нет
+  const exists = await Util.exec(cmd.replace(' -A ', ' -C '), { log: false })
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    await Util.exec(cmd); // добавляем только если нет
+  }
+}
+// НЕПРАВИЛЬНО: всегда -A POSTROUTING без проверки → дубли при рестарте
+```
+
+**Важно:** `-C` проверяет точное соответствие правила (source, target, interface).
+Если правило изменилось (например, другой outInterface) — `-C` вернёт false → `-A` добавит новое.
+Старое правило при этом останется — нужен явный `-D` при update/delete.
+
+### FIX-15: Ошибки `ip route` пробрасываются как HTTP 400 с деталью из stderr
+**Файл:** `src/lib/RouteManager.js` → методы `addRoute()`, `toggleRoute(enable=true)`
+**Причина:** Если `ip route add` падает (неверный prefix, шлюз недоступен, неверный интерфейс),
+`childProcess.exec` бросает ошибку с `err.stderr` = сообщение из ядра.
+Без обработки h3 возвращал 500 "Internal Server Error" — toast в UI был бесполезным.
+
+```javascript
+// ПРАВИЛЬНО — в addRoute() и toggleRoute():
+try {
+  await this._kernelAdd(route);
+} catch (err) {
+  const detail = (err.stderr || err.message || '').trim();
+  throw createError({ status: 400, message: `ip route: ${detail}` });
+}
+// Frontend toast уже использует err.message — изменений не нужно.
+// НЕПРАВИЛЬНО: пробрасывать ошибку без обёртки → 500 вместо 400
+```
+
 ---
 
 ## Архитектура проекта
@@ -476,14 +519,33 @@ DELETE /api/nat/rules/:id         ← удалить правило
 | `dfc34c8` | feature/kernel-module | fix: toJSON() missing settings + api.js json error + Server.js try-catch |
 | `1579be6` | feature/kernel-module | fix: uppercase HTTP methods in api.js (Node.js 22 llhttp rejects lowercase) |
 | `d75d7d5` | feature/kernel-module | feat(ui): toast notification system — replace all alert() with toasts |
-| (pending) | feature/kernel-module | feat: NAT page — Outbound Source NAT CRUD (NatManager, API, UI) |
+| `a0a41bf` | feature/kernel-module | feat: NAT page — Outbound Source NAT CRUD (NatManager, API, UI) |
+| `09df40e` | feature/kernel-module | fix: RouteManager eager init — static routes survive container restart |
+| `8f53a48` | feature/kernel-module | fix: static routes persist after restart + toggleRoute 500 fix + reapplyForDevice() |
+| `97d64ff` | feature/kernel-module | fix: routes restored correctly after restart (FIX-13 v3 — тройной баг) |
+| `f085bfa` | feature/kernel-module | fix(routing): ip route kernel errors propagated as HTTP 400 with detail |
+| `d40d56b` | feature/kernel-module | fix: NAT rule deduplication via iptables -C check, preserves packet counters |
+| `47e91bf` | feature/kernel-module | fix: NAT rules deduplicated on container restart (idempotent _applyRule) |
+| `25948d6` | feature/kernel-module | chore: prefixes.py — вспомогательный скрипт агрегации префиксов |
+| (pending) | feature/kernel-module | feat: AWG2 parameter generator — порт AmneziaWG-Architect (AwgParamGenerator.js + API + UI) |
 
 ---
 
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `d75d7d5` + NAT feature (не закоммичено)
+**Последний коммит:** `25948d6` (prefixes.py) + AWG generator (не закоммичено)
+
+**Что закоммичено и работает:**
+- NAT: CRUD правил, deduplication (-C check), idempotent _applyRule при рестарте
+- Routing: static routes persist after container restart (FIX-13 v3), HTTP 400 с деталями ошибки kernel
+- Toast-уведомления, uppercase HTTP methods, ip route без -j
+
+**AWG Generator (в работе):**
+- `src/lib/AwgParamGenerator.js` — полный порт AmneziaWG-Architect logic
+- Генерирует: Jc/Jmin/Jmax, S1-S4, H1-H4, I1-I5 (7 CPS-профилей)
+- API: `POST /api/templates/generate` — generate + optional save
+- UI: кнопка "Generate" в Settings > AWG2 Templates + модал с профилем/intensity/host/preview
 
 ---
 
@@ -503,16 +565,20 @@ DELETE /api/nat/rules/:id         ← удалить правило
 | RouteManager: getKernelRoutes (text parse) | ✅ TESTED | ip route show (без -j), работает на всех ядрах |
 | RouteManager: getRoutingTables (ip rule show) | ✅ TESTED | обнаруживает хостовые таблицы (table 100 vpn_kz) |
 | RouteManager: testRoute (text parse) | ✅ | ip route get, без -j |
-| RouteManager: addRoute/deleteRoute/toggleRoute | ✅ | персистентность в routes.json |
+| RouteManager: addRoute/deleteRoute/toggleRoute | ✅ | персистентность в routes.json, HTTP 400 с деталью ошибки |
+| RouteManager: restoreAll() + reapplyForDevice() | ✅ | маршруты восстанавливаются после рестарта контейнера |
 | Routing API: GET /api/routing/table | ✅ | kernel routes по таблице |
 | Routing API: GET /api/routing/tables | ✅ | список таблиц |
 | Routing API: GET /api/routing/test | ✅ | route get |
 | Routing API: GET/POST/PATCH/DELETE /api/routing/routes | ✅ | static routes CRUD |
 | NatManager: addRule/updateRule/deleteRule/toggleRule | ✅ | персистентность в nat-rules.json |
+| NatManager: idempotent _applyRule (-C check) | ✅ | дубли не создаются при рестарте контейнера |
 | NatManager: getNetworkInterfaces | ✅ | ip -o link show (без -j, text parse) |
 | NatManager: eager init в Server constructor | ✅ | правила применяются при старте контейнера |
 | NAT API: GET /api/nat/interfaces | ✅ | список интерфейсов хоста |
 | NAT API: GET/POST/PATCH/DELETE /api/nat/rules | ✅ | CRUD правил, toggle через PATCH {enabled} |
+| AwgParamGenerator: generate() | ✅ | Jc/Jmin/Jmax + S1-S4 + H1-H4 + I1-I5 (7 CPS-профилей) |
+| Templates API: POST /api/templates/generate | ✅ | генерация + опциональное сохранение (saveName) |
 
 ### ✅ Что работает — Frontend
 
@@ -546,6 +612,9 @@ DELETE /api/nat/rules/:id         ← удалить правило
 | NAT: Edit Rule modal | ✅ | |
 | NAT: Port Forwarding tab | ⏳ | placeholder "Coming soon" |
 | Gateways / Firewall | ⏳ | placeholder "Coming soon" |
+| Settings: "Generate" кнопка (⚡) | ✅ | модал: профиль + intensity + host + preview + save |
+| Generate modal: 7 CPS-профилей | ✅ | QUIC Initial/0-RTT, TLS 1.3, DTLS, HTTP/3, SIP, Noise_IK |
+| Generate modal: Edit & Save | ✅ | переносит params в templateForm → стандартный template modal |
 
 ### ❌ Что не реализовано
 
