@@ -31,10 +31,15 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
-# Switch to Yandex mirror + install packages in one layer (faster build, smaller image).
+# Override Alpine repos with a fast mirror (directly overwrite — sed may silently fail
+# if the base image uses a different URL format or protocol).
+# Alternatives to try if slow: mirrors.tuna.tsinghua.edu.cn | mirror.yandex.ru/mirrors/alpine
+# Test on server: curl -sw "%{time_total}\n" -o /dev/null https://MIRROR/alpine/latest-stable/main/x86_64/APKINDEX.tar.gz
 # iptables-legacy and dpkg NOT needed: all iptables calls use iptables-nft directly (FIX-1).
 # libstdc++ + libgcc required by Node 22 binary (dynamically linked against C++ stdlib).
-RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirror.yandex.ru/mirrors|g' /etc/apk/repositories && \
+RUN ALPINE_VER=$(cat /etc/alpine-release | cut -d. -f1,2) && \
+    printf 'https://mirrors.aliyun.com/alpine/v%s/main\nhttps://mirrors.aliyun.com/alpine/v%s/community\n' \
+        "$ALPINE_VER" "$ALPINE_VER" > /etc/apk/repositories && \
     apk add --no-cache \
     dumb-init \
     iptables \
