@@ -1,321 +1,251 @@
 'use strict';
 
-const fs      = require('fs').promises;
-const fss     = require('fs');
-const path    = require('path');
-const { spawn } = require('child_process');
-const Util    = require('./Util');
-const debug   = require('debug')('awg:IpsetManager');
+const fs = require('fs');
+const path = require('path');
+const { promisify } = require('util');
+const childProcess = require('child_process');
+const crypto = require('crypto');
+const debug = require('debug')('IpsetManager');
 
-const IPSETS_DIR    = '/etc/wireguard/data/ipsets';
-const PREFIXES_PY   = path.join(__dirname, '../../prefixes.py');
+const DATA_DIR = '/etc/wireguard/data/ipsets';
+const PREFIXES_SCRIPT = path.join(__dirname, '../../prefixes.py');
+
+let instance = null;
 
 /**
- * IpsetManager — управление kernel ipset-ами.
- *
- * Отвечает за kernel-уровень: create / destroy / load / save / restore ipset-ов.
- * Метаданные (name, description, generatorOpts и т.д.) хранит AliasManager.
- *
- * Персистентность:
- *   /etc/wireguard/data/ipsets/<name>.save  — формат `ipset save`, восстанавливается через `ipset restore`
- *
- * Используемые команды:
- *   ipset create <name> hash:net family inet -exist
- *   ipset destroy <name>
- *   ipset restore -! < <file>          (-! = ignore errors on duplicates)
- *   ipset save <name>                  → записывается в <name>.save
- *   ipset list -n                      → список имён в ядре
- *   ipset list <name> | grep -c '^'    → количество строк (включая заголовок)
- *
- * Генерация через prefixes.py:
- *   python3 prefixes.py (-c CC | -a ASN | --asn-list ...) -o <tmpfile> --quiet
- *   Затем loadFromFile → saveSet.
- *   Долгий процесс (10-60 сек) → результат через job-систему (Map jobId → Promise).
+ * IpsetManager — manages kernel ipsets for firewall aliases.
+ * Ipsets are persisted to disk (ipset save) and restored on container restart.
  */
 class IpsetManager {
-
   constructor() {
-    /**
-     * Активные generation jobs.
-     * Map<jobId, { status:'running'|'done'|'error', entryCount?:number, error?:string }>
-     */
-    this._jobs = new Map();
+    this._jobs = new Map(); // jobId → { status, entryCount?, error? }
+    this._initialized = false;
   }
 
-  // ─── Lifecycle ─────────────────────────────────────────────────────────────
+  static async getInstance() {
+    if (!instance) {
+      instance = new IpsetManager();
+      await instance.init();
+    }
+    return instance;
+  }
 
-  /**
-   * Инициализация: создать директорию + восстановить все сохранённые ipset-ы из .save файлов.
-   */
   async init() {
-    debug('Initializing IpsetManager...');
-    await fs.mkdir(IPSETS_DIR, { recursive: true });
-    await this.restoreAll();
-    debug('IpsetManager ready');
+    if (this._initialized) return;
+    this._initialized = true;
+    debug('Initializing IpsetManager');
+
+    try {
+      await fs.promises.mkdir(DATA_DIR, { recursive: true });
+      await this.restoreAll();
+      debug('IpsetManager initialized');
+    } catch (err) {
+      debug('IpsetManager init error:', err.message);
+    }
   }
 
-  // ─── Kernel operations ─────────────────────────────────────────────────────
+  /**
+   * Restore all saved ipsets from disk on startup.
+   */
+  async restoreAll() {
+    let files;
+    try {
+      files = await fs.promises.readdir(DATA_DIR);
+    } catch (err) {
+      debug('restoreAll: cannot read dir:', err.message);
+      return;
+    }
+
+    const saveFiles = files.filter(f => f.endsWith('.save'));
+    for (const file of saveFiles) {
+      const filePath = path.join(DATA_DIR, file);
+      try {
+        await this._exec(`ipset restore -! < ${filePath}`);
+        debug(`Restored ipset from ${file}`);
+      } catch (err) {
+        debug(`Failed to restore ${file}: ${err.message}`);
+      }
+    }
+  }
 
   /**
-   * Создать ipset в ядре (hash:net, IPv4).
-   * Флаг -exist: не падать если уже существует.
-   *
-   * @param {string} name - Имя ipset (валидируется: [a-zA-Z0-9_-])
+   * Create an ipset (idempotent via -exist).
+   * @param {string} name
    */
   async createSet(name) {
     this._validateName(name);
-    await Util.exec(`ipset create ${name} hash:net family inet -exist`, { timeout: 10000 });
-    debug(`ipset created: ${name}`);
+    await this._exec(`ipset create ${name} hash:net family inet -exist`);
+    debug(`Created set: ${name}`);
   }
 
   /**
-   * Удалить ipset из ядра и стереть .save файл.
-   *
+   * Destroy an ipset and remove its save file.
    * @param {string} name
    */
   async destroySet(name) {
     this._validateName(name);
     try {
-      await Util.exec(`ipset destroy ${name}`, { timeout: 10000 });
-      debug(`ipset destroyed: ${name}`);
+      await this._exec(`ipset destroy ${name}`);
+      debug(`Destroyed set: ${name}`);
     } catch (err) {
-      // Если не существовало в ядре — не критично
-      debug(`ipset destroy ${name}: ${err.message}`);
+      debug(`destroySet ${name}: ${err.message}`);
     }
-    // Удалить .save файл
-    const savePath = this._savePath(name);
-    await fs.unlink(savePath).catch(() => {});
-    debug(`ipset save file removed: ${savePath}`);
+    const saveFile = path.join(DATA_DIR, `${name}.save`);
+    try {
+      await fs.promises.unlink(saveFile);
+    } catch (_) {}
   }
 
   /**
-   * Загрузить префиксы из txt-файла (один CIDR/IP на строку) в ipset.
-   * Сначала создаёт новый set с временным именем, затем атомарно заменяет через `ipset swap`.
-   *
-   * @param {string} name     - Имя целевого ipset
-   * @param {string} filePath - Путь к txt-файлу с CIDR-ами
-   * @returns {Promise<number>} - количество загруженных записей
+   * Load prefixes from a plain-text file (one CIDR per line) into an ipset.
+   * Uses atomic swap: fill tmp set → swap with live set.
+   * @param {string} name - target ipset name
+   * @param {string} filePath - path to file with CIDRs
+   * @returns {number} number of entries loaded
    */
   async loadFromFile(name, filePath) {
     this._validateName(name);
-
     const tmpName = `${name}_tmp`;
 
-    // Убедиться что целевой set существует
-    await this.createSet(name);
-
-    // Создать временный set
-    await Util.exec(`ipset create ${tmpName} hash:net family inet -exist`, { timeout: 10000 });
-
     try {
-      // Сгенерировать restore-команды из txt-файла
-      const content = await fs.readFile(filePath, 'utf8');
-      const lines   = content.split('\n').map(l => l.trim()).filter(Boolean);
+      // Create or recreate tmp set
+      await this._exec(`ipset destroy ${tmpName} 2>/dev/null || true`);
+      await this._exec(`ipset create ${tmpName} hash:net family inet -exist`);
 
-      if (lines.length === 0) {
-        throw new Error('Prefix file is empty');
+      // Read lines and add to tmp set
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      const lines = content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+
+      // Build restore script for batch add (much faster than individual adds)
+      const restoreLines = [`create ${tmpName} hash:net family inet -exist`];
+      for (const cidr of lines) {
+        restoreLines.push(`add ${tmpName} ${cidr} -exist`);
       }
+      const restoreScript = restoreLines.join('\n') + '\n';
 
-      // Построить restore-данные для временного set
-      const restoreLines = [
-        `create ${tmpName} hash:net family inet -exist`,
-        ...lines.map(l => `add ${tmpName} ${l}`),
-      ].join('\n') + '\n';
+      // Write to temp file and restore
+      const tmpScript = path.join(DATA_DIR, `${name}_restore.tmp`);
+      await fs.promises.writeFile(tmpScript, restoreScript, 'utf8');
+      await this._exec(`ipset restore -! < ${tmpScript}`);
+      await fs.promises.unlink(tmpScript).catch(() => {});
 
-      const tmpRestorePath = `${filePath}.restore`;
-      await fs.writeFile(tmpRestorePath, restoreLines);
+      // Ensure target set exists before swap
+      await this._exec(`ipset create ${name} hash:net family inet -exist`);
 
-      // Загрузить в ядро (flush tmpName + add записи)
-      await Util.exec(`ipset flush ${tmpName}`, { timeout: 10000 });
-      await Util.exec(`ipset restore -! < ${tmpRestorePath}`, { timeout: 120000 });
-      await fs.unlink(tmpRestorePath).catch(() => {});
+      // Atomic swap
+      await this._exec(`ipset swap ${tmpName} ${name}`);
+      await this._exec(`ipset destroy ${tmpName} 2>/dev/null || true`);
 
-      // Атомарная замена: swap tmp → name (ядро меняет содержимое без прерывания трафика)
-      await Util.exec(`ipset swap ${tmpName} ${name}`, { timeout: 10000 });
-
-      debug(`ipset ${name}: loaded ${lines.length} entries from ${filePath}`);
-      return lines.length;
-
-    } finally {
-      // Всегда удаляем временный set
-      await Util.exec(`ipset destroy ${tmpName}`, { timeout: 10000 }).catch(() => {});
+      const entryCount = lines.length;
+      debug(`Loaded ${entryCount} entries into ${name}`);
+      return entryCount;
+    } catch (err) {
+      // Cleanup on error
+      await this._exec(`ipset destroy ${tmpName} 2>/dev/null || true`).catch(() => {});
+      throw err;
     }
   }
 
   /**
-   * Сохранить ipset в .save файл (для восстановления после перезапуска контейнера).
-   *
+   * Save an ipset to disk for persistence across container restarts.
    * @param {string} name
    */
   async saveSet(name) {
     this._validateName(name);
-    const savePath = this._savePath(name);
-    // ipset save <name> пишет в stdout — перенаправляем в файл через shell
-    await Util.exec(`ipset save ${name} > ${savePath}`, { timeout: 30000 });
-    debug(`ipset ${name} saved to ${savePath}`);
+    const saveFile = path.join(DATA_DIR, `${name}.save`);
+    await this._exec(`ipset save ${name} > ${saveFile}`);
+    debug(`Saved ipset ${name} to ${saveFile}`);
   }
 
   /**
-   * Восстановить один ipset из .save файла.
-   *
+   * Get entry count of an ipset.
    * @param {string} name
+   * @returns {number}
    */
-  async restoreSet(name) {
-    this._validateName(name);
-    const savePath = this._savePath(name);
+  async getEntryCount(name) {
     try {
-      await fs.access(savePath);
-    } catch {
-      debug(`restoreSet: no save file for ${name}, skipping`);
-      return;
-    }
-    await Util.exec(`ipset restore -! < ${savePath}`, { timeout: 120000 });
-    debug(`ipset ${name} restored from ${savePath}`);
-  }
-
-  /**
-   * Восстановить все сохранённые ipset-ы из директории IPSETS_DIR.
-   * Вызывается при init().
-   */
-  async restoreAll() {
-    let files;
-    try {
-      files = await fs.readdir(IPSETS_DIR);
-    } catch {
-      return;
-    }
-    const saveFiles = files.filter(f => f.endsWith('.save'));
-    debug(`Restoring ${saveFiles.length} ipset(s)...`);
-    for (const f of saveFiles) {
-      const name = f.replace('.save', '');
-      try {
-        await Util.exec(`ipset restore -! < ${path.join(IPSETS_DIR, f)}`, { timeout: 120000 });
-        debug(`Restored ipset: ${name}`);
-      } catch (err) {
-        debug(`Failed to restore ipset ${name}: ${err.message}`);
-      }
-    }
-  }
-
-  /**
-   * Подсчитать количество записей в ipset.
-   *
-   * @param {string} name
-   * @returns {Promise<number>}
-   */
-  async entryCount(name) {
-    this._validateName(name);
-    try {
-      // ipset list <name> выводит заголовок + "Members:" + список
-      // Считаем строки после "Members:"
-      const out = await Util.exec(`ipset list ${name}`, { log: false, timeout: 10000 });
-      const lines = (out || '').split('\n');
-      const membersIdx = lines.findIndex(l => l.startsWith('Members:'));
-      if (membersIdx === -1) return 0;
-      return lines.slice(membersIdx + 1).filter(l => l.trim()).length;
-    } catch (err) {
-      debug(`entryCount ${name} failed: ${err.message}`);
+      const out = await this._exec(`ipset list ${name} -t 2>/dev/null`);
+      const m = out.match(/Number of entries:\s*(\d+)/);
+      return m ? parseInt(m[1], 10) : 0;
+    } catch (_) {
       return 0;
     }
   }
 
   /**
-   * Получить список имён ipset-ов в ядре.
-   *
-   * @returns {Promise<string[]>}
-   */
-  async listKernelSets() {
-    try {
-      const out = await Util.exec('ipset list -n', { log: false, timeout: 10000 });
-      return (out || '').split('\n').map(l => l.trim()).filter(Boolean);
-    } catch (err) {
-      debug(`listKernelSets failed: ${err.message}`);
-      return [];
-    }
-  }
-
-  // ─── Generator (prefixes.py) ───────────────────────────────────────────────
-
-  /**
-   * Запустить prefixes.py для генерации ipset из RIPEstat.
-   * Возвращает jobId — для отслеживания прогресса через getJobStatus().
-   *
-   * Опции (одна из трёх, обязательна):
-   *   { country: 'RU' }
-   *   { asn: '12345' }
-   *   { asnList: '12345,20485,3216' }
-   *
-   * @param {string} name  - Имя целевого ipset
-   * @param {object} opts  - { country?, asn?, asnList? }
+   * Start an async generation job using prefixes.py.
+   * @param {string} name - ipset name
+   * @param {object} opts - { country?, asn?, asnList? }
    * @returns {string} jobId
    */
   runGenerator(name, opts = {}) {
     this._validateName(name);
-
-    const jobId = `${name}_${Date.now()}`;
+    const jobId = crypto.randomBytes(8).toString('hex');
     this._jobs.set(jobId, { status: 'running' });
-
-    // Запуск в фоне — не блокируем event loop
+    debug(`Starting generator job ${jobId} for set ${name}`);
     this._runGeneratorAsync(jobId, name, opts).catch(err => {
-      debug(`Generator job ${jobId} crashed: ${err.message}`);
+      debug(`Generator job ${jobId} failed: ${err.message}`);
       this._jobs.set(jobId, { status: 'error', error: err.message });
     });
-
-    debug(`Generator job started: ${jobId} for ipset "${name}"`);
     return jobId;
   }
 
   /**
-   * Получить статус generation job.
-   *
-   * @param {string} jobId
-   * @returns {{ status: 'running'|'done'|'error', entryCount?: number, error?: string }|null}
+   * @returns {{ status: string, entryCount?: number, error?: string }}
    */
   getJobStatus(jobId) {
-    return this._jobs.get(jobId) || null;
+    return this._jobs.get(jobId) || { status: 'unknown' };
   }
 
-  // ─── Private ───────────────────────────────────────────────────────────────
+  // ── private ──────────────────────────────────────────────────────────────
 
   async _runGeneratorAsync(jobId, name, opts) {
-    const tmpFile = path.join(IPSETS_DIR, `${name}_gen_${Date.now()}.tmp`);
+    const outFile = path.join(DATA_DIR, `${name}_generated.txt`);
 
-    try {
-      // Построить аргументы prefixes.py
-      const args = ['--quiet', '-o', tmpFile];
-      if (opts.country)     args.push('-c', opts.country);
-      else if (opts.asn)    args.push('-a', opts.asn);
-      else if (opts.asnList) args.push('--asn-list', opts.asnList);
-      else throw new Error('Generator opts must include country, asn, or asnList');
-
-      debug(`Running: python3 ${PREFIXES_PY} ${args.join(' ')}`);
-
-      // Запустить prefixes.py как дочерний процесс
-      await this._spawnPython(args);
-
-      // Загрузить результат в ipset
-      const count = await this.loadFromFile(name, tmpFile);
-
-      // Сохранить на диск
-      await this.saveSet(name);
-
-      this._jobs.set(jobId, { status: 'done', entryCount: count });
-      debug(`Generator job ${jobId} done: ${count} entries in ipset "${name}"`);
-
-    } finally {
-      await fs.unlink(tmpFile).catch(() => {});
+    // Build prefixes.py arguments
+    const args = ['prefixes.py', '--quiet', '-o', outFile];
+    if (opts.asnList) {
+      args.push('--asn-list', opts.asnList);
+    } else if (opts.asn) {
+      args.push('--asn', String(opts.asn));
+    } else if (opts.country) {
+      args.push('-c', opts.country.toUpperCase());
+    } else {
+      throw new Error('Generator opts must include country, asn, or asnList');
     }
+
+    // Run prefixes.py
+    debug(`Job ${jobId}: spawning python3 ${args.join(' ')}`);
+    await this._spawnPython(args);
+
+    // Load into ipset
+    await this.createSet(name);
+    const entryCount = await this.loadFromFile(name, outFile);
+    await this.saveSet(name);
+
+    // Cleanup temp file
+    await fs.promises.unlink(outFile).catch(() => {});
+
+    this._jobs.set(jobId, { status: 'done', entryCount });
+    debug(`Job ${jobId} completed: ${entryCount} entries`);
   }
 
-  /**
-   * Запустить Python3 с prefixes.py и подождать завершения (Promise).
-   * timeout: 5 минут — RU AS-list может быть долгим.
-   */
   _spawnPython(args) {
     return new Promise((resolve, reject) => {
-      const proc = spawn('python3', [PREFIXES_PY, ...args], {
-        stdio: ['ignore', 'ignore', 'pipe'],
-        timeout: 5 * 60 * 1000,
+      // Alpine Linux installs python3 at /usr/bin/python3.
+      // spawn() does NOT use a shell, so PATH is not sourced.
+      // We pass an explicit PATH covering common locations to ensure the binary is found.
+      const python3 = process.env.PYTHON3_BIN || 'python3';
+      const spawnEnv = {
+        ...process.env,
+        PATH: `/usr/bin:/usr/local/bin:/bin:/usr/sbin:/sbin${process.env.PATH ? ':' + process.env.PATH : ''}`,
+      };
+
+      const proc = childProcess.spawn(python3, args, {
+        cwd: path.dirname(PREFIXES_SCRIPT),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 120000,
+        env: spawnEnv,
       });
 
       let stderr = '';
@@ -323,46 +253,50 @@ class IpsetManager {
 
       proc.on('close', code => {
         if (code === 0) {
-          resolve();
+          resolve(stderr);
         } else {
-          reject(new Error(`prefixes.py exited with code ${code}: ${stderr.trim()}`));
+          const msg = stderr.slice(-500) || `exited with code ${code}`;
+          reject(new Error(`prefixes.py failed: ${msg}`));
         }
       });
-
-      proc.on('error', err => reject(err));
+      proc.on('error', (err) => {
+        // ENOENT: python3 not found — try absolute path as last resort
+        if (err.code === 'ENOENT' && python3 !== '/usr/bin/python3') {
+          debug('python3 not found via PATH, retrying with /usr/bin/python3');
+          const proc2 = childProcess.spawn('/usr/bin/python3', args, {
+            cwd: path.dirname(PREFIXES_SCRIPT),
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: 120000,
+            env: spawnEnv,
+          });
+          let stderr2 = '';
+          proc2.stderr.on('data', d => { stderr2 += d.toString(); });
+          proc2.on('close', code2 => {
+            if (code2 === 0) resolve(stderr2);
+            else reject(new Error(`prefixes.py failed: ${stderr2.slice(-500) || 'exit ' + code2}`));
+          });
+          proc2.on('error', reject);
+        } else {
+          reject(err);
+        }
+      });
     });
   }
 
-  /**
-   * Путь к .save файлу ipset.
-   */
-  _savePath(name) {
-    return path.join(IPSETS_DIR, `${name}.save`);
+  async _exec(cmd) {
+    return new Promise((resolve, reject) => {
+      childProcess.exec(cmd, { shell: 'bash', timeout: 30000, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
+        if (err) return reject(new Error(stderr || err.message));
+        resolve(stdout);
+      });
+    });
   }
 
-  /**
-   * Валидация имени ipset: только буквы, цифры, '_', '-'.
-   * Защита от shell injection.
-   */
   _validateName(name) {
     if (!name || !/^[a-zA-Z][a-zA-Z0-9_-]{0,30}$/.test(name)) {
-      throw new Error(`Invalid ipset name: "${name}". Use letters, digits, _ or - (max 31 chars, start with letter)`);
+      throw new Error(`Invalid ipset name: ${name}`);
     }
   }
 }
 
-// ─── Singleton ────────────────────────────────────────────────────────────────
-
-let instance = null;
-let instanceReady = null;
-
-module.exports = {
-  getInstance: async () => {
-    if (!instance) {
-      instance     = new IpsetManager();
-      instanceReady = instance.init();
-    }
-    await instanceReady;
-    return instance;
-  },
-};
+module.exports = IpsetManager;
