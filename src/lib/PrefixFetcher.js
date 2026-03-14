@@ -109,13 +109,69 @@ class PrefixFetcher {
         valid.push(cidr);
       }
     }
-    valid.sort((a, b) => {
-      const aNum = PrefixFetcher._ipToNum(a.split('/')[0]);
-      const bNum = PrefixFetcher._ipToNum(b.split('/')[0]);
-      if (aNum !== bNum) return aNum < bNum ? -1 : 1;
-      return parseInt(a.split('/')[1], 10) - parseInt(b.split('/')[1], 10);
+    return PrefixFetcher._collapseAddresses(valid);
+  }
+
+  /**
+   * Aggregate CIDRs — equivalent to Python's ipaddress.collapse_addresses().
+   * 1. Sort by (network_address, prefix_length)
+   * 2. Remove subnets contained within a larger block
+   * 3. Repeatedly merge sibling /N pairs into /(N-1) until stable
+   */
+  static _collapseAddresses(cidrs) {
+    if (!cidrs.length) return [];
+
+    // Parse into { net, pfx }
+    const nets = cidrs.map(cidr => {
+      const slash = cidr.indexOf('/');
+      return {
+        net: PrefixFetcher._ipToNum(cidr.slice(0, slash)),
+        pfx: parseInt(cidr.slice(slash + 1), 10),
+      };
     });
-    return valid;
+
+    // Sort by network address, then prefix length ascending (bigger block first)
+    nets.sort((a, b) => a.net !== b.net ? (a.net < b.net ? -1 : 1) : a.pfx - b.pfx);
+
+    // Remove networks that are subnets of a previous (larger) block
+    const deoverlapped = [];
+    for (const n of nets) {
+      if (!deoverlapped.length) { deoverlapped.push(n); continue; }
+      const prev = deoverlapped[deoverlapped.length - 1];
+      const prevEnd = prev.net + Math.pow(2, 32 - prev.pfx) - 1;
+      const nEnd   = n.net   + Math.pow(2, 32 - n.pfx)   - 1;
+      if (n.net >= prev.net && nEnd <= prevEnd) continue; // contained — skip
+      deoverlapped.push(n);
+    }
+
+    // Repeatedly merge sibling blocks until no more merges possible
+    let working = deoverlapped;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const result = [];
+      let i = 0;
+      while (i < working.length) {
+        if (i + 1 < working.length) {
+          const a = working[i], b = working[i + 1];
+          if (a.pfx === b.pfx && a.pfx > 0) {
+            const size = Math.pow(2, 32 - a.pfx);
+            // Siblings: a is aligned on 2×size boundary AND b immediately follows a
+            if (a.net % (size * 2) === 0 && a.net + size === b.net) {
+              result.push({ net: a.net, pfx: a.pfx - 1 });
+              i += 2;
+              changed = true;
+              continue;
+            }
+          }
+        }
+        result.push(working[i]);
+        i++;
+      }
+      working = result;
+    }
+
+    return working.map(n => `${PrefixFetcher._numToIp(n.net)}/${n.pfx}`);
   }
 
   /**
