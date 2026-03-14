@@ -31,25 +31,19 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
-# Switch to Yandex mirror (faster from RU/CIS, avoids dl-cdn.alpinelinux.org blocks).
-RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirror.yandex.ru/mirrors|g' /etc/apk/repositories
-
-# Install Linux packages.
+# Switch to Yandex mirror + install packages in one layer (faster build, smaller image).
+# iptables-legacy and dpkg NOT needed: all iptables calls use iptables-nft directly (FIX-1).
 # libstdc++ + libgcc required by Node 22 binary (dynamically linked against C++ stdlib).
-RUN apk add --no-cache \
-    dpkg \
+RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirror.yandex.ru/mirrors|g' /etc/apk/repositories && \
+    apk add --no-cache \
     dumb-init \
     iptables \
-    iptables-legacy \
     iproute2 \
     libstdc++ \
     libgcc
 
 # Copy Node 22 binary from build stage (apk would install Alpine's older version)
 COPY --from=build_node_modules /usr/local/bin/node /usr/local/bin/node
-
-# Use iptables-legacy
-RUN update-alternatives --install /sbin/iptables iptables /sbin/iptables-legacy 10 --slave /sbin/iptables-restore iptables-restore /sbin/iptables-legacy-restore --slave /sbin/iptables-save iptables-save /sbin/iptables-legacy-save
 
 # Set Environment
 ENV DEBUG=Server,WireGuard
