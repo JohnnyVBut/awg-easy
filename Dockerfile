@@ -8,17 +8,6 @@ RUN npm config set registry https://registry.npmmirror.com && \
     npm install --omit=dev && \
     mv node_modules /node_modules
 
-# Pre-fetch Alpine packages here (node:22-alpine has newer apk/TLS stack).
-# Final stage installs them offline — zero network needed there.
-# -R = recursive, pulls all transitive dependencies.
-RUN printf '%s\n' \
-        'https://mirror.yandex.ru/mirrors/alpine/latest-stable/main' \
-        'https://mirror.yandex.ru/mirrors/alpine/latest-stable/community' \
-        > /etc/apk/repositories && \
-    mkdir /apk-cache && \
-    apk fetch --no-cache -R -o /apk-cache \
-        dumb-init iptables iproute2 ipset libstdc++ libgcc
-
 # Copy build result to a new image.
 # This saves a lot of disk space.
 # Kernel mode: amneziawg.ko must be loaded on the Docker host.
@@ -42,15 +31,26 @@ COPY --from=build_node_modules /node_modules /node_modules
 COPY --from=build_node_modules /app/wgpw.sh /bin/wgpw
 RUN chmod +x /bin/wgpw
 
-# Install packages offline from files pre-fetched in stage 1.
-# --no-network: prevents apk from fetching APKINDEX (even for local installs apk tries
-#   to refresh the index from /etc/apk/repositories — this hangs on RU servers).
-# --allow-untrusted: local .apk files have no repo signature (fetched over HTTPS in stage 1).
-COPY --from=build_node_modules /apk-cache /apk-cache
-RUN apk add --no-cache --no-network --allow-untrusted /apk-cache/*.apk && rm -rf /apk-cache
+# Switch to Yandex mirror (faster from RU/CIS, avoids dl-cdn.alpinelinux.org blocks).
+RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirror.yandex.ru/mirrors|g' /etc/apk/repositories
+
+# Install Linux packages.
+# libstdc++ + libgcc required by Node 22 binary (dynamically linked against C++ stdlib).
+RUN apk add --no-cache \
+    dpkg \
+    dumb-init \
+    iptables \
+    iptables-legacy \
+    iproute2 \
+    ipset \
+    libstdc++ \
+    libgcc
 
 # Copy Node 22 binary from build stage (apk would install Alpine's older version)
 COPY --from=build_node_modules /usr/local/bin/node /usr/local/bin/node
+
+# Use iptables-legacy
+RUN update-alternatives --install /sbin/iptables iptables /sbin/iptables-legacy 10 --slave /sbin/iptables-restore iptables-restore /sbin/iptables-legacy-restore --slave /sbin/iptables-save iptables-save /sbin/iptables-legacy-save
 
 # Set Environment
 ENV DEBUG=Server,WireGuard
