@@ -201,18 +201,6 @@ new Vue({
       i1: '', i2: '', i3: '', i4: '', i5: '',
     },
 
-    // Generate modal
-    showGenerateModal: false,
-    generateForm: {
-      profile: 'random',
-      intensity: 'medium',
-      host: '',
-      saveName: '',
-    },
-    generatedParams: null,   // preview результата
-    generatingParams: false, // loading indicator
-    generateProfiles: [],    // список профилей с сервера
-
     // Gateways
     gateways: [],
     gatewayGroups: [],
@@ -247,37 +235,6 @@ new Vue({
     groupCreate: { name: '', trigger: 'packetloss', description: '', gateways: [] },
     groupEdit:   { id: null, name: '', trigger: 'packetloss', description: '', gateways: [] },
 
-    // Firewall Aliases page
-    aliases: [],
-    aliasesLoading: false,
-    showAliasCreate: false,
-    showAliasEdit: false,
-    aliasCreate: {
-      name: '',
-      type: 'network',            // 'host' | 'network' | 'ipset'
-      description: '',
-      entries: '',                // textarea: один IP/CIDR на строку
-      // для ipset:
-      generateSource: 'country',  // 'country' | 'asn' | 'asnList'
-      generateCountry: 'RU',
-      generateAsn: '',
-      generateAsnList: '',
-    },
-    aliasEdit: {
-      id: null,
-      name: '',
-      type: 'network',
-      description: '',
-      entries: '',
-      generateSource: 'country',
-      generateCountry: 'RU',
-      generateAsn: '',
-      generateAsnList: '',
-    },
-    aliasGenerateJobId: null,     // активный job (polling)
-    aliasGenerateJobStatus: null, // { status, entryCount?, error? }
-    aliasGeneratingId: null,      // aliasId которому принадлежит job
-
     // Routing page
     activeRoutingTab: 'status',   // 'status' | 'static' | 'policy' | 'ospf'
     routingTable: 'main',         // таблица для Status tab
@@ -298,41 +255,6 @@ new Vue({
       dev: '',
       metric: '',
       table: 'main',
-    },
-
-    // Policy Rules (Routing → Policy tab)
-    policyRules: [],
-    policyRulesLoading: false,
-    showPolicyCreate: false,
-    showPolicyEdit: false,
-    policyCreate: {
-      name: '',
-      sourceType: 'any',          // 'any' | 'alias' | 'cidr'
-      sourceAliasId: '',
-      sourceCidr: '',
-      destType: 'any',            // 'any' | 'alias' | 'cidr'
-      destAliasId: '',
-      destCidr: '',
-      destInvert: false,
-      gatewayType: 'gateway',     // 'gateway' | 'group'
-      gatewayId: '',
-      gatewayGroupId: '',
-      priority: '',
-    },
-    policyEdit: {
-      id: null,
-      name: '',
-      sourceType: 'any',
-      sourceAliasId: '',
-      sourceCidr: '',
-      destType: 'any',
-      destAliasId: '',
-      destCidr: '',
-      destInvert: false,
-      gatewayType: 'gateway',
-      gatewayId: '',
-      gatewayGroupId: '',
-      priority: '',
     },
 
     // NAT page
@@ -360,6 +282,59 @@ new Vue({
       type: 'MASQUERADE',
       toSource: '',
       comment: '',
+    },
+
+    // Firewall Aliases page
+    aliases: [],
+    aliasesLoading: false,
+    showAliasCreate: false,
+    showAliasEdit: false,
+    aliasCreate: {
+      name: '',
+      description: '',
+      type: 'network',          // 'host' | 'network' | 'ipset'
+      entries: '',              // textarea: one entry per line
+      genSource: 'country',     // 'country' | 'asn' | 'asn-list'
+      genCountry: '',
+      genAsn: '',
+      genAsnList: '',
+    },
+    aliasEdit: {
+      id: null,
+      name: '',
+      description: '',
+      type: 'network',
+      entries: '',
+      genSource: 'country',
+      genCountry: '',
+      genAsn: '',
+      genAsnList: '',
+    },
+    aliasGeneratingId: null,    // id алиаса для которого идёт генерация
+    aliasGenerateJobId: null,
+    aliasGenerateJobStatus: null,
+
+    // Policy-Based Routing
+    policyRules: [],
+    policyRulesLoading: false,
+    showPolicyCreate: false,
+    showPolicyEdit: false,
+    policyCreate: {
+      name: '',
+      source: { type: 'any', aliasId: '', value: '', invert: false },
+      destination: { type: 'any', aliasId: '', value: '', invert: false },
+      gatewayId: '',
+      gatewayGroupId: '',
+      useGroup: false,
+    },
+    policyEdit: {
+      id: null,
+      name: '',
+      source: { type: 'any', aliasId: '', value: '', invert: false },
+      destination: { type: 'any', aliasId: '', value: '', invert: false },
+      gatewayId: '',
+      gatewayGroupId: '',
+      useGroup: false,
     },
 
     // Toast notifications
@@ -686,7 +661,6 @@ new Vue({
       }
       if (pageId === 'routing') {
         // Запускаем параллельно — loadKernelRoutes не зависит от списка таблиц
-        // (routingTable по умолчанию 'main', всегда валидна)
         this.loadRoutingTables();
         this.loadKernelRoutes();
         this.loadStaticRoutes();
@@ -696,17 +670,11 @@ new Vue({
         if (!this.gatewayGroups.length) this.loadGatewayGroups();
       }
       if (pageId === 'nat') {
-        // Загружаем интерфейсы и правила параллельно
         this.loadNatInterfaces();
         this.loadNatRules();
       }
       if (pageId === 'firewall-aliases') {
         this.loadAliases();
-      }
-      if (pageId === 'routing' || pageId === 'firewall-aliases') {
-        // Gateways нужны для Policy Rules — загружаем при входе на routing
-        if (!this.gateways.length) this.loadGateways();
-        if (!this.gatewayGroups.length) this.loadGatewayGroups();
       }
     },
 
@@ -1543,69 +1511,81 @@ new Vue({
     },
 
     // ========================================================================
-    // Firewall Aliases
+    // Firewall Aliases Methods
     // ========================================================================
 
     async loadAliases() {
       this.aliasesLoading = true;
       try {
         const res = await this.api.getAliases();
-        this.aliases = res.aliases || [];
+        this.aliases = Array.isArray(res) ? res : (res.aliases || []);
       } catch (err) {
-        this.showToast(err.message || 'Failed to load aliases', 'error');
+        console.error('loadAliases error:', err);
+        this.aliases = [];
       } finally {
         this.aliasesLoading = false;
       }
     },
 
+    _resetAliasCreate() {
+      this.aliasCreate = {
+        name: '', description: '', type: 'network', entries: '',
+        genSource: 'country', genCountry: '', genAsn: '', genAsnList: '',
+      };
+    },
+
     async createAlias() {
-      const f = this.aliasCreate;
-      if (!f.name.trim()) return this.showToast('Alias name is required', 'error');
       try {
-        const entries = f.type !== 'ipset'
-          ? f.entries.split('\n').map(l => l.trim()).filter(Boolean)
-          : [];
-        await this.api.createAlias({
-          name:        f.name.trim(),
-          type:        f.type,
-          description: f.description.trim(),
-          entries,
-        });
+        const data = { name: this.aliasCreate.name, description: this.aliasCreate.description, type: this.aliasCreate.type };
+        if (data.type !== 'ipset') {
+          data.entries = this.aliasCreate.entries.split('\n').map(l => l.trim()).filter(Boolean);
+        }
+        // Сохраняем опции генерации ДО сброса формы
+        const genOpts = this.aliasCreate.type === 'ipset' ? {
+          source:  this.aliasCreate.genSource,
+          country: this.aliasCreate.genCountry,
+          asn:     this.aliasCreate.genAsn,
+          asnList: this.aliasCreate.genAsnList,
+        } : null;
+
+        const created = await this.api.createAlias(data);
         this.showAliasCreate = false;
         this._resetAliasCreate();
         await this.loadAliases();
         this.showToast('Alias created', 'success');
+
+        // Auto-generate если тип ipset и указан источник
+        if (created.type === 'ipset' && genOpts &&
+            (genOpts.country || genOpts.asn || genOpts.asnList)) {
+          await this._startAliasGenerate(created.id, genOpts);
+        }
       } catch (err) {
         this.showToast(err.message || 'Failed to create alias', 'error');
       }
     },
 
     openAliasEdit(alias) {
-      Object.assign(this.aliasEdit, {
-        id:          alias.id,
-        name:        alias.name,
-        type:        alias.type,
+      this.aliasEdit = {
+        id: alias.id,
+        name: alias.name,
         description: alias.description || '',
-        entries:     (alias.entries || []).join('\n'),
-        generateSource:  (alias.generatorOpts && alias.generatorOpts.country) ? 'country'
-                       : (alias.generatorOpts && alias.generatorOpts.asn)     ? 'asn'
-                       : (alias.generatorOpts && alias.generatorOpts.asnList)  ? 'asnList'
-                       : 'country',
-        generateCountry: (alias.generatorOpts && alias.generatorOpts.country) || 'RU',
-        generateAsn:     (alias.generatorOpts && alias.generatorOpts.asn)     || '',
-        generateAsnList: (alias.generatorOpts && alias.generatorOpts.asnList)  || '',
-      });
+        type: alias.type,
+        entries: alias.type !== 'ipset' ? (alias.entries || []).join('\n') : '',
+        genSource: 'country',
+        genCountry: alias.generatorOpts?.country || '',
+        genAsn: alias.generatorOpts?.asn || '',
+        genAsnList: alias.generatorOpts?.asnList || '',
+      };
       this.showAliasEdit = true;
     },
 
     async saveAliasEdit() {
-      const f = this.aliasEdit;
-      if (!f.name.trim()) return this.showToast('Alias name is required', 'error');
       try {
-        const entries = f.type !== 'ipset'
-          ? f.entries.split('\n').map(l => l.trim()).filter(Boolean)
-          : undefined;
-        await this.api.updateAlias({ aliasId: f.id, name: f.name.trim(), description: f.description.trim(), entries });
+        const data = { id: this.aliasEdit.id, name: this.aliasEdit.name, description: this.aliasEdit.description };
+        if (this.aliasEdit.type !== 'ipset') {
+          data.entries = this.aliasEdit.entries.split('\n').map(l => l.trim()).filter(Boolean);
+        }
+        await this.api.updateAlias(data);
         this.showAliasEdit = false;
         await this.loadAliases();
         this.showToast('Alias updated', 'success');
@@ -1617,7 +1597,7 @@ new Vue({
     async deleteAlias(alias) {
       if (!confirm(`Delete alias "${alias.name}"?`)) return;
       try {
-        await this.api.deleteAlias({ aliasId: alias.id });
+        await this.api.deleteAlias({ id: alias.id });
         await this.loadAliases();
         this.showToast('Alias deleted', 'success');
       } catch (err) {
@@ -1625,88 +1605,137 @@ new Vue({
       }
     },
 
-    async startAliasGenerate(alias) {
-      const f = alias.id === this.aliasEdit.id ? this.aliasEdit : this.aliasCreate;
-      const opts = {};
-      if (f.generateSource === 'country')  opts.country  = f.generateCountry;
-      else if (f.generateSource === 'asn') opts.asn      = f.generateAsn;
-      else                                  opts.asnList  = f.generateAsnList;
-
+    async uploadAliasFile(aliasId, file) {
       try {
-        const res = await this.api.generateAlias({ aliasId: alias.id, ...opts });
-        this.aliasGenerateJobId     = res.jobId;
-        this.aliasGeneratingId      = alias.id;
-        this.aliasGenerateJobStatus = { status: 'running' };
-        this.showToast('Generation started...', 'success', 3000);
-        this._pollAliasJob(alias.id, res.jobId);
+        const text = await file.text();
+        await this.api.uploadAliasFile({ id: aliasId, text });
+        await this.loadAliases();
+        this.showToast('File uploaded to alias', 'success');
       } catch (err) {
-        this.showToast(err.message || 'Failed to start generate', 'error');
+        this.showToast(err.message || 'Failed to upload file', 'error');
+      }
+    },
+
+    async startAliasGenerate(alias) {
+      await this._startAliasGenerate(alias.id, {
+        source: this.aliasEdit.genSource,
+        country: this.aliasEdit.genCountry,
+        asn: this.aliasEdit.genAsn,
+        asnList: this.aliasEdit.genAsnList,
+      });
+    },
+
+    async startAliasGenerateCreate(aliasId) {
+      await this._startAliasGenerate(aliasId, {
+        source: this.aliasCreate.genSource,
+        country: this.aliasCreate.genCountry,
+        asn: this.aliasCreate.genAsn,
+        asnList: this.aliasCreate.genAsnList,
+      });
+    },
+
+    async _startAliasGenerate(aliasId, opts) {
+      try {
+        const genOpts = {};
+        const src = opts?.source || 'country';
+        if (src === 'country' && opts?.country) genOpts.country = opts.country;
+        else if (src === 'asn' && opts?.asn) genOpts.asn = opts.asn;
+        else if (src === 'asn-list' && opts?.asnList) genOpts.asnList = opts.asnList;
+        else {
+          this.showToast('Please specify a generation source (country, ASN, or ASN list)', 'error');
+          return;
+        }
+        const { jobId } = await this.api.generateAlias({ id: aliasId, ...genOpts });
+        this.aliasGeneratingId = aliasId;
+        this.aliasGenerateJobId = jobId;
+        this.aliasGenerateJobStatus = { status: 'running' };
+        this.showToast('Generation started...', 'success');
+        this._pollAliasJob(aliasId, jobId);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to start generation', 'error');
       }
     },
 
     _pollAliasJob(aliasId, jobId) {
       const interval = setInterval(async () => {
         try {
-          const status = await this.api.getAliasJobStatus({ aliasId, jobId });
+          const status = await this.api.getAliasJobStatus({ id: aliasId, jobId });
           this.aliasGenerateJobStatus = status;
-          if (status.status !== 'running') {
+          if (status.status === 'done') {
             clearInterval(interval);
-            if (status.status === 'done') {
-              this.showToast(`Done! ${status.entryCount} prefixes loaded.`, 'success', 5000);
-              await this.loadAliases();
-            } else {
-              this.showToast(`Generation failed: ${status.error}`, 'error', 8000);
-            }
+            this.aliasGeneratingId = null;
             this.aliasGenerateJobId = null;
-            this.aliasGeneratingId  = null;
+            await this.loadAliases();
+            this.showToast(`Generation done: ${status.entryCount} prefixes`, 'success');
+          } else if (status.status === 'error') {
+            clearInterval(interval);
+            this.aliasGeneratingId = null;
+            this.showToast(`Generation failed: ${status.error}`, 'error');
           }
         } catch (err) {
           clearInterval(interval);
-          this.showToast(`Job poll failed: ${err.message}`, 'error');
+          this.aliasGeneratingId = null;
+          console.error('_pollAliasJob error:', err);
         }
-      }, 2000);
+      }, 3000);
     },
 
-    async uploadAliasFile(alias, event) {
-      const file = event.target.files && event.target.files[0];
-      if (!file) return;
-      try {
-        this.showToast('Uploading...', 'success', 2000);
-        const res = await this.api.uploadAliasFile({ aliasId: alias.id, file });
-        await this.loadAliases();
-        this.showToast(`Uploaded: ${res.alias.entryCount} entries`, 'success');
-      } catch (err) {
-        this.showToast(err.message || 'Upload failed', 'error');
-      }
-    },
-
-    _resetAliasCreate() {
-      this.aliasCreate = { name: '', type: 'network', description: '', entries: '',
-        generateSource: 'country', generateCountry: 'RU', generateAsn: '', generateAsnList: '' };
+    _aliasLabel(aliasId) {
+      if (!aliasId || aliasId === 'any') return 'Any';
+      const a = this.aliases.find(x => x.id === aliasId);
+      return a ? a.name : aliasId;
     },
 
     // ========================================================================
-    // Policy Rules (PBR)
+    // Policy-Based Routing Methods
     // ========================================================================
 
     async loadPolicyRules() {
       this.policyRulesLoading = true;
       try {
         const res = await this.api.getPolicyRules();
-        this.policyRules = res.rules || [];
+        this.policyRules = Array.isArray(res) ? res : (res.rules || []);
       } catch (err) {
-        this.showToast(err.message || 'Failed to load policy rules', 'error');
+        console.error('loadPolicyRules error:', err);
+        this.policyRules = [];
       } finally {
         this.policyRulesLoading = false;
       }
     },
 
+    _resetPolicyCreate() {
+      this.policyCreate = {
+        name: '',
+        source: { type: 'any', aliasId: '', value: '', invert: false },
+        destination: { type: 'any', aliasId: '', value: '', invert: false },
+        gatewayId: '', gatewayGroupId: '', useGroup: false,
+      };
+    },
+
+    _buildPolicyPayload(form) {
+      const src = form.source.type === 'any'
+        ? { type: 'any', invert: false }
+        : form.source.type === 'alias'
+          ? { type: 'alias', aliasId: form.source.aliasId, invert: form.source.invert }
+          : { type: 'cidr', value: form.source.value, invert: form.source.invert };
+      const dst = form.destination.type === 'any'
+        ? { type: 'any', invert: false }
+        : form.destination.type === 'alias'
+          ? { type: 'alias', aliasId: form.destination.aliasId, invert: form.destination.invert }
+          : { type: 'cidr', value: form.destination.value, invert: form.destination.invert };
+      return {
+        name: form.name,
+        source: src,
+        destination: dst,
+        gatewayId: form.useGroup ? null : (form.gatewayId || null),
+        gatewayGroupId: form.useGroup ? (form.gatewayGroupId || null) : null,
+      };
+    },
+
     async createPolicyRule() {
-      const f = this.policyCreate;
-      if (!f.name.trim()) return this.showToast('Rule name is required', 'error');
-      if (!f.gatewayId && !f.gatewayGroupId) return this.showToast('Select a gateway', 'error');
       try {
-        await this.api.createPolicyRule(this._buildPolicyPayload(f));
+        const payload = this._buildPolicyPayload(this.policyCreate);
+        await this.api.createPolicyRule(payload);
         this.showPolicyCreate = false;
         this._resetPolicyCreate();
         await this.loadPolicyRules();
@@ -1717,31 +1746,22 @@ new Vue({
     },
 
     openPolicyEdit(rule) {
-      const srcAlias = rule.source && rule.source.type === 'alias';
-      const dstAlias = rule.destination && rule.destination.type === 'alias';
-      Object.assign(this.policyEdit, {
-        id:             rule.id,
-        name:           rule.name,
-        sourceType:     rule.source ? rule.source.type : 'any',
-        sourceAliasId:  srcAlias ? rule.source.aliasId : '',
-        sourceCidr:     rule.source && rule.source.type === 'cidr' ? rule.source.value : '',
-        destType:       rule.destination ? rule.destination.type : 'any',
-        destAliasId:    dstAlias ? rule.destination.aliasId : '',
-        destCidr:       rule.destination && rule.destination.type === 'cidr' ? rule.destination.value : '',
-        destInvert:     rule.destination ? Boolean(rule.destination.invert) : false,
-        gatewayType:    rule.gatewayGroupId ? 'group' : 'gateway',
-        gatewayId:      rule.gatewayId || '',
+      this.policyEdit = {
+        id: rule.id,
+        name: rule.name,
+        source: { ...rule.source },
+        destination: { ...rule.destination },
+        gatewayId: rule.gatewayId || '',
         gatewayGroupId: rule.gatewayGroupId || '',
-        priority:       rule.priority,
-      });
+        useGroup: !!rule.gatewayGroupId,
+      };
       this.showPolicyEdit = true;
     },
 
     async savePolicyEdit() {
-      const f = this.policyEdit;
-      if (!f.name.trim()) return this.showToast('Rule name is required', 'error');
       try {
-        await this.api.updatePolicyRule({ ruleId: f.id, ...this._buildPolicyPayload(f) });
+        const payload = { id: this.policyEdit.id, ...this._buildPolicyPayload(this.policyEdit) };
+        await this.api.updatePolicyRule(payload);
         this.showPolicyEdit = false;
         await this.loadPolicyRules();
         this.showToast('Policy rule updated', 'success');
@@ -1752,7 +1772,7 @@ new Vue({
 
     async togglePolicyRule(rule) {
       try {
-        await this.api.togglePolicyRule({ ruleId: rule.id, enabled: !rule.enabled });
+        await this.api.togglePolicyRule({ id: rule.id, enabled: !rule.enabled });
         await this.loadPolicyRules();
       } catch (err) {
         this.showToast(err.message || 'Failed to toggle policy rule', 'error');
@@ -1762,7 +1782,7 @@ new Vue({
     async deletePolicyRule(rule) {
       if (!confirm(`Delete policy rule "${rule.name}"?`)) return;
       try {
-        await this.api.deletePolicyRule({ ruleId: rule.id });
+        await this.api.deletePolicyRule({ id: rule.id });
         await this.loadPolicyRules();
         this.showToast('Policy rule deleted', 'success');
       } catch (err) {
@@ -1770,27 +1790,24 @@ new Vue({
       }
     },
 
-    _buildPolicyPayload(f) {
-      const source      = f.sourceType === 'alias' ? { type: 'alias', aliasId: f.sourceAliasId }
-                        : f.sourceType === 'cidr'  ? { type: 'cidr',  value:   f.sourceCidr }
-                        : { type: 'any' };
-      const destination = f.destType === 'alias' ? { type: 'alias', aliasId: f.destAliasId,  invert: f.destInvert }
-                        : f.destType === 'cidr'  ? { type: 'cidr',  value:   f.destCidr,     invert: f.destInvert }
-                        : { type: 'any', invert: false };
-      return {
-        name:           f.name.trim(),
-        source,
-        destination,
-        gatewayId:      f.gatewayType === 'gateway' ? (f.gatewayId      || null) : null,
-        gatewayGroupId: f.gatewayType === 'group'   ? (f.gatewayGroupId || null) : null,
-        priority:       f.priority !== '' ? Number(f.priority) : undefined,
-      };
+    _policyEndpointLabel(ep) {
+      if (!ep || ep.type === 'any') return 'Any';
+      const inv = ep.invert ? 'NOT ' : '';
+      if (ep.type === 'alias') return inv + this._aliasLabel(ep.aliasId);
+      if (ep.type === 'cidr') return inv + (ep.value || '');
+      return 'Any';
     },
 
-    _resetPolicyCreate() {
-      this.policyCreate = { name: '', sourceType: 'any', sourceAliasId: '', sourceCidr: '',
-        destType: 'any', destAliasId: '', destCidr: '', destInvert: false,
-        gatewayType: 'gateway', gatewayId: '', gatewayGroupId: '', priority: '' };
+    _gatewayLabel(rule) {
+      if (rule.gatewayGroupId) {
+        const g = (this.gatewayGroups || []).find(x => x.id === rule.gatewayGroupId);
+        return g ? `Group: ${g.name}` : rule.gatewayGroupId;
+      }
+      if (rule.gatewayId) {
+        const g = (this.gateways || []).find(x => x.id === rule.gatewayId);
+        return g ? g.name : rule.gatewayId;
+      }
+      return '—';
     },
 
     // ========================================================================
@@ -1840,17 +1857,6 @@ new Vue({
     // Returns the correct interfaceId for a peer action, works both in per-interface view and dashboard
     _peerIfaceId(peer) {
       return (peer && peer.interfaceId) || this.activeInterfaceId;
-    },
-
-    // Extracts the IP address from an "IP:port" endpoint string (handles IPv4 and IPv6)
-    peerPublicIP(endpoint) {
-      if (!endpoint) return '';
-      if (endpoint.startsWith('[')) {
-        // IPv6: [::1]:51820 → ::1
-        return endpoint.slice(1, endpoint.indexOf(']'));
-      }
-      // IPv4: 1.2.3.4:51820 → 1.2.3.4
-      return endpoint.split(':')[0];
     },
 
     // Refresh peers: if an interface tab is selected, refresh that interface; otherwise refresh all (dashboard)
@@ -2321,67 +2327,6 @@ new Vue({
         }
       };
       input.click();
-    },
-
-    // ── Generate modal ────────────────────────────────────────────────────────
-
-    openGenerateModal() {
-      this.generateForm = { profile: 'random', intensity: 'medium', host: '', saveName: '' };
-      this.generatedParams = null;
-      this.showGenerateModal = true;
-    },
-
-    async generateParams() {
-      this.generatingParams = true;
-      try {
-        const res = await this.api.generateTemplate({
-          profile:   this.generateForm.profile,
-          intensity: this.generateForm.intensity,
-          host:      this.generateForm.host || undefined,
-        });
-        this.generatedParams = res.params;
-        if (!this.generateProfiles.length && res.profiles) {
-          this.generateProfiles = res.profiles;
-        }
-      } catch (err) {
-        this.showToast(`Generate failed: ${err.message}`, 'error');
-      } finally {
-        this.generatingParams = false;
-      }
-    },
-
-    async saveGeneratedTemplate() {
-      if (!this.generatedParams) return;
-      const name = this.generateForm.saveName.trim();
-      if (!name) {
-        this.showToast('Enter a template name before saving', 'error');
-        return;
-      }
-      try {
-        await this.api.createTemplate({ name, ...this.generatedParams });
-        await this.loadSettings();
-        this.showGenerateModal = false;
-        this.showToast(`Profile "${name}" saved`, 'success');
-      } catch (err) {
-        this.showToast(`Save failed: ${err.message}`, 'error');
-      }
-    },
-
-    useGeneratedInForm() {
-      if (!this.generatedParams) return;
-      const p = this.generatedParams;
-      this.templateForm = {
-        name: this.generateForm.saveName || '',
-        isDefault: false,
-        jc: p.jc, jmin: p.jmin, jmax: p.jmax,
-        s1: p.s1, s2: p.s2, s3: p.s3, s4: p.s4,
-        h1: p.h1, h2: p.h2, h3: p.h3, h4: p.h4,
-        i1: p.i1 || '', i2: p.i2 || '', i3: p.i3 || '',
-        i4: p.i4 || '', i5: p.i5 || '',
-      };
-      this.templateEditTarget = null;
-      this.showGenerateModal = false;
-      this.showTemplateModal = true;
     },
 
     /**
