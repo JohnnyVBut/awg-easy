@@ -1548,7 +1548,8 @@ new Vue({
           asnList: this.aliasCreate.genAsnList,
         } : null;
 
-        const created = await this.api.createAlias(data);
+        const res = await this.api.createAlias(data);
+        const created = res.alias || res; // сервер возвращает { alias: {...} }
         this.showAliasCreate = false;
         this._resetAliasCreate();
         await this.loadAliases();

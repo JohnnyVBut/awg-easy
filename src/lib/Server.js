@@ -1591,34 +1591,28 @@ module.exports = class Server {
       /**
        * POST /api/aliases/:id/upload
        * Загрузить префиксы из txt-файла в ipset.
-       * Multipart: field "file" с txt-файлом (один CIDR/IP на строку).
+       * Body: { text: "cidr1\ncidr2\n..." } — содержимое файла как JSON-строка.
        */
       .post('/api/aliases/:id/upload', defineEventHandler(async (event) => {
         try {
           const id = getRouterParam(event, 'id');
+          const body = await readBody(event).catch(() => ({}));
+          if (!body || !body.text) {
+            throw createError({ status: 400, message: 'Body must contain { text: "..." }' });
+          }
+
+          const fsNode = require('node:fs/promises');
+          const os = require('node:os');
+          const pathNode = require('node:path');
+          const tmpPath = pathNode.join(os.tmpdir(), `alias_upload_${id}_${Date.now()}.txt`);
+          await fsNode.writeFile(tmpPath, body.text, 'utf8');
+
           const am = await AliasManager.getInstance();
-
-          // Читаем multipart body
-          const { readMultipartFormData } = await import('h3');
-          const parts = await readMultipartFormData(event);
-          if (!parts || !parts.length) {
-            throw createError({ status: 400, message: 'No file uploaded' });
-          }
-          const filePart = parts.find(p => p.name === 'file' || p.filename);
-          if (!filePart) {
-            throw createError({ status: 400, message: 'Field "file" not found in multipart' });
-          }
-
-          // Сохранить во временный файл
-          const tmpPath = `/tmp/alias_upload_${id}_${Date.now()}.txt`;
-          const { writeFile, unlink } = require('node:fs/promises');
-          await writeFile(tmpPath, filePart.data);
-
           try {
             const alias = await am.uploadFromFile(id, tmpPath);
             return { alias };
           } finally {
-            await unlink(tmpPath).catch(() => {});
+            await fsNode.unlink(tmpPath).catch(() => {});
           }
         } catch (err) {
           throw createError({ status: err.statusCode || 500, message: err.message });

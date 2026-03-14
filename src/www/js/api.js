@@ -731,59 +731,50 @@ class API {
 
   /**
    * Обновить алиас.
-   * @param {{ aliasId: string, name?, description?, entries? }}
+   * @param {{ id: string, name?, description?, entries? }}
    * @returns {{ alias: object }}
    */
-  async updateAlias({ aliasId, ...updates }) {
-    return this.call({ method: 'patch', path: `/aliases/${aliasId}`, body: updates });
+  async updateAlias({ id, ...updates }) {
+    return this.call({ method: 'patch', path: `/aliases/${id}`, body: updates });
   }
 
   /**
    * Удалить алиас (для ipset — уничтожает kernel set).
-   * @param {{ aliasId: string }}
+   * @param {{ id: string }}
    */
-  async deleteAlias({ aliasId }) {
-    return this.call({ method: 'delete', path: `/aliases/${aliasId}` });
+  async deleteAlias({ id }) {
+    return this.call({ method: 'delete', path: `/aliases/${id}` });
   }
 
   /**
    * Загрузить префиксы из txt-файла в ipset-алиас.
-   * @param {{ aliasId: string, file: File }}  — file — File object из <input type=file>
+   * @param {{ id: string, text: string }}  — text — содержимое файла (один CIDR на строку)
    * @returns {{ alias: object }}
    */
-  async uploadAliasFile({ aliasId, file }) {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch(`./api/aliases/${aliasId}/upload`, {
-      method: 'POST',
-      body: formData,
-      // Content-Type не задаём — браузер сам выставит multipart/form-data с boundary
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.message || json.error || res.statusText);
-    return json;
+  async uploadAliasFile({ id, text }) {
+    return this.call({ method: 'post', path: `/aliases/${id}/upload`, body: { text } });
   }
 
   /**
-   * Запустить генерацию ipset через prefixes.py (async job).
-   * @param {{ aliasId: string, country?, asn?, asnList? }}
+   * Запустить генерацию ipset через PrefixFetcher (async job).
+   * @param {{ id: string, country?, asn?, asnList? }}
    * @returns {{ jobId: string }}
    */
-  async generateAlias({ aliasId, country, asn, asnList }) {
+  async generateAlias({ id, country, asn, asnList }) {
     return this.call({
       method: 'post',
-      path: `/aliases/${aliasId}/generate`,
+      path: `/aliases/${id}/generate`,
       body: { country, asn, asnList },
     });
   }
 
   /**
    * Получить статус generation job.
-   * @param {{ aliasId: string, jobId: string }}
+   * @param {{ id: string, jobId: string }}
    * @returns {{ status: 'running'|'done'|'error', entryCount?, error? }}
    */
-  async getAliasJobStatus({ aliasId, jobId }) {
-    return this.call({ method: 'get', path: `/aliases/${aliasId}/generate/${jobId}` });
+  async getAliasJobStatus({ id, jobId }) {
+    return this.call({ method: 'get', path: `/aliases/${id}/generate/${jobId}` });
   }
 
   // ============================================================
@@ -809,28 +800,28 @@ class API {
 
   /**
    * Обновить PBR-правило (полные данные) или переключить enabled.
-   * @param {{ ruleId: string, ...updates }}
+   * @param {{ id: string, ...updates }}
    * @returns {{ rule: object }}
    */
-  async updatePolicyRule({ ruleId, ...updates }) {
-    return this.call({ method: 'patch', path: `/policy/rules/${ruleId}`, body: updates });
+  async updatePolicyRule({ id, ...updates }) {
+    return this.call({ method: 'patch', path: `/policy/rules/${id}`, body: updates });
   }
 
   /**
    * Включить / выключить PBR-правило.
-   * @param {{ ruleId: string, enabled: boolean }}
+   * @param {{ id: string, enabled: boolean }}
    * @returns {{ rule: object }}
    */
-  async togglePolicyRule({ ruleId, enabled }) {
-    return this.call({ method: 'patch', path: `/policy/rules/${ruleId}`, body: { enabled } });
+  async togglePolicyRule({ id, enabled }) {
+    return this.call({ method: 'patch', path: `/policy/rules/${id}`, body: { enabled } });
   }
 
   /**
    * Удалить PBR-правило (+ убирает kernel-стек: mangle + ip rule + ip route table).
-   * @param {{ ruleId: string }}
+   * @param {{ id: string }}
    */
-  async deletePolicyRule({ ruleId }) {
-    return this.call({ method: 'delete', path: `/policy/rules/${ruleId}` });
+  async deletePolicyRule({ id }) {
+    return this.call({ method: 'delete', path: `/policy/rules/${id}` });
   }
 
 }
