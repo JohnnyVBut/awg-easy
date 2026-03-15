@@ -26,7 +26,7 @@ class Gateway {
         enabled:        (data.monitorHttp || {}).enabled        ?? false,
         url:            (data.monitorHttp || {}).url            ?? '',
         expectedStatus: (data.monitorHttp || {}).expectedStatus ?? 200,
-        interval:       (data.monitorHttp || {}).interval       ?? 60,
+        interval:       (data.monitorHttp || {}).interval       ?? 10,
         timeout:        (data.monitorHttp || {}).timeout        ?? 5,
       },
       monitorRule:      data.monitorRule      || 'icmp_only', // 'icmp_only'|'http_only'|'all'|'any'

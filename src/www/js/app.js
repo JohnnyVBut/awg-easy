@@ -230,7 +230,7 @@ new Vue({
       monitorInterval: 5,
       windowSeconds: null,
       latencyThreshold: 500,
-      monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 },
+      monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 10, timeout: 5 },
       monitorRule: 'icmp_only',
       description: '',
     },
@@ -244,7 +244,7 @@ new Vue({
       monitorInterval: 5,
       windowSeconds: null,
       latencyThreshold: 500,
-      monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 },
+      monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 10, timeout: 5 },
       monitorRule: 'icmp_only',
       description: '',
     },
@@ -1147,7 +1147,7 @@ new Vue({
           name: '', interface: '', gatewayIP: '', monitorAddress: '',
           monitor: true, monitorInterval: 5, windowSeconds: null,
           latencyThreshold: 500,
-          monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 },
+          monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 10, timeout: 5 },
           monitorRule: 'icmp_only',
           description: '',
         };
@@ -1159,7 +1159,7 @@ new Vue({
 
     // ── Edit Gateway ──────────────────────────────────────────────────────────
     openGatewayEdit(gw) {
-      const httpDefaults = { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 };
+      const httpDefaults = { enabled: false, url: '', expectedStatus: 200, interval: 10, timeout: 5 };
       this.gatewayEdit = {
         id:               gw.id,
         name:             gw.name,
