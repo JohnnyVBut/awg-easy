@@ -2963,7 +2963,10 @@
                   <td class="dark:text-neutral-200 font-medium" style="padding:10px 12px;">{{ alias.name }}</td>
                   <td style="padding:10px 12px;">
                     <span class="text-xs font-medium rounded-full px-2 py-1"
-                      :class="alias.type === 'ipset' ? 'bg-purple-100 text-purple-700' : alias.type === 'network' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'">
+                      :style="alias.type === 'ipset'    ? 'background:#f3e8ff;color:#7c3aed;' :
+                              alias.type === 'network'  ? 'background:#dbeafe;color:#1e40af;' :
+                              alias.type === 'group'    ? 'background:#ede9fe;color:#5b21b6;' :
+                                                         'background:#f3f4f6;color:#374151;'">
                       {{ alias.type }}
                     </span>
                   </td>
@@ -2972,6 +2975,9 @@
                       <span v-if="aliasGeneratingId === alias.id" class="text-blue-500">⟳ generating...</span>
                       <span v-else-if="alias.entryCount > 0">{{ alias.entryCount }} prefixes</span>
                       <span v-else class="text-gray-400 dark:text-neutral-500 italic">empty — upload or generate</span>
+                    </span>
+                    <span v-else-if="alias.type === 'group'">
+                      {{ (alias.memberIds || []).length }} members · {{ alias.entryCount }} entries total
                     </span>
                     <span v-else>{{ (alias.entries || []).length }} entries</span>
                   </td>
@@ -3027,14 +3033,31 @@
                   <option value="host">Host — list of single IP addresses</option>
                   <option value="network">Network — list of CIDR prefixes</option>
                   <option value="ipset">ipset — large kernel set (upload file or generate)</option>
+                  <option value="group">Group — combines multiple host/network aliases</option>
                 </select>
               </div>
               <!-- Entries (host/network) -->
-              <div v-if="aliasCreate.type !== 'ipset'">
+              <div v-if="aliasCreate.type === 'host' || aliasCreate.type === 'network'">
                 <label class="text-sm font-medium dark:text-neutral-300">Entries (one per line)</label>
                 <textarea v-model="aliasCreate.entries" rows="5"
                   :placeholder="aliasCreate.type === 'host' ? '192.168.1.1\n10.0.0.5' : '10.0.0.0/8\n192.168.0.0/16'"
                   class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1 font-mono"></textarea>
+              </div>
+              <!-- Group: member checklist -->
+              <div v-if="aliasCreate.type === 'group'">
+                <label class="text-sm font-medium dark:text-neutral-300">Members (host/network aliases)</label>
+                <div v-if="_aliasGroupCandidates().length === 0" class="text-sm text-gray-400 dark:text-neutral-500 mt-1">
+                  No host/network aliases yet. Create them first.
+                </div>
+                <div v-else class="mt-1 rounded" style="border:1px solid #d1d5db; max-height:180px; overflow-y:auto;">
+                  <label v-for="a in _aliasGroupCandidates()" :key="a.id"
+                    class="flex items-center gap-3 text-sm dark:text-neutral-300 cursor-pointer"
+                    style="padding:8px 12px; border-bottom:1px solid rgba(0,0,0,0.06);">
+                    <input type="checkbox" :value="a.id" v-model="aliasCreate.memberIds" />
+                    <span class="font-medium">{{ a.name }}</span>
+                    <span class="text-xs text-gray-400 dark:text-neutral-500">{{ a.type }} · {{ a.entryCount }} entries</span>
+                  </label>
+                </div>
               </div>
               <!-- ipset: generate section -->
               <div v-if="aliasCreate.type === 'ipset'" class="bg-gray-50 dark:bg-neutral-600 rounded-lg" style="padding:12px;">
@@ -3092,11 +3115,41 @@
                 <input v-model="aliasEdit.description" type="text"
                   class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
               </div>
+              <!-- Type (read-only badge) -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Type</label>
+                <div class="mt-1">
+                  <span class="text-xs font-semibold rounded px-2 py-1"
+                    :style="aliasEdit.type === 'host' ? 'background:#dbeafe;color:#1e40af;' :
+                            aliasEdit.type === 'network' ? 'background:#dcfce7;color:#166534;' :
+                            aliasEdit.type === 'ipset' ? 'background:#fef9c3;color:#92400e;' :
+                            'background:#ede9fe;color:#5b21b6;'">
+                    {{ aliasEdit.type }}
+                  </span>
+                  <span class="text-xs text-gray-400 dark:text-neutral-500 ml-2">Type cannot be changed after creation</span>
+                </div>
+              </div>
               <!-- Entries (host/network) -->
-              <div v-if="aliasEdit.type !== 'ipset'">
+              <div v-if="aliasEdit.type === 'host' || aliasEdit.type === 'network'">
                 <label class="text-sm font-medium dark:text-neutral-300">Entries (one per line)</label>
                 <textarea v-model="aliasEdit.entries" rows="6"
                   class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1 font-mono"></textarea>
+              </div>
+              <!-- Group: member checklist -->
+              <div v-if="aliasEdit.type === 'group'">
+                <label class="text-sm font-medium dark:text-neutral-300">Members (host/network aliases)</label>
+                <div v-if="_aliasGroupCandidates().length === 0" class="text-sm text-gray-400 dark:text-neutral-500 mt-1">
+                  No host/network aliases available.
+                </div>
+                <div v-else class="mt-1 rounded" style="border:1px solid #d1d5db; max-height:220px; overflow-y:auto;">
+                  <label v-for="a in _aliasGroupCandidates()" :key="a.id"
+                    class="flex items-center gap-3 text-sm dark:text-neutral-300 cursor-pointer"
+                    style="padding:8px 12px; border-bottom:1px solid rgba(0,0,0,0.06);">
+                    <input type="checkbox" :value="a.id" v-model="aliasEdit.memberIds" />
+                    <span class="font-medium">{{ a.name }}</span>
+                    <span class="text-xs text-gray-400 dark:text-neutral-500">{{ a.type }} · {{ a.entryCount }} entries</span>
+                  </label>
+                </div>
               </div>
               <!-- ipset: regenerate section -->
               <div v-if="aliasEdit.type === 'ipset'" class="bg-gray-50 dark:bg-neutral-600 rounded-lg" style="padding:12px;">

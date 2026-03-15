@@ -12,11 +12,10 @@ const ALIASES_DIR = '/etc/wireguard/data/aliases';
 /**
  * AliasManager — именованные наборы адресов (Firewall Aliases).
  *
- * Три типа алиасов:
+ * Четыре типа алиасов:
  *
  *   host     — один или несколько IP-адресов (напр. "1.2.3.4", "5.6.7.8")
- *              Хранятся в entries[]. Применяются как -s/-d в iptables напрямую
- *              или через вспомогательный ipset под капотом.
+ *              Хранятся в entries[]. Применяются как -s/-d в iptables напрямую.
  *
  *   network  — один или несколько CIDR-префиксов (напр. "192.168.0.0/16")
  *              Аналогично host, но для подсетей.
@@ -26,9 +25,14 @@ const ALIASES_DIR = '/etc/wireguard/data/aliases';
  *              Данные хранятся в /etc/wireguard/data/ipsets/<ipsetName>.save
  *              и восстанавливаются через IpsetManager.restoreAll().
  *
+ *   group    — объединяет несколько host/network алиасов в один.
+ *              Хранит ссылки: memberIds: [uuid, uuid, ...].
+ *              getMatchSpec() возвращает merged deduplicated список entries.
+ *              Ограничение: members должны быть type=host или type=network
+ *              (не ipset, не group — вложенные группы не поддерживаются).
+ *
  * Алиасы переиспользуются в:
- *   - PolicyManager (source / destination в PBR-правилах)
- *   - FirewallManager (будущий: source / destination в iptables-правилах)
+ *   - FirewallManager (source / destination в iptables-правилах)
  *
  * Персистентность: /etc/wireguard/data/aliases/<id>.json
  *
@@ -37,11 +41,11 @@ const ALIASES_DIR = '/etc/wireguard/data/aliases';
  *   id:            string   — UUID
  *   name:          string   — уникальное имя (используется в UI и в логах)
  *   description:   string   — произвольный комментарий
- *   type:          string   — 'host' | 'network' | 'ipset'
- *   entries:       string[] — для host/network: список IP/CIDR
- *                             для ipset: пусто (данные в ядре)
+ *   type:          string   — 'host' | 'network' | 'ipset' | 'group'
+ *   entries:       string[] — для host/network: список IP/CIDR; для group/ipset: []
+ *   memberIds:     string[] — для type=group: UUID-ы members; иначе []
  *   ipsetName:     string|null — для type=ipset: имя kernel ipset
- *   entryCount:    number   — кол-во записей (для ipset обновляется после generate/upload)
+ *   entryCount:    number   — кол-во записей (для group: сумма member.entryCount)
  *   generatorOpts: object|null — параметры последней генерации через prefixes.py
  *                               { country? | asn? | asnList? }
  *   lastUpdated:   string|null — ISO timestamp последнего обновления данных
@@ -71,6 +75,8 @@ class AliasManager {
       try {
         const raw = await fs.readFile(path.join(ALIASES_DIR, f), 'utf8');
         const alias = JSON.parse(raw);
+        // Миграция: старые алиасы не имеют поля memberIds
+        if (!alias.memberIds) alias.memberIds = [];
         this.aliases.set(alias.id, alias);
         debug(`Loaded alias: ${alias.id} (${alias.name}, ${alias.type})`);
       } catch (err) {
@@ -88,8 +94,9 @@ class AliasManager {
    *
    * @param {object} data
    * @param {string}   data.name         - Уникальное имя (обязательно)
-   * @param {string}   data.type         - 'host' | 'network' | 'ipset'
+   * @param {string}   data.type         - 'host' | 'network' | 'ipset' | 'group'
    * @param {string[]} [data.entries]    - Для host/network
+   * @param {string[]} [data.memberIds]  - Для group: UUID-ы алиасов-участников
    * @param {string}   [data.description]
    * @returns {Promise<object>} созданный алиас
    */
@@ -97,21 +104,36 @@ class AliasManager {
     this._validate(data);
     this._checkNameUnique(data.name);
 
+    // Для group: валидировать members
+    if (data.type === 'group') {
+      this._validateMembers(data.memberIds);
+    }
+
+    const isGroup  = data.type === 'group';
+    const isIpset  = data.type === 'ipset';
+    const isPlain  = !isGroup && !isIpset; // host или network
+
+    const memberIds = isGroup ? [...new Set(data.memberIds)] : [];
+    const entries   = isPlain ? this._normalizeEntries(data.entries || []) : [];
+
     const alias = {
       id:            uuidv4(),
       name:          data.name.trim(),
       description:   (data.description || '').trim(),
       type:          data.type,
-      entries:       data.type !== 'ipset' ? this._normalizeEntries(data.entries || []) : [],
-      ipsetName:     data.type === 'ipset' ? this._ipsetNameFromAlias(data.name.trim()) : null,
-      entryCount:    data.type !== 'ipset' ? (data.entries || []).length : 0,
+      entries,
+      memberIds,
+      ipsetName:     isIpset ? this._ipsetNameFromAlias(data.name.trim()) : null,
+      entryCount:    isPlain  ? entries.length
+                   : isGroup  ? this._groupEntryCount(memberIds)
+                   : 0,
       generatorOpts: null,
-      lastUpdated:   data.type !== 'ipset' && (data.entries || []).length ? new Date().toISOString() : null,
+      lastUpdated:   isPlain && entries.length ? new Date().toISOString() : null,
       createdAt:     new Date().toISOString(),
     };
 
     // Для ipset: создать kernel set
-    if (alias.type === 'ipset') {
+    if (isIpset) {
       await this._ipsetMgr.createSet(alias.ipsetName);
     }
 
@@ -123,11 +145,11 @@ class AliasManager {
   }
 
   /**
-   * Обновить алиас (name, description, entries для host/network).
+   * Обновить алиас (name, description, entries для host/network, memberIds для group).
    * Нельзя изменить type.
    *
    * @param {string} id
-   * @param {object} data - { name?, description?, entries? }
+   * @param {object} data - { name?, description?, entries?, memberIds? }
    * @returns {Promise<object>}
    */
   async updateAlias(id, data) {
@@ -140,7 +162,15 @@ class AliasManager {
     if (data.description !== undefined) {
       alias.description = (data.description || '').trim();
     }
-    if (data.entries !== undefined && alias.type !== 'ipset') {
+
+    if (alias.type === 'group' && data.memberIds !== undefined) {
+      this._validateMembers(data.memberIds);
+      alias.memberIds  = [...new Set(data.memberIds)];
+      alias.entryCount = this._groupEntryCount(alias.memberIds);
+      alias.lastUpdated = new Date().toISOString();
+    }
+
+    if (data.entries !== undefined && (alias.type === 'host' || alias.type === 'network')) {
       alias.entries    = this._normalizeEntries(data.entries);
       alias.entryCount = alias.entries.length;
       alias.lastUpdated = new Date().toISOString();
@@ -154,11 +184,19 @@ class AliasManager {
   /**
    * Удалить алиас.
    * Для ipset: уничтожает kernel set и .save файл.
+   * Для host/network: проверяет что алиас не используется в группах.
    *
    * @param {string} id
    */
   async deleteAlias(id) {
     const alias = this._getOrThrow(id);
+
+    // Не разрешаем удалять если используется в группе
+    for (const a of this.aliases.values()) {
+      if (a.type === 'group' && (a.memberIds || []).includes(id)) {
+        throw createError({ status: 409, message: `Alias "${alias.name}" is used in group "${a.name}"` });
+      }
+    }
 
     if (alias.type === 'ipset' && alias.ipsetName) {
       await this._ipsetMgr.destroySet(alias.ipsetName).catch(err =>
@@ -261,23 +299,39 @@ class AliasManager {
     return this._ipsetMgr.getJobStatus(jobId);
   }
 
-  // ─── Match spec (для PolicyManager) ───────────────────────────────────────
+  // ─── Match spec (для FirewallManager) ─────────────────────────────────────
 
   /**
-   * Получить "match specification" алиаса для использования в iptables/ip rule.
+   * Получить "match specification" алиаса для использования в iptables.
    *
    * Возвращает:
    *   { type: 'ipset', name: 'ru_nets' }
    *   { type: 'cidr',  entries: ['192.168.0.0/16', '10.0.0.0/8'] }
+   *
+   * Для group: рекурсивно объединяет entries всех members, дедуплицирует.
    *
    * @param {string} id
    * @returns {{ type: 'ipset'|'cidr', name?: string, entries?: string[] }}
    */
   getMatchSpec(id) {
     const alias = this._getOrThrow(id);
+
     if (alias.type === 'ipset') {
       return { type: 'ipset', name: alias.ipsetName };
     }
+
+    if (alias.type === 'group') {
+      const merged = [];
+      for (const memberId of (alias.memberIds || [])) {
+        const member = this.aliases.get(memberId);
+        if (!member) continue;
+        merged.push(...(member.entries || []));
+      }
+      // Дедупликация
+      return { type: 'cidr', entries: [...new Set(merged)] };
+    }
+
+    // host / network
     return { type: 'cidr', entries: alias.entries };
   }
 
@@ -296,9 +350,42 @@ class AliasManager {
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,62}$/.test(data.name.trim())) {
       throw createError({ status: 400, message: 'Alias name must start with a letter and contain only letters, digits, _ or -' });
     }
-    if (!['host', 'network', 'ipset'].includes(data.type)) {
-      throw createError({ status: 400, message: 'Alias type must be host, network, or ipset' });
+    if (!['host', 'network', 'ipset', 'group'].includes(data.type)) {
+      throw createError({ status: 400, message: 'Alias type must be host, network, ipset, or group' });
     }
+  }
+
+  /**
+   * Валидировать список memberIds для group.
+   * @param {string[]} memberIds
+   */
+  _validateMembers(memberIds) {
+    if (!Array.isArray(memberIds) || memberIds.length === 0) {
+      throw createError({ status: 400, message: 'Group alias must have at least one member' });
+    }
+    for (const memberId of memberIds) {
+      const member = this.aliases.get(memberId);
+      if (!member) {
+        throw createError({ status: 400, message: `Member alias ${memberId} not found` });
+      }
+      if (member.type !== 'host' && member.type !== 'network') {
+        throw createError({ status: 400, message: `Member alias "${member.name}" must be type host or network (got ${member.type})` });
+      }
+    }
+  }
+
+  /**
+   * Вычислить суммарное количество записей для group (сумма member.entryCount).
+   * @param {string[]} memberIds
+   * @returns {number}
+   */
+  _groupEntryCount(memberIds) {
+    let total = 0;
+    for (const memberId of memberIds) {
+      const member = this.aliases.get(memberId);
+      if (member) total += member.entryCount || 0;
+    }
+    return total;
   }
 
   _checkNameUnique(name, excludeId = null) {

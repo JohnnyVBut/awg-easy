@@ -536,6 +536,12 @@ QR-код с конфигом в формате SVG (для мобильного
 
 ## Firewall Aliases
 
+Четыре типа:
+- **host** — список IP-адресов
+- **network** — список CIDR-префиксов
+- **ipset** — kernel ipset (большой набор, наполняется через upload или generate)
+- **group** — объединяет несколько host/network алиасов; `getMatchSpec` возвращает merged deduplicated entries
+
 ### `GET /api/aliases`
 ```json
 {
@@ -543,7 +549,12 @@ QR-код с конфигом в формате SVG (для мобильного
     "id": "uuid", "name": "ru", "type": "ipset",
     "ipsetName": "ru", "entryCount": 8123,
     "generatorOpts": { "country": "RU", "asn": null, "asnList": null },
-    "lastUpdated": "2026-03-15T10:00:00Z"
+    "lastUpdated": "2026-03-15T10:00:00Z",
+    "memberIds": []
+  }, {
+    "id": "uuid2", "name": "all_vpn", "type": "group",
+    "entries": [], "memberIds": ["uuid-a", "uuid-b"],
+    "entryCount": 42, "lastUpdated": "2026-03-15T10:00:00Z"
   }]
 }
 ```
@@ -558,15 +569,19 @@ QR-код с конфигом в формате SVG (для мобильного
 // ipset type (пустой при создании, наполняется через upload или generate)
 { "name": "ru", "type": "ipset", "description": "RU prefixes" }
 
+// group type (ссылается на существующие host/network алиасы)
+{ "name": "all_vpn", "type": "group", "memberIds": ["uuid-a", "uuid-b"] }
+
 // Response
 { "alias": { "id": "uuid", ... } }
 ```
 
 ### `PATCH /api/aliases/:id`
-Обновить алиас (name, description, entries).
+Обновить алиас (name, description, entries для host/network, memberIds для group).
 
 ### `DELETE /api/aliases/:id`
 Удалить алиас. Для ipset — уничтожает kernel set.
+Если алиас используется как member в группе — возвращает HTTP 409 с именем группы.
 
 ### `POST /api/aliases/:id/upload`
 Загрузить префиксы из текстового файла в ipset (один CIDR на строку).
@@ -671,7 +686,7 @@ QR-код с конфигом в формате SVG (для мобильного
 |------|------|----------|
 | `any` | — | Без ограничений |
 | `cidr` | `value: "10.0.0.0/8"` | Конкретный CIDR |
-| `alias` | `aliasId: "uuid"` | Ссылка на алиас (host/network/ipset) |
+| `alias` | `aliasId: "uuid"` | Ссылка на алиас (host/network/ipset/group) |
 
 `invert: true` добавляет `!` перед матчем (NOT).
 

@@ -536,6 +536,12 @@ Delete a rule (from iptables and JSON).
 
 ## Firewall Aliases
 
+Four types:
+- **host** — list of IP addresses
+- **network** — list of CIDR prefixes
+- **ipset** — kernel ipset (large set, populated via upload or generate)
+- **group** — combines multiple host/network aliases; `getMatchSpec` returns merged deduplicated entries
+
 ### `GET /api/aliases`
 ```json
 {
@@ -543,7 +549,12 @@ Delete a rule (from iptables and JSON).
     "id": "uuid", "name": "ru", "type": "ipset",
     "ipsetName": "ru", "entryCount": 8123,
     "generatorOpts": { "country": "RU", "asn": null, "asnList": null },
-    "lastUpdated": "2026-03-15T10:00:00Z"
+    "lastUpdated": "2026-03-15T10:00:00Z",
+    "memberIds": []
+  }, {
+    "id": "uuid2", "name": "all_vpn", "type": "group",
+    "entries": [], "memberIds": ["uuid-a", "uuid-b"],
+    "entryCount": 42, "lastUpdated": "2026-03-15T10:00:00Z"
   }]
 }
 ```
@@ -558,15 +569,19 @@ Create an alias.
 // ipset type (empty on creation, populated via upload or generate)
 { "name": "ru", "type": "ipset", "description": "RU prefixes" }
 
+// group type (references existing host/network aliases)
+{ "name": "all_vpn", "type": "group", "memberIds": ["uuid-a", "uuid-b"] }
+
 // Response
 { "alias": { "id": "uuid", ... } }
 ```
 
 ### `PATCH /api/aliases/:id`
-Update an alias (name, description, entries).
+Update an alias (name, description, entries for host/network, memberIds for group).
 
 ### `DELETE /api/aliases/:id`
 Delete an alias. For ipset — destroys the kernel set.
+If the alias is used as a member in a group — returns HTTP 409 with the group name.
 
 ### `POST /api/aliases/:id/upload`
 Upload prefixes from a text file into an ipset (one CIDR per line).
@@ -671,7 +686,7 @@ Create a rule. The rule is appended last (order = max + 1).
 |------|--------|-------------|
 | `any` | — | No restriction |
 | `cidr` | `value: "10.0.0.0/8"` | Specific CIDR |
-| `alias` | `aliasId: "uuid"` | Reference to an alias (host/network/ipset) |
+| `alias` | `aliasId: "uuid"` | Reference to an alias (host/network/ipset/group) |
 
 `invert: true` prepends `!` to the match expression (NOT).
 

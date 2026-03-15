@@ -633,7 +633,7 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | GatewayManager: createGateway/updateGateway/deleteGateway | ✅ | персистентность в /etc/wireguard/data/gateways/ |
 | GatewayMonitor: ping-polling, latency/loss статистика | ✅ | per-gateway интервал, windowSeconds |
 | GatewayGroup: CRUD, tier-based приоритеты | ✅ | trigger: packetloss/latency/packetloss_latency |
-| AliasManager: CRUD host/network/ipset | ✅ | персистентность в /etc/wireguard/data/aliases/ |
+| AliasManager: CRUD host/network/ipset/group | ✅ | group = merged deduplicated entries; members только host/network |
 | IpsetManager: create/destroy/loadFromFile/generateFromScript | ✅ | prefixes.py интеграция |
 | FirewallManager: init chains (FIREWALL_FORWARD + FIREWALL_MANGLE) | ✅ | filter + mangle custom chains |
 | FirewallManager: CRUD + toggle + move | ✅ | персистентность в firewall-rules.json |
@@ -678,7 +678,7 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | Gateways: список, create/edit/delete modal | ✅ | name, interface, gatewayIP, monitorAddress, interval |
 | Gateways: live статус (online/latency/loss) | ✅ | GatewayMonitor ping polling |
 | Gateway Groups: create/edit/delete, tier-based | ✅ | trigger: packetloss/latency/packetloss_latency |
-| Firewall → Aliases | ✅ | host/network/ipset, upload file, generate via prefixes.py, CRUD |
+| Firewall → Aliases | ✅ | host/network/ipset/group, upload file, generate via prefixes.py, CRUD |
 | Firewall → Rules | ✅ | таблица + Add/Edit модалы, ACCEPT/DROP/REJECT, PBR через gateway |
 | Routing → Policy tab | ❌ удалён | PBR переехал в Firewall → Rules |
 | Settings: "Generate" кнопка (⚡) | ✅ | модал: профиль + intensity + host + preview + save |

@@ -304,8 +304,9 @@ new Vue({
     aliasCreate: {
       name: '',
       description: '',
-      type: 'network',          // 'host' | 'network' | 'ipset'
-      entries: '',              // textarea: one entry per line
+      type: 'network',          // 'host' | 'network' | 'ipset' | 'group'
+      entries: '',              // textarea: one entry per line (host/network)
+      memberIds: [],            // для group: выбранные UUID members
       genSource: 'country',     // 'country' | 'asn' | 'asn-list'
       genCountry: '',
       genAsn: '',
@@ -317,6 +318,7 @@ new Vue({
       description: '',
       type: 'network',
       entries: '',
+      memberIds: [],            // для group: выбранные UUID members
       genSource: 'country',
       genCountry: '',
       genAsn: '',
@@ -1557,16 +1559,24 @@ new Vue({
 
     _resetAliasCreate() {
       this.aliasCreate = {
-        name: '', description: '', type: 'network', entries: '',
+        name: '', description: '', type: 'network', entries: '', memberIds: [],
         genSource: 'country', genCountry: '', genAsn: '', genAsnList: '',
       };
+    },
+
+    // Вернуть только host/network алиасы (кандидаты для group membership)
+    _aliasGroupCandidates() {
+      return this.aliases.filter(a => a.type === 'host' || a.type === 'network');
     },
 
     async createAlias() {
       try {
         const data = { name: this.aliasCreate.name, description: this.aliasCreate.description, type: this.aliasCreate.type };
-        if (data.type !== 'ipset') {
+        if (data.type === 'host' || data.type === 'network') {
           data.entries = this.aliasCreate.entries.split('\n').map(l => l.trim()).filter(Boolean);
+        }
+        if (data.type === 'group') {
+          data.memberIds = this.aliasCreate.memberIds;
         }
         // Сохраняем опции генерации ДО сброса формы
         const genOpts = this.aliasCreate.type === 'ipset' ? {
@@ -1599,7 +1609,8 @@ new Vue({
         name: alias.name,
         description: alias.description || '',
         type: alias.type,
-        entries: alias.type !== 'ipset' ? (alias.entries || []).join('\n') : '',
+        entries: (alias.type === 'host' || alias.type === 'network') ? (alias.entries || []).join('\n') : '',
+        memberIds: alias.type === 'group' ? [...(alias.memberIds || [])] : [],
         genSource: alias.generatorOpts?.asnList ? 'asn-list' : alias.generatorOpts?.asn ? 'asn' : 'country',
         genCountry: alias.generatorOpts?.country || '',
         genAsn: alias.generatorOpts?.asn || '',
@@ -1611,8 +1622,11 @@ new Vue({
     async saveAliasEdit() {
       try {
         const data = { id: this.aliasEdit.id, name: this.aliasEdit.name, description: this.aliasEdit.description };
-        if (this.aliasEdit.type !== 'ipset') {
+        if (this.aliasEdit.type === 'host' || this.aliasEdit.type === 'network') {
           data.entries = this.aliasEdit.entries.split('\n').map(l => l.trim()).filter(Boolean);
+        }
+        if (this.aliasEdit.type === 'group') {
+          data.memberIds = this.aliasEdit.memberIds;
         }
         await this.api.updateAlias(data);
         this.showAliasEdit = false;
