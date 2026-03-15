@@ -391,6 +391,28 @@ async _applyRule(rule) {
 Если правило изменилось (например, другой outInterface) — `-C` вернёт false → `-A` добавит новое.
 Старое правило при этом останется — нужен явный `-D` при update/delete.
 
+### FIX-15b: Gateway fallback — blackhole/default route при gateway down
+**Файлы:** `src/lib/GatewayMonitor.js`, `src/lib/FirewallManager.js`
+**Причина:** Firewall Rule с привязкой к gateway не реагировал на падение gateway — трафик уходил в никуда.
+
+**Архитектура:**
+- `GatewayMonitor` extends `EventEmitter`, при смене статуса `gateway emits 'statusChange'`
+- `FirewallManager.init()` подписывается: `monitor.on('statusChange', _handleGatewayStatusChange)`
+- `fallbackToDefault: bool` — флаг на каждом Firewall Rule (default: false)
+- При `down`: если `fallbackToDefault=true` → `ip route replace default via <system-gw> table N`; иначе → `ip route replace blackhole default table N`
+- При `up` (recovery): ждать 30s (anti-flap) → `ip route replace default via <rule.gateway.gatewayIP> table N`
+- `_fallbackActive` (Set) + `_restoreTimers` (Map) — отслеживание состояния
+- `_rebuildChains()` сбрасывает `_fallbackActive` + таймеры → GatewayMonitor re-emit при следующем polling
+- `ip route replace` вместо `ip route add` — идемпотентно, не падает при stale route
+- Группа: fallback только если ALL участники группы в статусе `down`
+- System default gw: парсится из `ip route show default` (текст, без -j)
+
+```javascript
+// ПРАВИЛЬНО: ip route replace (idempotent)
+await Util.exec(`ip route replace ${target} via ${gw} table ${tableN}`);
+// НЕПРАВИЛЬНО: ip route add — падает если маршрут уже есть
+```
+
 ### FIX-15: Ошибки `ip route` пробрасываются как HTTP 400 с деталью из stderr
 **Файл:** `src/lib/RouteManager.js` → методы `addRoute()`, `toggleRoute(enable=true)`
 **Причина:** Если `ip route add` падает (неверный prefix, шлюз недоступен, неверный интерфейс),
@@ -581,21 +603,37 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | `b566fce` | feature/kernel-module | docs: require API docs update in both languages for every new endpoint |
 | `1bdbd8f` | feature/kernel-module | docs: add low-priority wishlist item — UI config writable via API |
 | `c488cca` | feature/kernel-module | feat: Firewall Rules — unified filter + PBR (replaces PolicyManager) |
+| `343fabf` | feature/kernel-module | feat(gateways): HTTP(S) reachability monitoring + health decision rules |
+| `7a6b225` | feature/kernel-module | fix(gateways): HTTP probe starts by monitorRule, not monitorHttp.enabled |
+| `4d8a693` | feature/kernel-module | fix(gateways): HTTP window auto-expands to fit MIN_PROBES at given interval |
+| `ea90153` | feature/kernel-module | fix(docker): add curl to apk packages — required for HTTP gateway monitoring |
+| `6257d80` | feature/kernel-module | fix(gateway-monitor): replace curl subprocess with native Node.js http/https for HTTP probes |
+| `f6bac16` | feature/kernel-module | feat(gateway-monitor): expose HTTP response code in status + debug logging |
+| `17188eb` | feature/kernel-module | fix(gateway-monitor): reduce default HTTP probe interval from 60s to 10s |
+| `bfebc98` | feature/kernel-module | feat: gateway fallback — blackhole or default route when gateway goes down |
+| `bb2742e` | feature/kernel-module | feat(aliases): add group type — combines multiple host/network aliases |
+| `fb8f83a` | feature/kernel-module | feat: L4 port aliases — port/port-group types + firewall rule port matching |
+| `85cc147` | feature/kernel-module | refactor(ui): extract repeated inline styles to CSS utility classes |
+| `96ed64f` | feature/kernel-module | fix(ui): rename port mode button None → Any (semantically correct) |
+| `f1e02ac` | feature/kernel-module | fix(ui): add missing px-2/py-1 Tailwind classes — alias badges had no padding |
+| `37f18a8` | feature/kernel-module | feat(nat): show auto MASQUERADE rules from tunnel interfaces in NAT tab |
+| `00b9fc0` | feature/kernel-module | fix(nat): use getAllInterfaces() instead of non-existent getAll() |
+| `c722be5` | feature/kernel-module | feat(nat): alias support in NAT rules source field |
 
 ---
 
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `c488cca` feat: Firewall Rules — unified filter + PBR (replaces PolicyManager)
+**Последний коммит:** `c722be5` feat(nat): alias support in NAT rules source field
 
 **Что готово (протестировано на production):**
 - Interfaces: CRUD, start/stop, peers, S2S interconnect, dashboard
 - Routing: static routes + status + kernel route test
-- NAT: Outbound MASQUERADE/SNAT CRUD
-- Gateways: CRUD + live ping monitoring + Gateway Groups
-- Firewall Aliases: host/network/ipset + upload + generate (RIPE prefixes)
-- Firewall Rules: ACCEPT/DROP/REJECT + PBR (gateway) + ↑↓ order
+- NAT: Outbound MASQUERADE/SNAT CRUD + alias source + auto правила от интерфейсов
+- Gateways: CRUD + live ping/HTTP monitoring + Gateway Groups + fallback при down
+- Firewall Aliases: host/network/ipset/group + L4 port/port-group + upload + generate (RIPE)
+- Firewall Rules: ACCEPT/DROP/REJECT + PBR (gateway) + port alias matching + ↑↓ order
 - AWG2 Templates: CRUD + Generate (7 CPS-профилей)
 
 ---
@@ -624,16 +662,23 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | Routing API: GET/POST/PATCH/DELETE /api/routing/routes | ✅ | static routes CRUD |
 | NatManager: addRule/updateRule/deleteRule/toggleRule | ✅ | персистентность в nat-rules.json |
 | NatManager: idempotent _applyRule (-C check) | ✅ | дубли не создаются при рестарте контейнера |
+| NatManager: sourceAliasId — alias как source | ✅ | host/network → N правил, ipset → --match-set, group → рекурсивно |
 | NatManager: getNetworkInterfaces | ✅ | ip -o link show (без -j, text parse) |
 | NatManager: eager init в Server constructor | ✅ | правила применяются при старте контейнера |
 | NAT API: GET /api/nat/interfaces | ✅ | список интерфейсов хоста |
 | NAT API: GET/POST/PATCH/DELETE /api/nat/rules | ✅ | CRUD правил, toggle через PATCH {enabled} |
+| NAT API: GET /api/nat/rules → auto rules от интерфейсов | ✅ | badge "auto", read-only |
 | AwgParamGenerator: generate() | ✅ | Jc/Jmin/Jmax + S1-S4 + H1-H4 + I1-I5 (7 CPS-профилей) |
 | Templates API: POST /api/templates/generate | ✅ | генерация + опциональное сохранение (saveName) |
 | GatewayManager: createGateway/updateGateway/deleteGateway | ✅ | персистентность в /etc/wireguard/data/gateways/ |
 | GatewayMonitor: ping-polling, latency/loss статистика | ✅ | per-gateway интервал, windowSeconds |
+| GatewayMonitor: HTTP(S) probe — native Node.js http/https | ✅ | интервал 10s по умолч., HTTP код в статусе, health rules |
+| GatewayMonitor: extends EventEmitter, emit statusChange | ✅ | FirewallManager подписывается на события |
 | GatewayGroup: CRUD, tier-based приоритеты | ✅ | trigger: packetloss/latency/packetloss_latency |
+| FirewallManager: fallback при gateway down | ✅ | blackhole или default gw, 30s anti-flap, _fallbackActive + _restoreTimers |
+| FirewallManager: ip route replace (идемпотентно) | ✅ | вместо ip route add — не падает при stale fallback route |
 | AliasManager: CRUD host/network/ipset/group | ✅ | group = merged deduplicated entries; members только host/network |
+| AliasManager: port/port-group типы | ✅ | entries: tcp:443, udp:53, any:80, tcp:8080-8090; getPortMatchSpec() |
 | IpsetManager: create/destroy/loadFromFile/generateFromScript | ✅ | prefixes.py интеграция |
 | FirewallManager: init chains (FIREWALL_FORWARD + FIREWALL_MANGLE) | ✅ | filter + mangle custom chains |
 | FirewallManager: CRUD + toggle + move | ✅ | персистентность в firewall-rules.json |
@@ -672,14 +717,16 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | Routing: таблица 100 в дропдауне | ✅ TESTED | обнаруживается через ip rule show |
 | Toast-уведомления (правый верхний угол) | ✅ | зелёный (success) / красный (error), 7с, стекируются, dismiss × |
 | NAT: Outbound NAT tab (CRUD таблица правил + toggle) | ✅ | |
-| NAT: Add Rule modal (any/subnet/IP source, MASQUERADE/SNAT) | ✅ | |
-| NAT: Edit Rule modal | ✅ | |
+| NAT: Add/Edit Rule modal — alias source | ✅ | радиокнопка Alias + дропдаун; фиолетовый бейдж в таблице |
+| NAT: auto правила от интерфейсов | ✅ | badge "auto" + ссылка на интерфейс; read-only |
 | NAT: Port Forwarding tab | ⏳ | placeholder "Coming soon" |
 | Gateways: список, create/edit/delete modal | ✅ | name, interface, gatewayIP, monitorAddress, interval |
-| Gateways: live статус (online/latency/loss) | ✅ | GatewayMonitor ping polling |
+| Gateways: live статус (online/latency/loss/HTTP) | ✅ | GatewayMonitor ping + HTTP polling |
+| Gateways: fallbackToDefault checkbox в Firewall Rule | ✅ | blackhole или default gw при gateway down |
 | Gateway Groups: create/edit/delete, tier-based | ✅ | trigger: packetloss/latency/packetloss_latency |
-| Firewall → Aliases | ✅ | host/network/ipset/group, upload file, generate via prefixes.py, CRUD |
-| Firewall → Rules | ✅ | таблица + Add/Edit модалы, ACCEPT/DROP/REJECT, PBR через gateway |
+| Firewall → Aliases | ✅ | host/network/ipset/group/port/port-group, upload, generate (RIPE), CRUD |
+| Firewall → Aliases: CSS utility classes | ✅ | modal-overlay/modal-panel/modal-header/body/footer/footer-compact + px-2/py-1 |
+| Firewall → Rules | ✅ | ACCEPT/DROP/REJECT, PBR gateway + fallback, port alias (source/destination) |
 | Routing → Policy tab | ❌ удалён | PBR переехал в Firewall → Rules |
 | Settings: "Generate" кнопка (⚡) | ✅ | модал: профиль + intensity + host + preview + save |
 | Generate modal: 7 CPS-профилей | ✅ | QUIC Initial/0-RTT, TLS 1.3, DTLS, HTTP/3, SIP, Noise_IK |
