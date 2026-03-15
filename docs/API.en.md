@@ -602,49 +602,68 @@ Status of background generation job.
 
 ---
 
-## Policy-Based Routing (PBR)
+## Firewall Rules
 
-### `GET /api/policy/rules`
+Firewall rules are a unified entity for filtering (ACCEPT/DROP/REJECT) and PBR (ACCEPT + gateway).
+Rules are evaluated in `order` sequence (top-to-bottom) via custom iptables chains:
+- `FIREWALL_FORWARD` (filter table) — for ACCEPT/DROP/REJECT
+- `FIREWALL_MANGLE` (mangle table) — for PBR packet marking (when gateway is set)
+
+### `GET /api/firewall/interfaces`
+List host network interfaces (for the `interface` field when creating a rule).
+```json
+{ "interfaces": ["eth0", "wg10", "wg11", "lo"] }
+```
+
+### `GET /api/firewall/rules`
 ```json
 {
   "rules": [{
-    "id": "uuid", "name": "Non-RU to KZ", "enabled": true,
-    "priority": 100, "fwmark": 1000,
-    "source": { "type": "any", "invert": false },
-    "destination": { "type": "alias", "aliasId": "uuid", "invert": true },
-    "gatewayId": "uuid", "gatewayGroupId": null
+    "id": "uuid", "name": "Block RU", "enabled": true, "order": 1,
+    "interface": "any",            // "any" | "wg10" | "eth0" — ingress -i flag
+    "protocol": "any",             // "any" | "tcp" | "udp" | "tcp/udp" | "icmp"
+    "source": {
+      "type": "any",               // "any" | "cidr" | "alias"
+      "aliasId": null, "value": null, "invert": false, "port": null
+    },
+    "destination": {
+      "type": "alias", "aliasId": "uuid", "value": null, "invert": true, "port": null
+    },
+    "action": "drop",              // "accept" | "drop" | "reject"
+    "gatewayId": null,             // only when action=accept
+    "gatewayGroupId": null,
+    "fwmark": null,                // auto-assigned when gateway is set
+    "log": false, "comment": "",
+    "createdAt": "ISO string"
   }]
 }
 ```
 
-### `POST /api/policy/rules`
-Create a PBR rule.
+### `POST /api/firewall/rules`
+Create a rule. The rule is appended last (order = max + 1).
 ```json
 // Request
 {
-  "name": "Non-RU → KZ",
+  "name": "Non-RU → KZ",           // optional
+  "interface": "any",              // optional, default "any"
+  "protocol": "any",               // optional, default "any"
   "source": {
-    "type": "any"                          // any | cidr | alias
+    "type": "any"
   },
   "destination": {
     "type": "alias",
     "aliasId": "uuid-of-ru-alias",
-    "invert": true                         // NOT — traffic NOT destined for this set
+    "invert": true,                // NOT — traffic NOT destined for this set
+    "port": "443"                  // optional
   },
-  "gatewayId": "uuid-of-kz-gateway",       // xor gatewayGroupId
+  "action": "accept",              // "accept" | "drop" | "reject"
+  "gatewayId": "uuid-of-kz-gw",   // optional, only for action=accept
   "gatewayGroupId": null,
-  "priority": 100,                         // optional, auto-increments by 10
-  "fwmark": 1000                           // optional, auto-assigned
+  "log": false,
+  "comment": ""
 }
 // Response
 { "rule": { "id": "uuid", ... } }
-```
-
-Resulting kernel commands applied:
-```bash
-iptables-nft -t mangle -A PREROUTING -m set ! --match-set ru dst -j MARK --set-mark 1000
-ip route add default via <gw.gatewayIP> dev <gw.interface> table 1000
-ip rule add fwmark 1000 lookup 1000 priority 100
 ```
 
 **Endpoint types:**
@@ -656,16 +675,31 @@ ip rule add fwmark 1000 lookup 1000 priority 100
 
 `invert: true` prepends `!` to the match expression (NOT).
 
-### `PATCH /api/policy/rules/:id`
-Toggle or update:
+Resulting kernel commands (example: ACCEPT + gateway PBR):
+```bash
+iptables-nft -t mangle -A FIREWALL_MANGLE -m set ! --match-set ru dst -j MARK --set-mark 1000
+ip route add default via <gw.gatewayIP> dev <gw.interface> table 1000
+ip rule add fwmark 1000 lookup 1000 priority 1010
+iptables-nft -t filter -A FIREWALL_FORWARD -m set ! --match-set ru dst -j ACCEPT
+```
+
+### `PATCH /api/firewall/rules/:id`
+Toggle or update a rule:
 ```json
 // Toggle
 { "enabled": false }
-// Full update — same fields as creation
+// Update — any model fields
+{ "name": "New Name", "action": "drop", "gatewayId": null }
 ```
 
-### `DELETE /api/policy/rules/:id`
-Delete a rule (removes mangle + ip rule + ip route from kernel).
+### `DELETE /api/firewall/rules/:id`
+Delete a rule (rebuilds chains, removes ip rule + ip route from kernel).
+
+### `POST /api/firewall/rules/:id/move`
+Move a rule up or down (changes evaluation order):
+```json
+{ "direction": "up" }   // or "down"
+```
 
 ---
 

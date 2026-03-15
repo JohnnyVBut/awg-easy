@@ -2270,7 +2270,7 @@
         <!-- ============================================================== -->
         <div v-if="activePage === 'routing'">
 
-          <!-- Tab bar: Status | Static | Policy | OSPF -->
+          <!-- Tab bar: Status | Static | OSPF -->
           <div class="flex gap-2 mb-4">
             <button @click="switchRoutingTab('status')"
               :class="activeRoutingTab === 'status' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
@@ -2281,11 +2281,6 @@
               :class="activeRoutingTab === 'static' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
               class="px-4 py-2 rounded-lg font-medium transition text-sm">
               Static
-            </button>
-            <button @click="switchRoutingTab('policy')"
-              :class="activeRoutingTab === 'policy' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200'"
-              class="px-4 py-2 rounded-lg font-medium transition text-sm">
-              Policy
             </button>
             <button @click="switchRoutingTab('ospf')"
               class="px-4 py-2 rounded-lg font-medium transition text-sm bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200"
@@ -2466,75 +2461,6 @@
           </div>
 
           <!-- ── POLICY TAB ───────────────────────────────────────────── -->
-          <div v-if="activeRoutingTab === 'policy'" style="display:flex; flex-direction:column; gap:16px;">
-            <!-- Header -->
-            <div class="flex items-center justify-between">
-              <h2 class="text-xl font-semibold dark:text-neutral-200">Policy Rules</h2>
-              <button @click="showPolicyCreate = true; _resetPolicyCreate()"
-                class="bg-blue-600 text-white rounded-lg font-medium text-sm transition"
-                style="padding:8px 16px;">
-                + Add Rule
-              </button>
-            </div>
-
-            <!-- Loading -->
-            <div v-if="policyRulesLoading" class="text-gray-500 dark:text-neutral-400 text-sm">Loading...</div>
-
-            <!-- Empty -->
-            <div v-else-if="!policyRules.length" class="text-gray-500 dark:text-neutral-400 text-sm" style="padding:24px 0;">
-              No policy rules yet. Policy rules steer traffic based on source/destination to specific gateways using fwmark + ip rule.
-            </div>
-
-            <!-- Table -->
-            <div v-else class="bg-white dark:bg-neutral-700 rounded-lg overflow-hidden" style="border:1px solid #e5e7eb;">
-              <table class="w-full text-sm">
-                <thead>
-                  <tr class="bg-gray-50 dark:bg-neutral-600 text-gray-500 dark:text-neutral-400 text-xs uppercase">
-                    <th class="text-left font-medium" style="padding:10px 12px;">Name</th>
-                    <th class="text-left font-medium" style="padding:10px 12px;">Source</th>
-                    <th class="text-left font-medium" style="padding:10px 12px;">Destination</th>
-                    <th class="text-left font-medium" style="padding:10px 12px;">Gateway</th>
-                    <th class="text-left font-medium" style="padding:10px 12px;">Mark</th>
-                    <th class="text-left font-medium" style="padding:10px 12px;">Status</th>
-                    <th style="padding:10px 12px;"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="rule in policyRules" :key="rule.id"
-                    class="dark:border-neutral-600" style="border-top-width:1px;">
-                    <td class="dark:text-neutral-200 font-medium" style="padding:10px 12px;">{{ rule.name }}</td>
-                    <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">{{ _policyEndpointLabel(rule.source) }}</td>
-                    <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">{{ _policyEndpointLabel(rule.destination) }}</td>
-                    <td class="text-gray-600 dark:text-neutral-400" style="padding:10px 12px;">{{ _gatewayLabel(rule) }}</td>
-                    <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">{{ rule.fwmark }}</td>
-                    <td style="padding:10px 12px;">
-                      <span :class="rule.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
-                        class="text-xs font-medium rounded-full" style="padding:2px 8px;">
-                        {{ rule.enabled ? 'enabled' : 'disabled' }}
-                      </span>
-                    </td>
-                    <td style="padding:10px 12px;">
-                      <div class="flex gap-2 justify-end">
-                        <button @click="togglePolicyRule(rule)"
-                          class="text-xs rounded px-2 py-1 transition"
-                          :class="rule.enabled ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'">
-                          {{ rule.enabled ? 'Disable' : 'Enable' }}
-                        </button>
-                        <button @click="openPolicyEdit(rule)"
-                          class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 transition">
-                          Edit
-                        </button>
-                        <button @click="deletePolicyRule(rule)"
-                          class="text-xs bg-red-100 text-red-600 rounded px-2 py-1 transition">
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
 
           <!-- ── OSPF TAB ───────────────────────────────────────────────── -->
           <div v-if="activeRoutingTab === 'ospf'" class="text-center text-gray-500 dark:text-neutral-400" style="padding:60px 0;">
@@ -2544,191 +2470,6 @@
 
         </div>
 
-        <!-- ── Create Policy Rule Modal ────────────────────────────────── -->
-        <div v-if="showPolicyCreate && activePage === 'routing'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
-          @click.self="showPolicyCreate = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
-              <h2 class="text-xl font-medium dark:text-neutral-200">Add Policy Rule</h2>
-            </div>
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
-              <!-- Name -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
-                <input v-model="policyCreate.name" type="text" placeholder="e.g. RU → KZ Gateway"
-                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
-              </div>
-              <!-- Source -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Source</label>
-                <div class="flex gap-2 mt-1">
-                  <select v-model="policyCreate.source.type"
-                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="any">Any</option>
-                    <option value="alias">Alias</option>
-                    <option value="cidr">CIDR</option>
-                  </select>
-                  <select v-if="policyCreate.source.type === 'alias'" v-model="policyCreate.source.aliasId"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="">— select alias —</option>
-                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
-                  </select>
-                  <input v-if="policyCreate.source.type === 'cidr'" v-model="policyCreate.source.value"
-                    type="text" placeholder="10.0.0.0/8"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
-                </div>
-                <label v-if="policyCreate.source.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
-                  <input type="checkbox" v-model="policyCreate.source.invert"> Invert (NOT)
-                </label>
-              </div>
-              <!-- Destination -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Destination</label>
-                <div class="flex gap-2 mt-1">
-                  <select v-model="policyCreate.destination.type"
-                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="any">Any</option>
-                    <option value="alias">Alias</option>
-                    <option value="cidr">CIDR</option>
-                  </select>
-                  <select v-if="policyCreate.destination.type === 'alias'" v-model="policyCreate.destination.aliasId"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="">— select alias —</option>
-                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
-                  </select>
-                  <input v-if="policyCreate.destination.type === 'cidr'" v-model="policyCreate.destination.value"
-                    type="text" placeholder="10.0.0.0/8"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
-                </div>
-                <label v-if="policyCreate.destination.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
-                  <input type="checkbox" v-model="policyCreate.destination.invert"> Invert (NOT)
-                </label>
-              </div>
-              <!-- Gateway -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Gateway *</label>
-                <label class="flex items-center gap-2 mt-1 mb-2 text-sm text-gray-600 dark:text-neutral-400">
-                  <input type="checkbox" v-model="policyCreate.useGroup"> Use Gateway Group
-                </label>
-                <select v-if="!policyCreate.useGroup" v-model="policyCreate.gatewayId"
-                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                  <option value="">— select gateway —</option>
-                  <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.gatewayIP }})</option>
-                </select>
-                <select v-else v-model="policyCreate.gatewayGroupId"
-                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                  <option value="">— select group —</option>
-                  <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
-                </select>
-              </div>
-            </div>
-            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
-              <button @click="showPolicyCreate = false"
-                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
-                Cancel
-              </button>
-              <button @click="createPolicyRule()"
-                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Edit Policy Rule Modal ──────────────────────────────────── -->
-        <div v-if="showPolicyEdit && activePage === 'routing'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
-          @click.self="showPolicyEdit = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
-              <h2 class="text-xl font-medium dark:text-neutral-200">Edit Policy Rule</h2>
-            </div>
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
-              <!-- Name -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
-                <input v-model="policyEdit.name" type="text"
-                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
-              </div>
-              <!-- Source -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Source</label>
-                <div class="flex gap-2 mt-1">
-                  <select v-model="policyEdit.source.type"
-                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="any">Any</option>
-                    <option value="alias">Alias</option>
-                    <option value="cidr">CIDR</option>
-                  </select>
-                  <select v-if="policyEdit.source.type === 'alias'" v-model="policyEdit.source.aliasId"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="">— select alias —</option>
-                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
-                  </select>
-                  <input v-if="policyEdit.source.type === 'cidr'" v-model="policyEdit.source.value"
-                    type="text"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
-                </div>
-                <label v-if="policyEdit.source.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
-                  <input type="checkbox" v-model="policyEdit.source.invert"> Invert (NOT)
-                </label>
-              </div>
-              <!-- Destination -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Destination</label>
-                <div class="flex gap-2 mt-1">
-                  <select v-model="policyEdit.destination.type"
-                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="any">Any</option>
-                    <option value="alias">Alias</option>
-                    <option value="cidr">CIDR</option>
-                  </select>
-                  <select v-if="policyEdit.destination.type === 'alias'" v-model="policyEdit.destination.aliasId"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                    <option value="">— select alias —</option>
-                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
-                  </select>
-                  <input v-if="policyEdit.destination.type === 'cidr'" v-model="policyEdit.destination.value"
-                    type="text"
-                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
-                </div>
-                <label v-if="policyEdit.destination.type !== 'any'" class="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-neutral-400">
-                  <input type="checkbox" v-model="policyEdit.destination.invert"> Invert (NOT)
-                </label>
-              </div>
-              <!-- Gateway -->
-              <div>
-                <label class="text-sm font-medium dark:text-neutral-300">Gateway *</label>
-                <label class="flex items-center gap-2 mt-1 mb-2 text-sm text-gray-600 dark:text-neutral-400">
-                  <input type="checkbox" v-model="policyEdit.useGroup"> Use Gateway Group
-                </label>
-                <select v-if="!policyEdit.useGroup" v-model="policyEdit.gatewayId"
-                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                  <option value="">— select gateway —</option>
-                  <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.gatewayIP }})</option>
-                </select>
-                <select v-else v-model="policyEdit.gatewayGroupId"
-                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
-                  <option value="">— select group —</option>
-                  <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
-                </select>
-              </div>
-            </div>
-            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
-              <button @click="showPolicyEdit = false"
-                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
-                Cancel
-              </button>
-              <button @click="savePolicyEdit()"
-                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
 
         <!-- ── Add Static Route Modal ──────────────────────────────────── -->
         <div v-if="showRouteCreate && activePage === 'routing'"
@@ -3410,11 +3151,434 @@
         </div>
 
         <!-- ============================================================== -->
-        <!-- Firewall Rules Page (placeholder)                              -->
+        <!-- Firewall Rules Page                                             -->
         <!-- ============================================================== -->
-        <div v-if="activePage === 'firewall'" class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
-          <h2 class="text-2xl font-medium dark:text-neutral-200 mb-4">Firewall Rules</h2>
-          <p class="text-lg">Coming soon</p>
+        <div v-if="activePage === 'firewall'" style="display:flex; flex-direction:column; gap:16px;">
+
+          <!-- Header -->
+          <div class="flex items-center justify-between">
+            <h1 class="text-2xl font-bold dark:text-neutral-200">Firewall Rules</h1>
+            <button @click="openFirewallCreate()"
+              class="bg-blue-600 text-white rounded-lg font-medium text-sm transition"
+              style="padding:8px 16px;">
+              + Add Rule
+            </button>
+          </div>
+
+          <p class="text-sm text-gray-500 dark:text-neutral-400">
+            Rules are evaluated top-to-bottom. Use ACCEPT + Gateway for Policy-Based Routing (PBR). Use DROP/REJECT to block traffic.
+          </p>
+
+          <!-- Loading -->
+          <div v-if="firewallRulesLoading" class="text-gray-500 dark:text-neutral-400 text-sm">Loading...</div>
+
+          <!-- Empty -->
+          <div v-else-if="!firewallRules.length" class="text-gray-500 dark:text-neutral-400 text-sm" style="padding:24px 0;">
+            No firewall rules yet. Add a rule to filter or steer traffic.
+          </div>
+
+          <!-- Table -->
+          <div v-else class="bg-white dark:bg-neutral-700 rounded-lg overflow-hidden" style="border:1px solid #e5e7eb;">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="bg-gray-50 dark:bg-neutral-600 text-gray-500 dark:text-neutral-400 text-xs uppercase">
+                  <th class="text-center font-medium" style="padding:10px 8px; width:36px;">#</th>
+                  <th class="text-center font-medium" style="padding:10px 8px; width:36px;">En</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Name</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Iface</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Proto</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Source</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Destination</th>
+                  <th class="text-center font-medium" style="padding:10px 12px;">Action</th>
+                  <th class="text-left font-medium" style="padding:10px 12px;">Gateway</th>
+                  <th style="padding:10px 12px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="rule in firewallRules" :key="rule.id"
+                  :class="rule.enabled ? '' : 'opacity-50'"
+                  class="dark:border-neutral-600" style="border-top-width:1px;">
+                  <!-- Order -->
+                  <td class="text-center text-gray-400 dark:text-neutral-500 text-xs font-mono" style="padding:10px 8px;">{{ rule.order }}</td>
+                  <!-- Enabled dot -->
+                  <td class="text-center" style="padding:10px 8px;">
+                    <span :style="rule.enabled ? 'background:#22c55e;' : 'background:#9ca3af;'"
+                      style="display:inline-block; width:10px; height:10px; border-radius:50%;"></span>
+                  </td>
+                  <!-- Name -->
+                  <td class="dark:text-neutral-200 font-medium" style="padding:10px 12px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    {{ rule.name || '—' }}
+                  </td>
+                  <!-- Interface -->
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px;">
+                    {{ rule.interface === 'any' ? '*' : rule.interface }}
+                  </td>
+                  <!-- Protocol -->
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px;">
+                    {{ rule.protocol === 'any' ? '*' : rule.protocol }}
+                  </td>
+                  <!-- Source -->
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    <span v-if="rule.source && rule.source.invert" style="color:#ef4444;">!</span>{{ _firewallEndpointLabel(rule.source) }}<span v-if="rule.source && rule.source.port" class="text-gray-400">:{{ rule.source.port }}</span>
+                  </td>
+                  <!-- Destination -->
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    <span v-if="rule.destination && rule.destination.invert" style="color:#ef4444;">!</span>{{ _firewallEndpointLabel(rule.destination) }}<span v-if="rule.destination && rule.destination.port" class="text-gray-400">:{{ rule.destination.port }}</span>
+                  </td>
+                  <!-- Action badge -->
+                  <td class="text-center" style="padding:10px 12px;">
+                    <span class="text-xs font-bold rounded" :style="_firewallActionStyle(rule.action)" style="padding:3px 8px;">
+                      {{ rule.action ? rule.action.toUpperCase() : '—' }}
+                    </span>
+                  </td>
+                  <!-- Gateway -->
+                  <td class="text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    {{ _firewallGatewayLabel(rule) }}
+                  </td>
+                  <!-- Actions -->
+                  <td style="padding:10px 8px;">
+                    <div class="flex gap-1 justify-end">
+                      <button @click="moveFirewallRule(rule, 'up')" title="Move up"
+                        class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-600 dark:text-neutral-300 rounded"
+                        style="padding:3px 7px;">↑</button>
+                      <button @click="moveFirewallRule(rule, 'down')" title="Move down"
+                        class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-600 dark:text-neutral-300 rounded"
+                        style="padding:3px 7px;">↓</button>
+                      <button @click="toggleFirewallRule(rule)"
+                        class="text-xs rounded"
+                        :style="rule.enabled ? 'background:#fef3c7;color:#92400e;padding:3px 7px;' : 'background:#d1fae5;color:#065f46;padding:3px 7px;'">
+                        {{ rule.enabled ? 'Off' : 'On' }}
+                      </button>
+                      <button @click="openFirewallEdit(rule)"
+                        class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded"
+                        style="padding:3px 7px;">Edit</button>
+                      <button @click="deleteFirewallRule(rule)"
+                        class="text-xs bg-red-100 text-red-600 rounded"
+                        style="padding:3px 7px;">Del</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Add Firewall Rule Modal ──────────────────────────────────── -->
+        <div v-if="showFirewallCreate && activePage === 'firewall'"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showFirewallCreate = false">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:560px; margin:0 auto;">
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-xl font-medium dark:text-neutral-200">Add Firewall Rule</h2>
+            </div>
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+
+              <!-- Name -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Name</label>
+                <input v-model="firewallCreate.name" type="text" placeholder="e.g. Block RU traffic"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+
+              <!-- Interface + Protocol -->
+              <div class="flex gap-3">
+                <div class="flex-1">
+                  <label class="text-sm font-medium dark:text-neutral-300">Interface</label>
+                  <select v-model="firewallCreate.interface"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1">
+                    <option value="any">any</option>
+                    <option v-for="iface in firewallInterfaces" :key="iface" :value="iface">{{ iface }}</option>
+                  </select>
+                </div>
+                <div class="flex-1">
+                  <label class="text-sm font-medium dark:text-neutral-300">Protocol</label>
+                  <select v-model="firewallCreate.protocol"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1">
+                    <option value="any">any</option>
+                    <option value="tcp">tcp</option>
+                    <option value="udp">udp</option>
+                    <option value="tcp/udp">tcp/udp</option>
+                    <option value="icmp">icmp</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Source -->
+              <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+                <div class="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase mb-2">Source</div>
+                <div class="flex gap-2">
+                  <select v-model="firewallCreate.source.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="firewallCreate.source.type === 'alias'" v-model="firewallCreate.source.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="firewallCreate.source.type === 'cidr'" v-model="firewallCreate.source.value"
+                    type="text" placeholder="10.0.0.0/8"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <div class="flex items-center gap-4 mt-2">
+                  <label v-if="firewallCreate.source.type !== 'any'" class="flex items-center gap-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallCreate.source.invert"> Invert (NOT)
+                  </label>
+                  <div class="flex-1">
+                    <input v-model="firewallCreate.source.port" type="text" placeholder="Port (e.g. 80 or 443 or 8000-8090)"
+                      class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-1 text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Destination -->
+              <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+                <div class="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase mb-2">Destination</div>
+                <div class="flex gap-2">
+                  <select v-model="firewallCreate.destination.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="firewallCreate.destination.type === 'alias'" v-model="firewallCreate.destination.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="firewallCreate.destination.type === 'cidr'" v-model="firewallCreate.destination.value"
+                    type="text" placeholder="10.0.0.0/8"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <div class="flex items-center gap-4 mt-2">
+                  <label v-if="firewallCreate.destination.type !== 'any'" class="flex items-center gap-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallCreate.destination.invert"> Invert (NOT)
+                  </label>
+                  <div class="flex-1">
+                    <input v-model="firewallCreate.destination.port" type="text" placeholder="Port (e.g. 443 or 8080-8090)"
+                      class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-1 text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Action -->
+              <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+                <div class="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase mb-2">Action</div>
+                <div class="flex gap-2 mb-3">
+                  <button @click="firewallCreate.action = 'accept'"
+                    :style="firewallCreate.action === 'accept' ? 'background:#16a34a;color:#fff;' : 'background:#dcfce7;color:#166534;'"
+                    class="text-sm font-semibold rounded" style="padding:6px 16px;">ACCEPT</button>
+                  <button @click="firewallCreate.action = 'drop'"
+                    :style="firewallCreate.action === 'drop' ? 'background:#dc2626;color:#fff;' : 'background:#fee2e2;color:#991b1b;'"
+                    class="text-sm font-semibold rounded" style="padding:6px 16px;">DROP</button>
+                  <button @click="firewallCreate.action = 'reject'"
+                    :style="firewallCreate.action === 'reject' ? 'background:#d97706;color:#fff;' : 'background:#fef3c7;color:#92400e;'"
+                    class="text-sm font-semibold rounded" style="padding:6px 16px;">REJECT</button>
+                </div>
+                <!-- Gateway (only for ACCEPT) -->
+                <div v-if="firewallCreate.action === 'accept'">
+                  <label class="text-sm font-medium dark:text-neutral-300">Gateway (optional — for PBR)</label>
+                  <label class="flex items-center gap-2 mt-1 mb-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallCreate.useGroup"> Use Gateway Group
+                  </label>
+                  <select v-if="!firewallCreate.useGroup" v-model="firewallCreate.gatewayId"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— none (plain ACCEPT) —</option>
+                    <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.gatewayIP }})</option>
+                  </select>
+                  <select v-else v-model="firewallCreate.gatewayGroupId"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— none —</option>
+                    <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Log + Comment -->
+              <div class="flex gap-3 items-start">
+                <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-neutral-400 mt-2 whitespace-nowrap">
+                  <input type="checkbox" v-model="firewallCreate.log"> Log
+                </label>
+                <div class="flex-1">
+                  <input v-model="firewallCreate.comment" type="text" placeholder="Comment (optional)"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+              </div>
+
+            </div>
+            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+              <button @click="showFirewallCreate = false"
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Cancel
+              </button>
+              <button @click="createFirewallRule()"
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Create Rule
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Edit Firewall Rule Modal ─────────────────────────────────── -->
+        <div v-if="showFirewallEdit && activePage === 'firewall'"
+          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
+          style="padding:40px 24px;"
+          @click.self="showFirewallEdit = false">
+          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:560px; margin:0 auto;">
+            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+              <h2 class="text-xl font-medium dark:text-neutral-200">Edit Firewall Rule</h2>
+            </div>
+            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+
+              <!-- Name -->
+              <div>
+                <label class="text-sm font-medium dark:text-neutral-300">Name</label>
+                <input v-model="firewallEdit.name" type="text"
+                  class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1" />
+              </div>
+
+              <!-- Interface + Protocol -->
+              <div class="flex gap-3">
+                <div class="flex-1">
+                  <label class="text-sm font-medium dark:text-neutral-300">Interface</label>
+                  <select v-model="firewallEdit.interface"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1">
+                    <option value="any">any</option>
+                    <option v-for="iface in firewallInterfaces" :key="iface" :value="iface">{{ iface }}</option>
+                  </select>
+                </div>
+                <div class="flex-1">
+                  <label class="text-sm font-medium dark:text-neutral-300">Protocol</label>
+                  <select v-model="firewallEdit.protocol"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm mt-1">
+                    <option value="any">any</option>
+                    <option value="tcp">tcp</option>
+                    <option value="udp">udp</option>
+                    <option value="tcp/udp">tcp/udp</option>
+                    <option value="icmp">icmp</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Source -->
+              <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+                <div class="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase mb-2">Source</div>
+                <div class="flex gap-2">
+                  <select v-model="firewallEdit.source.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="firewallEdit.source.type === 'alias'" v-model="firewallEdit.source.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="firewallEdit.source.type === 'cidr'" v-model="firewallEdit.source.value"
+                    type="text" placeholder="10.0.0.0/8"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <div class="flex items-center gap-4 mt-2">
+                  <label v-if="firewallEdit.source.type !== 'any'" class="flex items-center gap-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallEdit.source.invert"> Invert (NOT)
+                  </label>
+                  <div class="flex-1">
+                    <input v-model="firewallEdit.source.port" type="text" placeholder="Port (e.g. 80 or 443 or 8000-8090)"
+                      class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-1 text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Destination -->
+              <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+                <div class="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase mb-2">Destination</div>
+                <div class="flex gap-2">
+                  <select v-model="firewallEdit.destination.type"
+                    class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="any">Any</option>
+                    <option value="alias">Alias</option>
+                    <option value="cidr">CIDR</option>
+                  </select>
+                  <select v-if="firewallEdit.destination.type === 'alias'" v-model="firewallEdit.destination.aliasId"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— select alias —</option>
+                    <option v-for="a in aliases" :key="a.id" :value="a.id">{{ a.name }}</option>
+                  </select>
+                  <input v-if="firewallEdit.destination.type === 'cidr'" v-model="firewallEdit.destination.value"
+                    type="text" placeholder="10.0.0.0/8"
+                    class="flex-1 border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+                <div class="flex items-center gap-4 mt-2">
+                  <label v-if="firewallEdit.destination.type !== 'any'" class="flex items-center gap-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallEdit.destination.invert"> Invert (NOT)
+                  </label>
+                  <div class="flex-1">
+                    <input v-model="firewallEdit.destination.port" type="text" placeholder="Port (e.g. 443 or 8080-8090)"
+                      class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-1 text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Action -->
+              <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+                <div class="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase mb-2">Action</div>
+                <div class="flex gap-2 mb-3">
+                  <button @click="firewallEdit.action = 'accept'"
+                    :style="firewallEdit.action === 'accept' ? 'background:#16a34a;color:#fff;' : 'background:#dcfce7;color:#166534;'"
+                    class="text-sm font-semibold rounded" style="padding:6px 16px;">ACCEPT</button>
+                  <button @click="firewallEdit.action = 'drop'"
+                    :style="firewallEdit.action === 'drop' ? 'background:#dc2626;color:#fff;' : 'background:#fee2e2;color:#991b1b;'"
+                    class="text-sm font-semibold rounded" style="padding:6px 16px;">DROP</button>
+                  <button @click="firewallEdit.action = 'reject'"
+                    :style="firewallEdit.action === 'reject' ? 'background:#d97706;color:#fff;' : 'background:#fef3c7;color:#92400e;'"
+                    class="text-sm font-semibold rounded" style="padding:6px 16px;">REJECT</button>
+                </div>
+                <!-- Gateway (only for ACCEPT) -->
+                <div v-if="firewallEdit.action === 'accept'">
+                  <label class="text-sm font-medium dark:text-neutral-300">Gateway (optional — for PBR)</label>
+                  <label class="flex items-center gap-2 mt-1 mb-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallEdit.useGroup"> Use Gateway Group
+                  </label>
+                  <select v-if="!firewallEdit.useGroup" v-model="firewallEdit.gatewayId"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— none (plain ACCEPT) —</option>
+                    <option v-for="g in gateways" :key="g.id" :value="g.id">{{ g.name }} ({{ g.gatewayIP }})</option>
+                  </select>
+                  <select v-else v-model="firewallEdit.gatewayGroupId"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm">
+                    <option value="">— none —</option>
+                    <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Log + Comment -->
+              <div class="flex gap-3 items-start">
+                <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-neutral-400 mt-2 whitespace-nowrap">
+                  <input type="checkbox" v-model="firewallEdit.log"> Log
+                </label>
+                <div class="flex-1">
+                  <input v-model="firewallEdit.comment" type="text" placeholder="Comment (optional)"
+                    class="w-full border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm" />
+                </div>
+              </div>
+
+            </div>
+            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+              <button @click="showFirewallEdit = false"
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Cancel
+              </button>
+              <button @click="saveFirewallEdit()"
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                Save
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Template Create / Edit Modal -->

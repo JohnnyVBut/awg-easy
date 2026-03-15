@@ -326,27 +326,38 @@ new Vue({
     aliasGenerateJobId: null,
     aliasGenerateJobStatus: null,
 
-    // Policy-Based Routing
-    policyRules: [],
-    policyRulesLoading: false,
-    showPolicyCreate: false,
-    showPolicyEdit: false,
-    policyCreate: {
+    // Firewall Rules (поглощает PBR)
+    firewallRules: [],
+    firewallRulesLoading: false,
+    firewallInterfaces: [],
+    showFirewallCreate: false,
+    showFirewallEdit: false,
+    firewallCreate: {
       name: '',
-      source: { type: 'any', aliasId: '', value: '', invert: false },
-      destination: { type: 'any', aliasId: '', value: '', invert: false },
+      interface: 'any',
+      protocol: 'any',
+      source:      { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+      destination: { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+      action: 'accept',
       gatewayId: '',
       gatewayGroupId: '',
       useGroup: false,
+      log: false,
+      comment: '',
     },
-    policyEdit: {
+    firewallEdit: {
       id: null,
       name: '',
-      source: { type: 'any', aliasId: '', value: '', invert: false },
-      destination: { type: 'any', aliasId: '', value: '', invert: false },
+      interface: 'any',
+      protocol: 'any',
+      source:      { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+      destination: { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+      action: 'accept',
       gatewayId: '',
       gatewayGroupId: '',
       useGroup: false,
+      log: false,
+      comment: '',
     },
 
     // Toast notifications
@@ -676,8 +687,6 @@ new Vue({
         this.loadRoutingTables();
         this.loadKernelRoutes();
         this.loadStaticRoutes();
-        this.loadPolicyRules();
-        if (!this.aliases.length) this.loadAliases();
         if (!this.gateways.length) this.loadGateways();
         if (!this.gatewayGroups.length) this.loadGatewayGroups();
       }
@@ -687,6 +696,13 @@ new Vue({
       }
       if (pageId === 'firewall-aliases') {
         this.loadAliases();
+      }
+      if (pageId === 'firewall') {
+        this.loadFirewallRules();
+        this.loadFirewallInterfaces();
+        if (!this.aliases.length) this.loadAliases();
+        if (!this.gateways.length) this.loadGateways();
+        if (!this.gatewayGroups.length) this.loadGatewayGroups();
       }
     },
 
@@ -1700,127 +1716,171 @@ new Vue({
     },
 
     // ========================================================================
-    // Policy-Based Routing Methods
+    // Firewall Rules Methods  (поглощает PBR / Policy)
     // ========================================================================
 
-    async loadPolicyRules() {
-      this.policyRulesLoading = true;
+    async loadFirewallRules() {
+      this.firewallRulesLoading = true;
       try {
-        const res = await this.api.getPolicyRules();
-        this.policyRules = Array.isArray(res) ? res : (res.rules || []);
+        const res = await this.api.getFirewallRules();
+        this.firewallRules = Array.isArray(res) ? res : (res.rules || []);
       } catch (err) {
-        console.error('loadPolicyRules error:', err);
-        this.policyRules = [];
+        console.error('loadFirewallRules error:', err);
+        this.firewallRules = [];
       } finally {
-        this.policyRulesLoading = false;
+        this.firewallRulesLoading = false;
       }
     },
 
-    _resetPolicyCreate() {
-      this.policyCreate = {
+    async loadFirewallInterfaces() {
+      try {
+        const res = await this.api.getFirewallInterfaces();
+        this.firewallInterfaces = Array.isArray(res) ? res : (res.interfaces || []);
+      } catch (err) {
+        this.firewallInterfaces = [];
+      }
+    },
+
+    _resetFirewallCreate() {
+      this.firewallCreate = {
         name: '',
-        source: { type: 'any', aliasId: '', value: '', invert: false },
-        destination: { type: 'any', aliasId: '', value: '', invert: false },
+        interface: 'any',
+        protocol: 'any',
+        source:      { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+        destination: { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+        action: 'accept',
         gatewayId: '', gatewayGroupId: '', useGroup: false,
+        log: false, comment: '',
       };
     },
 
-    _buildPolicyPayload(form) {
-      const src = form.source.type === 'any'
-        ? { type: 'any', invert: false }
-        : form.source.type === 'alias'
-          ? { type: 'alias', aliasId: form.source.aliasId, invert: form.source.invert }
-          : { type: 'cidr', value: form.source.value, invert: form.source.invert };
-      const dst = form.destination.type === 'any'
-        ? { type: 'any', invert: false }
-        : form.destination.type === 'alias'
-          ? { type: 'alias', aliasId: form.destination.aliasId, invert: form.destination.invert }
-          : { type: 'cidr', value: form.destination.value, invert: form.destination.invert };
+    _buildFirewallPayload(form) {
+      const buildEp = (ep) => {
+        if (!ep || ep.type === 'any') return { type: 'any', invert: false, port: null };
+        const base = { type: ep.type, invert: Boolean(ep.invert), port: ep.port || null };
+        if (ep.type === 'alias') return { ...base, aliasId: ep.aliasId };
+        if (ep.type === 'cidr')  return { ...base, value: ep.value };
+        return { type: 'any', invert: false, port: null };
+      };
       return {
-        name: form.name,
-        source: src,
-        destination: dst,
-        gatewayId: form.useGroup ? null : (form.gatewayId || null),
+        name:           form.name,
+        interface:      form.interface  || 'any',
+        protocol:       form.protocol   || 'any',
+        source:         buildEp(form.source),
+        destination:    buildEp(form.destination),
+        action:         form.action     || 'accept',
+        gatewayId:      form.useGroup ? null : (form.gatewayId || null),
         gatewayGroupId: form.useGroup ? (form.gatewayGroupId || null) : null,
+        log:            Boolean(form.log),
+        comment:        form.comment || '',
       };
     },
 
-    async createPolicyRule() {
+    openFirewallCreate() {
+      this._resetFirewallCreate();
+      this.showFirewallCreate = true;
+    },
+
+    async createFirewallRule() {
       try {
-        const payload = this._buildPolicyPayload(this.policyCreate);
-        await this.api.createPolicyRule(payload);
-        this.showPolicyCreate = false;
-        this._resetPolicyCreate();
-        await this.loadPolicyRules();
-        this.showToast('Policy rule created', 'success');
+        const payload = this._buildFirewallPayload(this.firewallCreate);
+        await this.api.createFirewallRule(payload);
+        this.showFirewallCreate = false;
+        this._resetFirewallCreate();
+        await this.loadFirewallRules();
+        this.showToast('Firewall rule created', 'success');
       } catch (err) {
-        this.showToast(err.message || 'Failed to create policy rule', 'error');
+        this.showToast(err.message || 'Failed to create firewall rule', 'error');
       }
     },
 
-    openPolicyEdit(rule) {
-      this.policyEdit = {
-        id: rule.id,
-        name: rule.name,
-        source: { ...rule.source },
-        destination: { ...rule.destination },
-        gatewayId: rule.gatewayId || '',
+    openFirewallEdit(rule) {
+      this.firewallEdit = {
+        id:          rule.id,
+        name:        rule.name,
+        interface:   rule.interface  || 'any',
+        protocol:    rule.protocol   || 'any',
+        source:      { ...(rule.source      || { type: 'any', invert: false }), port: rule.source?.port || '' },
+        destination: { ...(rule.destination || { type: 'any', invert: false }), port: rule.destination?.port || '' },
+        action:      rule.action || 'accept',
+        gatewayId:      rule.gatewayId      || '',
         gatewayGroupId: rule.gatewayGroupId || '',
-        useGroup: !!rule.gatewayGroupId,
+        useGroup:    !!rule.gatewayGroupId,
+        log:         Boolean(rule.log),
+        comment:     rule.comment || '',
       };
-      this.showPolicyEdit = true;
+      this.showFirewallEdit = true;
     },
 
-    async savePolicyEdit() {
+    async saveFirewallEdit() {
       try {
-        const payload = { id: this.policyEdit.id, ...this._buildPolicyPayload(this.policyEdit) };
-        await this.api.updatePolicyRule(payload);
-        this.showPolicyEdit = false;
-        await this.loadPolicyRules();
-        this.showToast('Policy rule updated', 'success');
+        const payload = { id: this.firewallEdit.id, ...this._buildFirewallPayload(this.firewallEdit) };
+        await this.api.updateFirewallRule(payload);
+        this.showFirewallEdit = false;
+        await this.loadFirewallRules();
+        this.showToast('Firewall rule updated', 'success');
       } catch (err) {
-        this.showToast(err.message || 'Failed to update policy rule', 'error');
+        this.showToast(err.message || 'Failed to update firewall rule', 'error');
       }
     },
 
-    async togglePolicyRule(rule) {
+    async toggleFirewallRule(rule) {
       try {
-        await this.api.togglePolicyRule({ id: rule.id, enabled: !rule.enabled });
-        await this.loadPolicyRules();
+        await this.api.toggleFirewallRule({ id: rule.id, enabled: !rule.enabled });
+        await this.loadFirewallRules();
       } catch (err) {
-        this.showToast(err.message || 'Failed to toggle policy rule', 'error');
+        this.showToast(err.message || 'Failed to toggle firewall rule', 'error');
       }
     },
 
-    async deletePolicyRule(rule) {
-      if (!confirm(`Delete policy rule "${rule.name}"?`)) return;
+    async deleteFirewallRule(rule) {
+      if (!confirm(`Delete firewall rule "${rule.name}"?`)) return;
       try {
-        await this.api.deletePolicyRule({ id: rule.id });
-        await this.loadPolicyRules();
-        this.showToast('Policy rule deleted', 'success');
+        await this.api.deleteFirewallRule({ id: rule.id });
+        await this.loadFirewallRules();
+        this.showToast('Firewall rule deleted', 'success');
       } catch (err) {
-        this.showToast(err.message || 'Failed to delete policy rule', 'error');
+        this.showToast(err.message || 'Failed to delete firewall rule', 'error');
       }
     },
 
-    _policyEndpointLabel(ep) {
+    async moveFirewallRule(rule, direction) {
+      try {
+        await this.api.moveFirewallRule({ id: rule.id, direction });
+        await this.loadFirewallRules();
+      } catch (err) {
+        this.showToast(err.message || 'Failed to move firewall rule', 'error');
+      }
+    },
+
+    _firewallEndpointLabel(ep) {
       if (!ep || ep.type === 'any') return 'Any';
       const inv = ep.invert ? 'NOT ' : '';
-      if (ep.type === 'alias') return inv + this._aliasLabel(ep.aliasId);
-      if (ep.type === 'cidr') return inv + (ep.value || '');
-      return 'Any';
+      let label = '';
+      if (ep.type === 'alias') label = inv + this._aliasLabel(ep.aliasId);
+      else if (ep.type === 'cidr') label = inv + (ep.value || '');
+      else label = 'Any';
+      if (ep.port) label += ':' + ep.port;
+      return label;
     },
 
-    _gatewayLabel(rule) {
+    _firewallGatewayLabel(rule) {
       if (rule.gatewayGroupId) {
         const g = (this.gatewayGroups || []).find(x => x.id === rule.gatewayGroupId);
-        return g ? `Group: ${g.name}` : rule.gatewayGroupId;
+        return g ? `Group: ${g.name}` : '—';
       }
       if (rule.gatewayId) {
         const g = (this.gateways || []).find(x => x.id === rule.gatewayId);
-        return g ? g.name : rule.gatewayId;
+        return g ? g.name : '—';
       }
       return '—';
+    },
+
+    _firewallActionStyle(action) {
+      if (action === 'accept') return 'background:#dcfce7; color:#15803d;';
+      if (action === 'drop')   return 'background:#fee2e2; color:#dc2626;';
+      if (action === 'reject') return 'background:#ffedd5; color:#ea580c;';
+      return '';
     },
 
     // ========================================================================

@@ -778,50 +778,57 @@ class API {
   }
 
   // ============================================================
-  // Policy Rules API — Policy-Based Routing
+  // Firewall Rules API  (Firewall → Rules, поглощает PBR)
   // ============================================================
 
-  /**
-   * Получить список всех PBR-правил.
-   * @returns {{ rules: Array<object> }}
-   */
-  async getPolicyRules() {
-    return this.call({ method: 'get', path: '/policy/rules' });
+  /** Список сетевых интерфейсов хоста (для дропдауна Interface). */
+  async getFirewallInterfaces() {
+    return this.call({ method: 'get', path: '/firewall/interfaces' });
+  }
+
+  /** Список всех firewall правил (sorted by order). */
+  async getFirewallRules() {
+    return this.call({ method: 'get', path: '/firewall/rules' });
   }
 
   /**
-   * Создать PBR-правило.
-   * @param {{ name, source, destination, gatewayId?, gatewayGroupId?, priority?, fwmark? }} data
-   * @returns {{ rule: object }}
+   * Создать firewall правило.
+   * @param {{ name, interface?, protocol?, source, destination, action, gatewayId?, gatewayGroupId?, log?, comment? }} data
    */
-  async createPolicyRule(data) {
-    return this.call({ method: 'post', path: '/policy/rules', body: data });
+  async createFirewallRule(data) {
+    return this.call({ method: 'post', path: '/firewall/rules', body: data });
   }
 
   /**
-   * Обновить PBR-правило (полные данные) или переключить enabled.
+   * Обновить firewall правило (полные данные).
    * @param {{ id: string, ...updates }}
-   * @returns {{ rule: object }}
    */
-  async updatePolicyRule({ id, ...updates }) {
-    return this.call({ method: 'patch', path: `/policy/rules/${id}`, body: updates });
+  async updateFirewallRule({ id, ...updates }) {
+    return this.call({ method: 'patch', path: `/firewall/rules/${id}`, body: updates });
   }
 
   /**
-   * Включить / выключить PBR-правило.
+   * Включить / выключить firewall правило.
    * @param {{ id: string, enabled: boolean }}
-   * @returns {{ rule: object }}
    */
-  async togglePolicyRule({ id, enabled }) {
-    return this.call({ method: 'patch', path: `/policy/rules/${id}`, body: { enabled } });
+  async toggleFirewallRule({ id, enabled }) {
+    return this.call({ method: 'patch', path: `/firewall/rules/${id}`, body: { enabled } });
   }
 
   /**
-   * Удалить PBR-правило (+ убирает kernel-стек: mangle + ip rule + ip route table).
+   * Удалить firewall правило.
    * @param {{ id: string }}
    */
-  async deletePolicyRule({ id }) {
-    return this.call({ method: 'delete', path: `/policy/rules/${id}` });
+  async deleteFirewallRule({ id }) {
+    return this.call({ method: 'delete', path: `/firewall/rules/${id}` });
+  }
+
+  /**
+   * Переместить правило вверх или вниз.
+   * @param {{ id: string, direction: 'up'|'down' }}
+   */
+  async moveFirewallRule({ id, direction }) {
+    return this.call({ method: 'post', path: `/firewall/rules/${id}/move`, body: { direction } });
   }
 
 }

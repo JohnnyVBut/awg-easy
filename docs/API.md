@@ -602,49 +602,68 @@ QR-код с конфигом в формате SVG (для мобильного
 
 ---
 
-## Policy-Based Routing (PBR)
+## Firewall Rules
 
-### `GET /api/policy/rules`
+Правила файрволла — единая сущность для фильтрации (ACCEPT/DROP/REJECT) и PBR (ACCEPT + gateway).
+Правила применяются в порядке `order` (top-to-bottom) через кастомные iptables-цепочки:
+- `FIREWALL_FORWARD` (filter table) — для ACCEPT/DROP/REJECT
+- `FIREWALL_MANGLE` (mangle table) — для маркировки PBR (если задан gateway)
+
+### `GET /api/firewall/interfaces`
+Список сетевых интерфейсов хоста (для поля `interface` при создании правила).
+```json
+{ "interfaces": ["eth0", "wg10", "wg11", "lo"] }
+```
+
+### `GET /api/firewall/rules`
 ```json
 {
   "rules": [{
-    "id": "uuid", "name": "Non-RU to KZ", "enabled": true,
-    "priority": 100, "fwmark": 1000,
-    "source": { "type": "any", "invert": false },
-    "destination": { "type": "alias", "aliasId": "uuid", "invert": true },
-    "gatewayId": "uuid", "gatewayGroupId": null
+    "id": "uuid", "name": "Block RU", "enabled": true, "order": 1,
+    "interface": "any",            // "any" | "wg10" | "eth0" — ingress -i флаг
+    "protocol": "any",             // "any" | "tcp" | "udp" | "tcp/udp" | "icmp"
+    "source": {
+      "type": "any",               // "any" | "cidr" | "alias"
+      "aliasId": null, "value": null, "invert": false, "port": null
+    },
+    "destination": {
+      "type": "alias", "aliasId": "uuid", "value": null, "invert": true, "port": null
+    },
+    "action": "drop",              // "accept" | "drop" | "reject"
+    "gatewayId": null,             // только если action=accept
+    "gatewayGroupId": null,
+    "fwmark": null,                // авто-назначается при наличии gateway
+    "log": false, "comment": "",
+    "createdAt": "ISO string"
   }]
 }
 ```
 
-### `POST /api/policy/rules`
-Создать PBR-правило.
+### `POST /api/firewall/rules`
+Создать правило. Правило добавляется последним (order = max + 1).
 ```json
 // Request
 {
-  "name": "Non-RU → KZ",
+  "name": "Non-RU → KZ",            // опционально
+  "interface": "any",               // опционально, default "any"
+  "protocol": "any",                // опционально, default "any"
   "source": {
-    "type": "any"                          // any | cidr | alias
+    "type": "any"
   },
   "destination": {
     "type": "alias",
     "aliasId": "uuid-of-ru-alias",
-    "invert": true                         // NOT — трафик НЕ в этот набор
+    "invert": true,                 // NOT — трафик НЕ в этот набор
+    "port": "443"                   // опционально
   },
-  "gatewayId": "uuid-of-kz-gateway",       // xor gatewayGroupId
+  "action": "accept",               // "accept" | "drop" | "reject"
+  "gatewayId": "uuid-of-kz-gw",    // опционально, только для action=accept
   "gatewayGroupId": null,
-  "priority": 100,                         // опционально, авто-инкремент по 10
-  "fwmark": 1000                           // опционально, авто-назначается
+  "log": false,
+  "comment": ""
 }
 // Response
 { "rule": { "id": "uuid", ... } }
-```
-
-Итоговые kernel-команды которые применяются:
-```bash
-iptables-nft -t mangle -A PREROUTING -m set ! --match-set ru dst -j MARK --set-mark 1000
-ip route add default via <gw.gatewayIP> dev <gw.interface> table 1000
-ip rule add fwmark 1000 lookup 1000 priority 100
 ```
 
 **Endpoint types:**
@@ -656,16 +675,31 @@ ip rule add fwmark 1000 lookup 1000 priority 100
 
 `invert: true` добавляет `!` перед матчем (NOT).
 
-### `PATCH /api/policy/rules/:id`
-Toggle или обновление:
+Итоговые kernel-команды (пример ACCEPT + gateway PBR):
+```bash
+iptables-nft -t mangle -A FIREWALL_MANGLE -m set ! --match-set ru dst -j MARK --set-mark 1000
+ip route add default via <gw.gatewayIP> dev <gw.interface> table 1000
+ip rule add fwmark 1000 lookup 1000 priority 1010
+iptables-nft -t filter -A FIREWALL_FORWARD -m set ! --match-set ru dst -j ACCEPT
+```
+
+### `PATCH /api/firewall/rules/:id`
+Toggle или обновление правила:
 ```json
 // Toggle
 { "enabled": false }
-// Full update — те же поля что при создании
+// Обновление — любые поля модели
+{ "name": "New Name", "action": "drop", "gatewayId": null }
 ```
 
-### `DELETE /api/policy/rules/:id`
-Удалить правило (убирает mangle + ip rule + ip route из ядра).
+### `DELETE /api/firewall/rules/:id`
+Удалить правило (перестраивает цепочки, убирает ip rule + ip route из ядра).
+
+### `POST /api/firewall/rules/:id/move`
+Переместить правило вверх или вниз (меняет порядок применения):
+```json
+{ "direction": "up" }   // или "down"
+```
 
 ---
 

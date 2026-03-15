@@ -482,6 +482,13 @@ GET    /api/nat/rules             ← список NAT правил
 POST   /api/nat/rules             ← создать правило { name, source, outInterface, type, toSource, comment }
 PATCH  /api/nat/rules/:id         ← обновить правило | toggle: { enabled: bool }
 DELETE /api/nat/rules/:id         ← удалить правило
+
+GET    /api/firewall/interfaces   ← список интерфейсов хоста (для поля interface)
+GET    /api/firewall/rules        ← список правил (sorted by order)
+POST   /api/firewall/rules        ← создать правило { interface, protocol, source, destination, action, gatewayId, ... }
+PATCH  /api/firewall/rules/:id    ← обновить или toggle { enabled: bool }
+DELETE /api/firewall/rules/:id    ← удалить правило
+POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 ```
 
 ---
@@ -545,18 +552,14 @@ DELETE /api/nat/rules/:id         ← удалить правило
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `25948d6` (prefixes.py) + AWG generator (не закоммичено)
+**Последний коммит:** (pending) feat: Firewall Rules (унификация PBR + filter)
 
-**Что закоммичено и работает:**
-- NAT: CRUD правил, deduplication (-C check), idempotent _applyRule при рестарте
-- Routing: static routes persist after container restart (FIX-13 v3), HTTP 400 с деталями ошибки kernel
-- Toast-уведомления, uppercase HTTP methods, ip route без -j
-
-**AWG Generator (в работе):**
-- `src/lib/AwgParamGenerator.js` — полный порт AmneziaWG-Architect logic
-- Генерирует: Jc/Jmin/Jmax, S1-S4, H1-H4, I1-I5 (7 CPS-профилей)
-- API: `POST /api/templates/generate` — generate + optional save
-- UI: кнопка "Generate" в Settings > AWG2 Templates + модал с профилем/intensity/host/preview
+**Что готово:**
+- NAT, Routing (static + status), Toast, Gateways + GatewayGroups + GatewayMonitor
+- Firewall Aliases (host/network/ipset, upload, generate via prefixes.py)
+- **FirewallManager** — полноценная замена PolicyManager: filter + mangle chains, ACCEPT/DROP/REJECT, PBR через gateway
+- Firewall Rules API + UI (полная страница: таблица + Add/Edit модалы)
+- Routing: Policy tab удалён, PBR переехал в Firewall → Rules
 
 ---
 
@@ -590,6 +593,19 @@ DELETE /api/nat/rules/:id         ← удалить правило
 | NAT API: GET/POST/PATCH/DELETE /api/nat/rules | ✅ | CRUD правил, toggle через PATCH {enabled} |
 | AwgParamGenerator: generate() | ✅ | Jc/Jmin/Jmax + S1-S4 + H1-H4 + I1-I5 (7 CPS-профилей) |
 | Templates API: POST /api/templates/generate | ✅ | генерация + опциональное сохранение (saveName) |
+| GatewayManager: createGateway/updateGateway/deleteGateway | ✅ | персистентность в /etc/wireguard/data/gateways/ |
+| GatewayMonitor: ping-polling, latency/loss статистика | ✅ | per-gateway интервал, windowSeconds |
+| GatewayGroup: CRUD, tier-based приоритеты | ✅ | trigger: packetloss/latency/packetloss_latency |
+| AliasManager: CRUD host/network/ipset | ✅ | персистентность в /etc/wireguard/data/aliases/ |
+| IpsetManager: create/destroy/loadFromFile/generateFromScript | ✅ | prefixes.py интеграция |
+| FirewallManager: init chains (FIREWALL_FORWARD + FIREWALL_MANGLE) | ✅ | filter + mangle custom chains |
+| FirewallManager: CRUD + toggle + move | ✅ | персистентность в firewall-rules.json |
+| FirewallManager: _rebuildChains() | ✅ | flush + re-apply all enabled rules in order |
+| FirewallManager: PBR (accept + gateway) | ✅ | mangle MARK + ip route table + ip rule + filter ACCEPT |
+| FirewallManager: migration от PolicyManager | ✅ | policy-rules.json → firewall-rules.json при первом старте |
+| Firewall API: GET/POST/PATCH/DELETE /api/firewall/rules | ✅ | CRUD + toggle |
+| Firewall API: POST /api/firewall/rules/:id/move | ✅ | up/down |
+| Firewall API: GET /api/firewall/interfaces | ✅ | список интерфейсов хоста |
 
 ### ✅ Что работает — Frontend
 
@@ -622,7 +638,12 @@ DELETE /api/nat/rules/:id         ← удалить правило
 | NAT: Add Rule modal (any/subnet/IP source, MASQUERADE/SNAT) | ✅ | |
 | NAT: Edit Rule modal | ✅ | |
 | NAT: Port Forwarding tab | ⏳ | placeholder "Coming soon" |
-| Gateways / Firewall | ⏳ | placeholder "Coming soon" |
+| Gateways: список, create/edit/delete modal | ✅ | name, interface, gatewayIP, monitorAddress, interval |
+| Gateways: live статус (online/latency/loss) | ✅ | GatewayMonitor ping polling |
+| Gateway Groups: create/edit/delete, tier-based | ✅ | trigger: packetloss/latency/packetloss_latency |
+| Firewall → Aliases | ✅ | host/network/ipset, upload file, generate via prefixes.py, CRUD |
+| Firewall → Rules | ✅ | таблица + Add/Edit модалы, ACCEPT/DROP/REJECT, PBR через gateway |
+| Routing → Policy tab | ❌ удалён | PBR переехал в Firewall → Rules |
 | Settings: "Generate" кнопка (⚡) | ✅ | модал: профиль + intensity + host + preview + save |
 | Generate modal: 7 CPS-профилей | ✅ | QUIC Initial/0-RTT, TLS 1.3, DTLS, HTTP/3, SIP, Noise_IK |
 | Generate modal: Edit & Save | ✅ | переносит params в templateForm → стандартный template modal |
@@ -630,9 +651,7 @@ DELETE /api/nat/rules/:id         ← удалить правило
 ### ❌ Что не реализовано
 
 1. **Admin Instance backend** — `src/lib/AdminInstance.js` (управление wg0/admin-туннелем через новую архитектуру)
-2. **Gateways** — backend + UI
-3. **Firewall** — backend + UI
-4. **Port Forwarding (DNAT)** — backend + UI (страница NAT, вкладка Port Forwarding)
+2. **Port Forwarding (DNAT)** — backend + UI (страница NAT, вкладка Port Forwarding)
 
 ---
 
@@ -675,9 +694,9 @@ DELETE /api/nat/rules/:id         ← удалить правило
 - Страница Administration: показать статус admin-туннеля, список клиентов (из WireGuard.js)
 - **Файлы:** новый `src/lib/AdminInstance.js`, `src/www/index.html` (страница Administration), `src/lib/Server.js` (API)
 
-### 2. Gateways/Routing/Firewall (приоритет: низкий)
-- Заглушки "Coming soon" заменить на реальный UI
-- Backend: `ip route add/del`, `iptables-nft` правила через API
+### 2. Port Forwarding / DNAT (приоритет: средний)
+- Backend: `NatManager.addDnatRule()` — `iptables-nft -t nat -A PREROUTING -p tcp --dport PORT -j DNAT --to DEST`
+- UI: страница NAT, вкладка Port Forwarding (сейчас placeholder "Coming soon")
 
 ### 3. UI Config через API (приоритет: низкий)
 **Что сейчас:** Эндпоинты `/api/ui-traffic-stats`, `/api/ui-chart-type`, `/api/lang`,

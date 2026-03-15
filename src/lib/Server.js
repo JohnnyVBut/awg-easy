@@ -17,7 +17,7 @@ const RouteManager = require('./RouteManager');
 const NatManager = require('./NatManager');
 const AliasManager = require('./AliasManager');
 const IpsetManager = require('./IpsetManager');
-const PolicyManager = require('./PolicyManager');
+const FirewallManager = require('./FirewallManager');
 const Settings = require('./Settings');
 const AwgParamGenerator = require('./AwgParamGenerator');
 const Util = require('./Util');
@@ -1658,28 +1658,37 @@ module.exports = class Server {
       }))
 
       // ======================================================================
-      // Policy Rules API  (Routing → Policy)
+      // Firewall Rules API  (Firewall → Rules, поглощает PBR)
       // ======================================================================
 
       /**
-       * GET /api/policy/rules
-       * Список всех PBR-правил.
+       * GET /api/firewall/interfaces
+       * Список сетевых интерфейсов хоста (для дропдауна Interface в правиле).
        */
-      .get('/api/policy/rules', defineEventHandler(async () => {
-        const pm = await PolicyManager.getInstance();
-        return { rules: pm.getRules() };
+      .get('/api/firewall/interfaces', defineEventHandler(async () => {
+        const fm = await FirewallManager.getInstance();
+        return { interfaces: await fm.getNetworkInterfaces() };
       }))
 
       /**
-       * POST /api/policy/rules
-       * Создать новое PBR-правило.
-       * Body: { name, source, destination, gatewayId?, gatewayGroupId?, priority?, fwmark? }
+       * GET /api/firewall/rules
+       * Список всех правил (отсортированных по order).
        */
-      .post('/api/policy/rules', defineEventHandler(async (event) => {
+      .get('/api/firewall/rules', defineEventHandler(async () => {
+        const fm = await FirewallManager.getInstance();
+        return { rules: fm.getRules() };
+      }))
+
+      /**
+       * POST /api/firewall/rules
+       * Создать правило.
+       * Body: { name, interface?, protocol?, source, destination, action, gatewayId?, gatewayGroupId?, log?, comment? }
+       */
+      .post('/api/firewall/rules', defineEventHandler(async (event) => {
         try {
           const body = await readBody(event).catch(() => ({}));
-          const pm = await PolicyManager.getInstance();
-          const rule = await pm.addRule(body);
+          const fm = await FirewallManager.getInstance();
+          const rule = await fm.addRule(body);
           return { rule };
         } catch (err) {
           throw createError({ status: err.statusCode || 500, message: err.message });
@@ -1687,21 +1696,21 @@ module.exports = class Server {
       }))
 
       /**
-       * PATCH /api/policy/rules/:id
+       * PATCH /api/firewall/rules/:id
        * Обновить правило или переключить enabled.
        * Body: { enabled: bool } для toggle, или полные данные правила для update.
        */
-      .patch('/api/policy/rules/:id', defineEventHandler(async (event) => {
+      .patch('/api/firewall/rules/:id', defineEventHandler(async (event) => {
         try {
           const id   = getRouterParam(event, 'id');
           const body = await readBody(event).catch(() => ({}));
-          const pm = await PolicyManager.getInstance();
+          const fm = await FirewallManager.getInstance();
 
           if (body.enabled !== undefined && Object.keys(body).length === 1) {
-            const rule = await pm.toggleRule(id, Boolean(body.enabled));
+            const rule = await fm.toggleRule(id, Boolean(body.enabled));
             return { rule };
           }
-          const rule = await pm.updateRule(id, body);
+          const rule = await fm.updateRule(id, body);
           return { rule };
         } catch (err) {
           throw createError({ status: err.statusCode || 500, message: err.message });
@@ -1709,15 +1718,33 @@ module.exports = class Server {
       }))
 
       /**
-       * DELETE /api/policy/rules/:id
-       * Удалить PBR-правило (+ убрать kernel-стек).
+       * DELETE /api/firewall/rules/:id
+       * Удалить правило (flush chains + rebuild).
        */
-      .delete('/api/policy/rules/:id', defineEventHandler(async (event) => {
+      .delete('/api/firewall/rules/:id', defineEventHandler(async (event) => {
         try {
           const id = getRouterParam(event, 'id');
-          const pm = await PolicyManager.getInstance();
-          await pm.deleteRule(id);
+          const fm = await FirewallManager.getInstance();
+          await fm.deleteRule(id);
           return { success: true };
+        } catch (err) {
+          throw createError({ status: err.statusCode || 500, message: err.message });
+        }
+      }))
+
+      /**
+       * POST /api/firewall/rules/:id/move
+       * Переместить правило вверх или вниз.
+       * Body: { direction: 'up' | 'down' }
+       */
+      .post('/api/firewall/rules/:id/move', defineEventHandler(async (event) => {
+        try {
+          const id   = getRouterParam(event, 'id');
+          const body = await readBody(event).catch(() => ({}));
+          const direction = body.direction === 'down' ? 'down' : 'up';
+          const fm = await FirewallManager.getInstance();
+          const rule = await fm.moveRule(id, direction);
+          return { rule };
         } catch (err) {
           throw createError({ status: err.statusCode || 500, message: err.message });
         }
@@ -1907,11 +1934,10 @@ module.exports = class Server {
         await AliasManager.getInstance().catch(err => debug(`AliasManager init error: ${err.message}`));
         debug('AliasManager initialized successfully');
 
-        // PolicyManager: восстановить PBR-правила (mangle + ip rule + ip route) в ядро.
-        // Последний в цепочке — зависит от InterfaceManager (wg-интерфейсы), GatewayManager,
-        // AliasManager и IpsetManager. GatewayManager уже готов (параллельная ветка выше).
-        await PolicyManager.getInstance().catch(err => debug(`PolicyManager init error: ${err.message}`));
-        debug('PolicyManager initialized successfully');
+        // FirewallManager: init custom chains + restore firewall rules + PBR routing.
+        // Последний в цепочке — зависит от InterfaceManager, GatewayManager, AliasManager, IpsetManager.
+        await FirewallManager.getInstance().catch(err => debug(`FirewallManager init error: ${err.message}`));
+        debug('FirewallManager initialized successfully');
       })
       .catch((err) => {
         debug('Error initializing InterfaceManager:', err);
