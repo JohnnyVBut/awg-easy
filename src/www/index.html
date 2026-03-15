@@ -1772,7 +1772,9 @@
                   <span class="w-2 h-2 rounded-full shrink-0" style="display:inline-block;"
                     :style="'background-color:' + gatewayStatusColor(gw.httpStatus || 'unknown')"></span>
                   <span :style="'color:' + gatewayStatusColor(gw.httpStatus || 'unknown')">
-                    {{gw.httpLatency !== null ? 'HTTP ' + gw.httpLatency + ' ms' : 'HTTP —'}}
+                    <span v-if="gw.httpCode !== null && gw.httpCode !== undefined" class="text-xs" style="opacity:0.75;">{{gw.httpCode}}</span>
+                    <span v-else class="text-xs" style="opacity:0.75;">HTTP</span>
+                    {{gw.httpLatency !== null ? ' ' + gw.httpLatency + ' ms' : ' —'}}
                   </span>
                 </span>
 

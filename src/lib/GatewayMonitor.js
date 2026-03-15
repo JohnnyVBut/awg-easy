@@ -99,6 +99,7 @@ class GatewayMonitor {
       httpStatus:    null,
       httpLatency:   null,
       httpLastCheck: null,
+      httpCode:      null,
     };
   }
 
@@ -158,6 +159,7 @@ class GatewayMonitor {
 
     let success = false;
     let latency = null;
+    let httpCode = null;
 
     try {
       const urlObj = new URL(url);
@@ -175,17 +177,16 @@ class GatewayMonitor {
           rejectUnauthorized: false, // мониторинг — не проверяем TLS cert
         }, (res) => {
           latency  = Date.now() - start;
+          httpCode = res.statusCode;
           success  = res.statusCode === expectedStatus;
-          if (!success) {
-            debug(`Gateway ${gateway.id}: HTTP probe got ${res.statusCode}, expected ${expectedStatus}`);
-          }
+          debug(`Gateway ${gateway.id}: HTTP probe → ${res.statusCode} (expected ${expectedStatus}) ${latency}ms`);
           res.resume(); // дренировать тело, иначе соединение не закрывается
           resolve();
         });
 
         const timer = setTimeout(() => {
           req.destroy();
-          reject(new Error(`HTTP probe timeout after ${timeout}s`));
+          reject(new Error(`timeout after ${timeout}s`));
         }, timeoutMs);
 
         req.on('error', (err) => {
@@ -202,9 +203,9 @@ class GatewayMonitor {
 
     this._addToWindow(this.httpWindows, gateway.id, { success, latency: success ? latency : null }, httpWindowSeconds);
 
-    // Обновить httpLastCheck в текущем статусе ДО пересчёта
+    // Обновить httpLastCheck + httpCode в текущем статусе ДО пересчёта
     const cur = this.statuses.get(gateway.id) || {};
-    this.statuses.set(gateway.id, { ...cur, httpLastCheck: new Date().toISOString() });
+    this.statuses.set(gateway.id, { ...cur, httpLastCheck: new Date().toISOString(), httpCode });
 
     this._recomputeStatus(gateway, windowSeconds, thresholdHealthy, thresholdDegraded);
   }
@@ -303,7 +304,7 @@ class GatewayMonitor {
         combinedStatus = icmpStatus;
     }
 
-    // Сохранить httpLastCheck из предыдущего состояния (обновляется в _probeHttp)
+    // Сохранить httpLastCheck + httpCode из предыдущего состояния (обновляются в _probeHttp)
     const prev = this.statuses.get(gateway.id) || {};
     this.statuses.set(gateway.id, {
       status:        combinedStatus,
@@ -313,6 +314,7 @@ class GatewayMonitor {
       httpStatus,
       httpLatency:   http.avgLatency,
       httpLastCheck: prev.httpLastCheck || null,
+      httpCode:      prev.httpCode      ?? null,
     });
 
     debug(`Gateway ${gateway.id}: ${combinedStatus} | rule=${rule} | ICMP=${icmpStatus}(${icmp.avgLatency}ms,${icmp.packetLoss}%loss) | HTTP=${httpStatus}(${http.avgLatency}ms)`);
