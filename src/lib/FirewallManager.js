@@ -169,20 +169,20 @@ class FirewallManager {
   // ─── Apply single rule to kernel ────────────────────────────────────────────
 
   async _applyRuleKernel(rule) {
-    const protocols = this._expandProtocol(rule.protocol);
-    const srcParts  = this._buildMatchParts('src', rule.source);
-    const dstParts  = this._buildMatchParts('dst', rule.destination);
+    const srcParts   = this._buildMatchParts('src', rule.source);
+    const dstParts   = this._buildMatchParts('dst', rule.destination);
+    const portCombos = this._buildPortCombinations(rule);
 
-    // Настроить PBR routing (один раз per rule, вне цикла proto×src×dst)
+    // Настроить PBR routing (один раз per rule, вне цикла)
     if (rule.action === 'accept' && (rule.gatewayId || rule.gatewayGroupId)) {
       await this._applyRoutingForRule(rule);
     }
 
-    // Создать iptables правила: декартово произведение proto × src × dst
-    for (const proto of protocols) {
+    // Декартово произведение: portCombo × src × dst
+    for (const portCombo of portCombos) {
       for (const srcPart of srcParts) {
         for (const dstPart of dstParts) {
-          const matchFlags = this._buildMatchFlags(rule, proto, srcPart, dstPart);
+          const matchFlags = this._buildMatchFlagsFromCombo(rule, portCombo, srcPart, dstPart);
 
           // Опциональный LOG
           if (rule.log) {
@@ -239,46 +239,110 @@ class FirewallManager {
   // ─── Match building ─────────────────────────────────────────────────────────
 
   /**
-   * Построить строку флагов match для одной комбинации (proto, srcPart, dstPart).
-   * Возвращает строку вида " -i wg10 -p tcp -s 10.0.0.0/8 --sport 80 -d 8.8.8.8 --dport 443"
+   * Построить массив port-комбинаций для iptables.
+   *
+   * Без port-алиасов: legacy-путь через rule.protocol + plain port строки.
+   * С port-алиасами: расширяем через AliasManager.getPortMatchSpec() и строим
+   * декартово произведение srcProto × dstProto (несовместимые протоколы пропускаем).
+   *
+   * @param {object} rule
+   * @returns {{ proto: string|null, srcPort: string|null, srcMultiport: boolean,
+   *             dstPort: string|null, dstMultiport: boolean }[]}
    */
-  _buildMatchFlags(rule, proto, srcPart, dstPart) {
+  _buildPortCombinations(rule) {
+    const srcHasAlias = !!(rule.source?.portAliasId);
+    const dstHasAlias = !!(rule.destination?.portAliasId);
+
+    if (!srcHasAlias && !dstHasAlias) {
+      // Legacy: rule.protocol + plain port строки (обратная совместимость)
+      return this._expandProtocol(rule.protocol).map(proto => ({
+        proto,
+        srcPort:      rule.source?.port      ? String(rule.source.port).trim() : null,
+        srcMultiport: false,
+        dstPort:      rule.destination?.port ? String(rule.destination.port).trim() : null,
+        dstMultiport: false,
+      }));
+    }
+
+    // Одна или обе стороны используют port-алиас
+    const srcSpecs = srcHasAlias
+      ? this._aliasMgr.getPortMatchSpec(rule.source.portAliasId)
+      : [{ proto: null, ports: rule.source?.port || null, multiport: false }];
+
+    const dstSpecs = dstHasAlias
+      ? this._aliasMgr.getPortMatchSpec(rule.destination.portAliasId)
+      : [{ proto: null, ports: rule.destination?.port || null, multiport: false }];
+
+    const combos = [];
+    for (const src of srcSpecs) {
+      for (const dst of dstSpecs) {
+        // Протоколы должны совпадать (один пакет не может быть TCP и UDP одновременно)
+        if (src.proto && dst.proto && src.proto !== dst.proto) continue;
+        combos.push({
+          proto:        src.proto || dst.proto || null,
+          srcPort:      src.ports  || null,
+          srcMultiport: src.multiport || false,
+          dstPort:      dst.ports  || null,
+          dstMultiport: dst.multiport || false,
+        });
+      }
+    }
+
+    // Если все комбинации отфильтрованы (протоколы несовместимы) — хотя бы один fallback
+    return combos.length > 0
+      ? combos
+      : [{ proto: null, srcPort: null, srcMultiport: false, dstPort: null, dstMultiport: false }];
+  }
+
+  /**
+   * Построить строку флагов match для portCombo + srcPart + dstPart.
+   *
+   * Результат: " -i wg10 -p tcp -s 10.0.0.0/8 -m multiport --sports 80,443 -d 8.8.8.8 --dport 53"
+   *
+   * Примечание: --sport/--dport требуют -p (proto). Если proto == null — порт не выводится.
+   */
+  _buildMatchFlagsFromCombo(rule, portCombo, srcPart, dstPart) {
     let s = '';
     if (rule.interface && rule.interface !== 'any') s += ` -i ${rule.interface}`;
-    if (proto)   s += ` -p ${proto}`;
+    if (portCombo.proto) s += ` -p ${portCombo.proto}`;
     if (srcPart) s += ` ${srcPart}`;
-    const sp = this._portFlag('--sport', rule.source?.port, proto);
-    if (sp) s += ` ${sp}`;
+    // Source port (только если proto задан — iptables требует -p для port-match)
+    if (portCombo.srcPort && portCombo.proto) {
+      s += this._portPartStr('--sport', portCombo.srcPort, portCombo.srcMultiport);
+    }
     if (dstPart) s += ` ${dstPart}`;
-    const dp = this._portFlag('--dport', rule.destination?.port, proto);
-    if (dp) s += ` ${dp}`;
+    // Destination port
+    if (portCombo.dstPort && portCombo.proto) {
+      s += this._portPartStr('--dport', portCombo.dstPort, portCombo.dstMultiport);
+    }
     return s;
   }
 
   /**
-   * Развернуть protocol в массив iptables-протоколов.
-   * 'tcp/udp' → ['tcp', 'udp'] (два отдельных правила)
-   * 'any'     → [null] (нет флага -p)
+   * Построить строку "--dport 443" или "-m multiport --dports 80,443,8080:8090"
+   * @param {'--sport'|'--dport'} flag
+   * @param {string} ports  - "443" | "80,443" | "8080:8090"
+   * @param {boolean} multiport
+   * @returns {string}
+   */
+  _portPartStr(flag, ports, multiport) {
+    const normalized = String(ports).trim().replace(/-(?=\d)/, ':'); // 8080-8090 → 8080:8090
+    if (multiport || normalized.includes(',')) {
+      const pluralFlag = flag === '--sport' ? '--sports' : '--dports';
+      return ` -m multiport ${pluralFlag} ${normalized}`;
+    }
+    return ` ${flag} ${normalized}`;
+  }
+
+  /**
+   * Развернуть protocol в массив iptables-протоколов (legacy-путь).
+   * 'tcp/udp' → ['tcp', 'udp']
+   * 'any'     → [null]
    */
   _expandProtocol(protocol) {
     if (!protocol || protocol === 'any') return [null];
     if (protocol === 'tcp/udp')           return ['tcp', 'udp'];
     return [protocol]; // tcp, udp, icmp
-  }
-
-  /**
-   * Построить флаг порта (--sport / --dport).
-   * port format: "80" | "443" | "8080-8090" | "80,443"
-   * Требует proto=tcp или proto=udp.
-   */
-  _portFlag(flag, port, proto) {
-    if (!port || !String(port).trim()) return null;
-    if (proto !== 'tcp' && proto !== 'udp') return null; // icmp/any не поддерживает порты
-    const normalized = String(port).trim().replace(/-/, ':'); // "8080-8090" → "8080:8090"
-    if (normalized.includes(',')) {
-      return `-m multiport ${flag}s ${normalized}`; // --sports / --dports
-    }
-    return `${flag} ${normalized}`;
   }
 
   /**
@@ -501,16 +565,17 @@ class FirewallManager {
    */
   _normalizeEndpoint(ep, dir) {
     if (!ep || ep.type === 'any') {
-      return { type: 'any', invert: false, port: null };
+      return { type: 'any', invert: false, port: null, portAliasId: null };
     }
     const base = {
-      type:   ep.type,
-      invert: dir === 'dst' ? Boolean(ep.invert) : false, // src invert не поддерживается
-      port:   ep.port ? String(ep.port).trim() : null,
+      type:         ep.type,
+      invert:       dir === 'dst' ? Boolean(ep.invert) : false,
+      port:         ep.port         ? String(ep.port).trim()  : null,
+      portAliasId:  ep.portAliasId  ? String(ep.portAliasId)  : null,
     };
     if (ep.type === 'cidr')  return { ...base, value:   (ep.value || '').trim() };
     if (ep.type === 'alias') return { ...base, aliasId: ep.aliasId };
-    return { type: 'any', invert: false, port: null };
+    return { type: 'any', invert: false, port: null, portAliasId: null };
   }
 
   _validateRule(data, updateId = null) {

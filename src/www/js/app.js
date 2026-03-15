@@ -308,9 +308,9 @@ new Vue({
     aliasCreate: {
       name: '',
       description: '',
-      type: 'network',          // 'host' | 'network' | 'ipset' | 'group'
-      entries: '',              // textarea: one entry per line (host/network)
-      memberIds: [],            // для group: выбранные UUID members
+      type: 'network',          // 'host' | 'network' | 'ipset' | 'group' | 'port' | 'port-group'
+      entries: '',              // textarea: one entry per line (host/network/port)
+      memberIds: [],            // для group/port-group: выбранные UUID members
       genSource: 'country',     // 'country' | 'asn' | 'asn-list'
       genCountry: '',
       genAsn: '',
@@ -322,7 +322,7 @@ new Vue({
       description: '',
       type: 'network',
       entries: '',
-      memberIds: [],            // для group: выбранные UUID members
+      memberIds: [],            // для group/port-group: выбранные UUID members
       genSource: 'country',
       genCountry: '',
       genAsn: '',
@@ -342,8 +342,8 @@ new Vue({
       name: '',
       interface: 'any',
       protocol: 'any',
-      source:      { type: 'any', aliasId: '', value: '', invert: false, port: '' },
-      destination: { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+      source:      { type: 'any', aliasId: '', value: '', invert: false, portMode: '', port: '', portAliasId: '' },
+      destination: { type: 'any', aliasId: '', value: '', invert: false, portMode: '', port: '', portAliasId: '' },
       action: 'accept',
       gatewayId: '',
       gatewayGroupId: '',
@@ -357,8 +357,8 @@ new Vue({
       name: '',
       interface: 'any',
       protocol: 'any',
-      source:      { type: 'any', aliasId: '', value: '', invert: false, port: '' },
-      destination: { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+      source:      { type: 'any', aliasId: '', value: '', invert: false, portMode: '', port: '', portAliasId: '' },
+      destination: { type: 'any', aliasId: '', value: '', invert: false, portMode: '', port: '', portAliasId: '' },
       action: 'accept',
       gatewayId: '',
       gatewayGroupId: '',
@@ -1597,13 +1597,26 @@ new Vue({
       return this.aliases.filter(a => a.type === 'host' || a.type === 'network');
     },
 
+    // Вернуть только port алиасы (кандидаты для port-group membership)
+    _portAliasCandidates() {
+      return this.aliases.filter(a => a.type === 'port');
+    },
+
+    // Вернуть port и port-group алиасы (для firewall rule port selector)
+    _portAliasOptions() {
+      return this.aliases.filter(a => a.type === 'port' || a.type === 'port-group');
+    },
+
     async createAlias() {
       try {
         const data = { name: this.aliasCreate.name, description: this.aliasCreate.description, type: this.aliasCreate.type };
         if (data.type === 'host' || data.type === 'network') {
           data.entries = this.aliasCreate.entries.split('\n').map(l => l.trim()).filter(Boolean);
         }
-        if (data.type === 'group') {
+        if (data.type === 'port') {
+          data.entries = this.aliasCreate.entries.split('\n').map(l => l.trim()).filter(Boolean);
+        }
+        if (data.type === 'group' || data.type === 'port-group') {
           data.memberIds = this.aliasCreate.memberIds;
         }
         // Сохраняем опции генерации ДО сброса формы
@@ -1632,13 +1645,15 @@ new Vue({
     },
 
     openAliasEdit(alias) {
+      const hasEntries = alias.type === 'host' || alias.type === 'network' || alias.type === 'port';
+      const hasMembers = alias.type === 'group' || alias.type === 'port-group';
       this.aliasEdit = {
         id: alias.id,
         name: alias.name,
         description: alias.description || '',
         type: alias.type,
-        entries: (alias.type === 'host' || alias.type === 'network') ? (alias.entries || []).join('\n') : '',
-        memberIds: alias.type === 'group' ? [...(alias.memberIds || [])] : [],
+        entries: hasEntries ? (alias.entries || []).join('\n') : '',
+        memberIds: hasMembers ? [...(alias.memberIds || [])] : [],
         genSource: alias.generatorOpts?.asnList ? 'asn-list' : alias.generatorOpts?.asn ? 'asn' : 'country',
         genCountry: alias.generatorOpts?.country || '',
         genAsn: alias.generatorOpts?.asn || '',
@@ -1653,7 +1668,10 @@ new Vue({
         if (this.aliasEdit.type === 'host' || this.aliasEdit.type === 'network') {
           data.entries = this.aliasEdit.entries.split('\n').map(l => l.trim()).filter(Boolean);
         }
-        if (this.aliasEdit.type === 'group') {
+        if (this.aliasEdit.type === 'port') {
+          data.entries = this.aliasEdit.entries.split('\n').map(l => l.trim()).filter(Boolean);
+        }
+        if (this.aliasEdit.type === 'group' || this.aliasEdit.type === 'port-group') {
           data.memberIds = this.aliasEdit.memberIds;
         }
         await this.api.updateAlias(data);
@@ -1788,8 +1806,8 @@ new Vue({
         name: '',
         interface: 'any',
         protocol: 'any',
-        source:      { type: 'any', aliasId: '', value: '', invert: false, port: '' },
-        destination: { type: 'any', aliasId: '', value: '', invert: false, port: '' },
+        source:      { type: 'any', aliasId: '', value: '', invert: false, portMode: '', port: '', portAliasId: '' },
+        destination: { type: 'any', aliasId: '', value: '', invert: false, portMode: '', port: '', portAliasId: '' },
         action: 'accept',
         gatewayId: '', gatewayGroupId: '', useGroup: false,
         fallbackToDefault: false,
@@ -1799,11 +1817,20 @@ new Vue({
 
     _buildFirewallPayload(form) {
       const buildEp = (ep) => {
-        if (!ep || ep.type === 'any') return { type: 'any', invert: false, port: null };
-        const base = { type: ep.type, invert: Boolean(ep.invert), port: ep.port || null };
+        if (!ep || ep.type === 'any') {
+          // Even 'any' endpoints may carry port info
+          const portInfo = ep?.portMode === 'alias'
+            ? { port: null,               portAliasId: ep.portAliasId || null }
+            : { port: ep?.port || null,   portAliasId: null };
+          return { type: 'any', invert: false, ...portInfo };
+        }
+        const portInfo = ep.portMode === 'alias'
+          ? { port: null,           portAliasId: ep.portAliasId || null }
+          : { port: ep.port || null, portAliasId: null };
+        const base = { type: ep.type, invert: Boolean(ep.invert), ...portInfo };
         if (ep.type === 'alias') return { ...base, aliasId: ep.aliasId };
         if (ep.type === 'cidr')  return { ...base, value: ep.value };
-        return { type: 'any', invert: false, port: null };
+        return { type: 'any', invert: false, port: null, portAliasId: null };
       };
       return {
         name:           form.name,
@@ -1839,13 +1866,28 @@ new Vue({
     },
 
     openFirewallEdit(rule) {
+      const loadEp = (ep) => {
+        if (!ep) return { type: 'any', aliasId: '', value: '', invert: false, portMode: '', port: '', portAliasId: '' };
+        const portMode     = ep.portAliasId ? 'alias' : (ep.port ? 'plain' : '');
+        const portAliasId  = ep.portAliasId || '';
+        const port         = ep.port        || '';
+        return {
+          type:        ep.type      || 'any',
+          aliasId:     ep.aliasId   || '',
+          value:       ep.value     || '',
+          invert:      Boolean(ep.invert),
+          portMode,
+          port,
+          portAliasId,
+        };
+      };
       this.firewallEdit = {
         id:          rule.id,
         name:        rule.name,
         interface:   rule.interface  || 'any',
         protocol:    rule.protocol   || 'any',
-        source:      { ...(rule.source      || { type: 'any', invert: false }), port: rule.source?.port || '' },
-        destination: { ...(rule.destination || { type: 'any', invert: false }), port: rule.destination?.port || '' },
+        source:      loadEp(rule.source),
+        destination: loadEp(rule.destination),
         action:      rule.action || 'accept',
         gatewayId:      rule.gatewayId      || '',
         gatewayGroupId: rule.gatewayGroupId || '',

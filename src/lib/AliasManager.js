@@ -12,7 +12,7 @@ const ALIASES_DIR = '/etc/wireguard/data/aliases';
 /**
  * AliasManager — именованные наборы адресов (Firewall Aliases).
  *
- * Четыре типа алиасов:
+ * Шесть типов алиасов:
  *
  *   host     — один или несколько IP-адресов (напр. "1.2.3.4", "5.6.7.8")
  *              Хранятся в entries[]. Применяются как -s/-d в iptables напрямую.
@@ -30,6 +30,14 @@ const ALIASES_DIR = '/etc/wireguard/data/aliases';
  *              getMatchSpec() возвращает merged deduplicated список entries.
  *              Ограничение: members должны быть type=host или type=network
  *              (не ipset, не group — вложенные группы не поддерживаются).
+ *
+ *   port     — L4: набор правил вида "tcp:443", "udp:53", "tcp:8080-8090", "any:80"
+ *              Используется в firewall rules как source.portAliasId / destination.portAliasId.
+ *              getPortMatchSpec() возвращает [{proto:'tcp', ports:'80,443', multiport:true},...].
+ *
+ *   port-group — объединяет несколько port алиасов в один.
+ *              Аналогично group, но для port-типов.
+ *              getPortMatchSpec() рекурсивно объединяет entries members.
  *
  * Алиасы переиспользуются в:
  *   - FirewallManager (source / destination в iptables-правилах)
@@ -104,17 +112,21 @@ class AliasManager {
     this._validate(data);
     this._checkNameUnique(data.name);
 
-    // Для group: валидировать members
-    if (data.type === 'group') {
-      this._validateMembers(data.memberIds);
-    }
+    const isGroup     = data.type === 'group';
+    const isIpset     = data.type === 'ipset';
+    const isPort      = data.type === 'port';
+    const isPortGroup = data.type === 'port-group';
+    const isPlain     = !isGroup && !isIpset && !isPort && !isPortGroup; // host или network
 
-    const isGroup  = data.type === 'group';
-    const isIpset  = data.type === 'ipset';
-    const isPlain  = !isGroup && !isIpset; // host или network
+    // Для group / port-group: валидировать members
+    if (isGroup)     this._validateMembers(data.memberIds, ['host', 'network']);
+    if (isPortGroup) this._validateMembers(data.memberIds, ['port']);
 
-    const memberIds = isGroup ? [...new Set(data.memberIds)] : [];
-    const entries   = isPlain ? this._normalizeEntries(data.entries || []) : [];
+    // Для port: валидировать entries
+    const portEntries = isPort ? this._normalizePortEntries(data.entries || []) : [];
+
+    const memberIds = (isGroup || isPortGroup) ? [...new Set(data.memberIds)] : [];
+    const entries   = isPlain ? this._normalizeEntries(data.entries || []) : portEntries;
 
     const alias = {
       id:            uuidv4(),
@@ -124,11 +136,13 @@ class AliasManager {
       entries,
       memberIds,
       ipsetName:     isIpset ? this._ipsetNameFromAlias(data.name.trim()) : null,
-      entryCount:    isPlain  ? entries.length
-                   : isGroup  ? this._groupEntryCount(memberIds)
+      entryCount:    isPlain     ? entries.length
+                   : isPort      ? entries.length
+                   : isGroup     ? this._groupEntryCount(memberIds)
+                   : isPortGroup ? this._groupEntryCount(memberIds)
                    : 0,
       generatorOpts: null,
-      lastUpdated:   isPlain && entries.length ? new Date().toISOString() : null,
+      lastUpdated:   (isPlain || isPort) && entries.length ? new Date().toISOString() : null,
       createdAt:     new Date().toISOString(),
     };
 
@@ -164,7 +178,14 @@ class AliasManager {
     }
 
     if (alias.type === 'group' && data.memberIds !== undefined) {
-      this._validateMembers(data.memberIds);
+      this._validateMembers(data.memberIds, ['host', 'network']);
+      alias.memberIds  = [...new Set(data.memberIds)];
+      alias.entryCount = this._groupEntryCount(alias.memberIds);
+      alias.lastUpdated = new Date().toISOString();
+    }
+
+    if (alias.type === 'port-group' && data.memberIds !== undefined) {
+      this._validateMembers(data.memberIds, ['port']);
       alias.memberIds  = [...new Set(data.memberIds)];
       alias.entryCount = this._groupEntryCount(alias.memberIds);
       alias.lastUpdated = new Date().toISOString();
@@ -172,6 +193,12 @@ class AliasManager {
 
     if (data.entries !== undefined && (alias.type === 'host' || alias.type === 'network')) {
       alias.entries    = this._normalizeEntries(data.entries);
+      alias.entryCount = alias.entries.length;
+      alias.lastUpdated = new Date().toISOString();
+    }
+
+    if (data.entries !== undefined && alias.type === 'port') {
+      alias.entries    = this._normalizePortEntries(data.entries);
       alias.entryCount = alias.entries.length;
       alias.lastUpdated = new Date().toISOString();
     }
@@ -193,7 +220,7 @@ class AliasManager {
 
     // Не разрешаем удалять если используется в группе
     for (const a of this.aliases.values()) {
-      if (a.type === 'group' && (a.memberIds || []).includes(id)) {
+      if ((a.type === 'group' || a.type === 'port-group') && (a.memberIds || []).includes(id)) {
         throw createError({ status: 409, message: `Alias "${alias.name}" is used in group "${a.name}"` });
       }
     }
@@ -335,6 +362,56 @@ class AliasManager {
     return { type: 'cidr', entries: alias.entries };
   }
 
+  /**
+   * Получить "port match specification" алиаса для FirewallManager.
+   * Только для type=port или type=port-group.
+   *
+   * Возвращает массив spec-объектов, сгруппированных по протоколу:
+   *   [{ proto: 'tcp', ports: '80,443', multiport: true }, { proto: 'udp', ports: '53', multiport: false }]
+   *
+   * Порт-диапазоны: "8080-8090" → "8080:8090" (формат iptables).
+   * "any:PORT" расширяется до двух записей: tcp:PORT + udp:PORT.
+   *
+   * @param {string} id
+   * @returns {{ proto: string, ports: string, multiport: boolean }[]}
+   */
+  getPortMatchSpec(id) {
+    const alias = this._getOrThrow(id);
+
+    // Собрать все entries (из себя или из members)
+    let entries = [];
+    if (alias.type === 'port-group') {
+      for (const memberId of (alias.memberIds || [])) {
+        const member = this.aliases.get(memberId);
+        if (member) entries.push(...(member.entries || []));
+      }
+    } else if (alias.type === 'port') {
+      entries = alias.entries || [];
+    } else {
+      throw createError({ status: 400, message: `Alias "${alias.name}" is not a port alias (type=${alias.type})` });
+    }
+
+    // Группировать по протоколу, 'any' расширяем в tcp+udp
+    const byProto = {};
+    for (const entry of entries) {
+      const m = entry.match(/^(tcp|udp|any):(.+)$/i);
+      if (!m) continue;
+      const proto = m[1].toLowerCase();
+      // Диапазон 8080-8090 → 8080:8090 для iptables
+      const port = m[2].replace(/-/, ':');
+      const protos = proto === 'any' ? ['tcp', 'udp'] : [proto];
+      for (const p of protos) {
+        if (!byProto[p]) byProto[p] = [];
+        byProto[p].push(port);
+      }
+    }
+
+    return Object.entries(byProto).map(([proto, portList]) => {
+      const deduped = [...new Set(portList)];
+      return { proto, ports: deduped.join(','), multiport: deduped.length > 1 };
+    });
+  }
+
   // ─── Private ───────────────────────────────────────────────────────────────
 
   _getOrThrow(id) {
@@ -350,16 +427,17 @@ class AliasManager {
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,62}$/.test(data.name.trim())) {
       throw createError({ status: 400, message: 'Alias name must start with a letter and contain only letters, digits, _ or -' });
     }
-    if (!['host', 'network', 'ipset', 'group'].includes(data.type)) {
-      throw createError({ status: 400, message: 'Alias type must be host, network, ipset, or group' });
+    if (!['host', 'network', 'ipset', 'group', 'port', 'port-group'].includes(data.type)) {
+      throw createError({ status: 400, message: 'Alias type must be host, network, ipset, group, port, or port-group' });
     }
   }
 
   /**
-   * Валидировать список memberIds для group.
+   * Валидировать список memberIds для group / port-group.
    * @param {string[]} memberIds
+   * @param {string[]} allowedTypes - допустимые типы members
    */
-  _validateMembers(memberIds) {
+  _validateMembers(memberIds, allowedTypes = ['host', 'network']) {
     if (!Array.isArray(memberIds) || memberIds.length === 0) {
       throw createError({ status: 400, message: 'Group alias must have at least one member' });
     }
@@ -368,8 +446,8 @@ class AliasManager {
       if (!member) {
         throw createError({ status: 400, message: `Member alias ${memberId} not found` });
       }
-      if (member.type !== 'host' && member.type !== 'network') {
-        throw createError({ status: 400, message: `Member alias "${member.name}" must be type host or network (got ${member.type})` });
+      if (!allowedTypes.includes(member.type)) {
+        throw createError({ status: 400, message: `Member alias "${member.name}" must be type ${allowedTypes.join(' or ')} (got ${member.type})` });
       }
     }
   }
@@ -400,6 +478,45 @@ class AliasManager {
     return entries
       .map(e => e.trim())
       .filter(Boolean);
+  }
+
+  /**
+   * Нормализовать и валидировать port entries.
+   * Формат: "proto:port" или "proto:start-end"
+   * proto: tcp | udp | any
+   * port:  1-65535 (или диапазон start-end, start < end)
+   *
+   * @param {string[]} entries
+   * @returns {string[]} нормализованные entries
+   */
+  _normalizePortEntries(entries) {
+    const result = [];
+    for (const raw of entries) {
+      const entry = raw.trim();
+      if (!entry) continue;
+      const m = entry.match(/^(tcp|udp|any):(\d+)(?:-(\d+))?$/i);
+      if (!m) {
+        throw createError({ status: 400, message: `Invalid port entry "${entry}". Format: tcp:443 / udp:53 / any:80 / tcp:8080-8090` });
+      }
+      const proto = m[1].toLowerCase();
+      const portA = parseInt(m[2], 10);
+      const portB = m[3] ? parseInt(m[3], 10) : null;
+      if (portA < 1 || portA > 65535) {
+        throw createError({ status: 400, message: `Port out of range in "${entry}" (must be 1-65535)` });
+      }
+      if (portB !== null) {
+        if (portB < 1 || portB > 65535) {
+          throw createError({ status: 400, message: `Port out of range in "${entry}" (must be 1-65535)` });
+        }
+        if (portB <= portA) {
+          throw createError({ status: 400, message: `Invalid range in "${entry}" (end must be greater than start)` });
+        }
+        result.push(`${proto}:${portA}-${portB}`);
+      } else {
+        result.push(`${proto}:${portA}`);
+      }
+    }
+    return result;
   }
 
   /**
