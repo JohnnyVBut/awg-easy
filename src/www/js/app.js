@@ -230,6 +230,8 @@ new Vue({
       monitorInterval: 5,
       windowSeconds: null,
       latencyThreshold: 500,
+      monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 },
+      monitorRule: 'icmp_only',
       description: '',
     },
     gatewayEdit: {
@@ -242,6 +244,8 @@ new Vue({
       monitorInterval: 5,
       windowSeconds: null,
       latencyThreshold: 500,
+      monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 },
+      monitorRule: 'icmp_only',
       description: '',
     },
     groupCreate: { name: '', trigger: 'packetloss', description: '', gateways: [] },
@@ -1128,13 +1132,24 @@ new Vue({
           monitorInterval:  Number(f.monitorInterval),
           windowSeconds:    f.windowSeconds !== null ? Number(f.windowSeconds) : null,
           latencyThreshold: Number(f.latencyThreshold),
+          monitorHttp: {
+            enabled:        f.monitorHttp.enabled,
+            url:            f.monitorHttp.url.trim(),
+            expectedStatus: Number(f.monitorHttp.expectedStatus),
+            interval:       Number(f.monitorHttp.interval),
+            timeout:        Number(f.monitorHttp.timeout),
+          },
+          monitorRule:      f.monitorRule,
           description:      f.description.trim(),
         });
         this.showGatewayCreate = false;
         this.gatewayCreate = {
           name: '', interface: '', gatewayIP: '', monitorAddress: '',
           monitor: true, monitorInterval: 5, windowSeconds: null,
-          latencyThreshold: 500, description: '',
+          latencyThreshold: 500,
+          monitorHttp: { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 },
+          monitorRule: 'icmp_only',
+          description: '',
         };
         await this.loadGateways();
       } catch (err) {
@@ -1144,6 +1159,7 @@ new Vue({
 
     // ── Edit Gateway ──────────────────────────────────────────────────────────
     openGatewayEdit(gw) {
+      const httpDefaults = { enabled: false, url: '', expectedStatus: 200, interval: 60, timeout: 5 };
       this.gatewayEdit = {
         id:               gw.id,
         name:             gw.name,
@@ -1154,6 +1170,8 @@ new Vue({
         monitorInterval:  gw.monitorInterval,
         windowSeconds:    gw.windowSeconds ?? null,
         latencyThreshold: gw.latencyThreshold || 500,
+        monitorHttp:      gw.monitorHttp ? { ...httpDefaults, ...gw.monitorHttp } : { ...httpDefaults },
+        monitorRule:      gw.monitorRule || 'icmp_only',
         description:      gw.description || '',
       };
       this.showGatewayEdit = true;
@@ -1175,6 +1193,14 @@ new Vue({
           monitorInterval:  Number(f.monitorInterval),
           windowSeconds:    f.windowSeconds !== null ? Number(f.windowSeconds) : null,
           latencyThreshold: Number(f.latencyThreshold),
+          monitorHttp: {
+            enabled:        f.monitorHttp.enabled,
+            url:            f.monitorHttp.url.trim(),
+            expectedStatus: Number(f.monitorHttp.expectedStatus),
+            interval:       Number(f.monitorHttp.interval),
+            timeout:        Number(f.monitorHttp.timeout),
+          },
+          monitorRule:      f.monitorRule,
           description:      f.description.trim(),
         });
         this.showGatewayEdit = false;

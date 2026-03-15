@@ -357,27 +357,66 @@ Set peer expiry date.
 
 ## Gateways
 
-### `GET /api/gateways`
+### Gateway Model
 ```json
 {
-  "gateways": [{
-    "id": "uuid", "name": "KZ GW", "interface": "wg10",
-    "gatewayIP": "10.100.1.1", "monitorAddress": "8.8.8.8",
-    "status": "online", "latency": 12.5, "packetLoss": 0
-  }]
+  "id": "uuid",
+  "name": "KZ GW",
+  "interface": "wg10",
+  "gatewayIP": "10.100.1.1",
+  "monitorAddress": "8.8.8.8",      // IP for ICMP ping; '' = gatewayIP
+  "monitor": true,
+  "monitorInterval": 5,             // seconds between ICMP probes
+  "windowSeconds": null,            // null = global default from Settings
+  "latencyThreshold": 500,
+  "monitorHttp": {
+    "enabled": false,
+    "url": "https://example.com",   // URL for HTTP probe
+    "expectedStatus": 200,          // expected HTTP response code
+    "interval": 60,                 // seconds between HTTP probes
+    "timeout": 5                    // curl timeout in seconds
+  },
+  "monitorRule": "icmp_only",       // "icmp_only"|"http_only"|"all"|"any"
+  "description": ""
 }
+```
+
+**monitorRule** defines how ICMP and HTTP statuses are combined into the final gateway status:
+- `icmp_only` — ICMP only (default, backward compatible)
+- `http_only` — HTTP only
+- `all` — both must be reachable (AND)
+- `any` — at least one must be reachable (OR)
+
+### Monitor Status (appended to model in responses)
+```json
+{
+  "status": "healthy",             // "healthy"|"degraded"|"down"|"unknown"
+  "latency": 12,                   // ICMP RTT ms (avg over window)
+  "packetLoss": 0,                 // ICMP packet loss %
+  "lastCheck": "2026-03-15T...",
+  "httpStatus": "healthy",         // null if HTTP not enabled
+  "httpLatency": 45,               // HTTP response time ms; null if not enabled
+  "httpLastCheck": "2026-03-15T..."
+}
+```
+
+### `GET /api/gateways`
+```json
+{ "gateways": [{ /* model + monitor status */ }] }
 ```
 
 ### `POST /api/gateways`
 Create a gateway.
 ```json
-// Request
+// Request — monitorHttp and monitorRule are optional
 {
   "name": "KZ Gateway",
   "interface": "wg10",
   "gatewayIP": "10.100.1.1",
-  "monitorAddress": "8.8.8.8",   // optional, for ping monitoring
-  "interval": 5                   // seconds between pings, default 5
+  "monitorAddress": "8.8.8.8",
+  "monitorInterval": 5,
+  "monitorHttp": { "enabled": true, "url": "https://check.example.com", "expectedStatus": 200, "interval": 60, "timeout": 5 },
+  "monitorRule": "all"
 }
 // Response
 { "gateway": { ... } }

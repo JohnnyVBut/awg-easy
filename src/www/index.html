@@ -1765,6 +1765,17 @@
                   {{gw.packetLoss !== null ? gw.packetLoss + '%' : '—'}}
                 </span>
 
+                <!-- HTTP probe status (only when HTTP monitoring enabled) -->
+                <span v-if="gw.monitorHttp && gw.monitorHttp.enabled"
+                  class="text-sm shrink-0 font-mono"
+                  style="min-width:80px; display:flex; align-items:center; gap:5px;">
+                  <span class="w-2 h-2 rounded-full shrink-0" style="display:inline-block;"
+                    :style="'background-color:' + gatewayStatusColor(gw.httpStatus || 'unknown')"></span>
+                  <span :style="'color:' + gatewayStatusColor(gw.httpStatus || 'unknown')">
+                    {{gw.httpLatency !== null ? 'HTTP ' + gw.httpLatency + ' ms' : 'HTTP —'}}
+                  </span>
+                </span>
+
                 <!-- Status label -->
                 <span class="text-sm font-medium shrink-0" style="min-width:70px;"
                   :style="'color:' + gatewayStatusColor(gw.status)">
@@ -1944,7 +1955,7 @@
                   <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Monitor Parameters</p>
                   <div class="grid grid-cols-3 gap-3">
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Probe Interval (s)</label>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">ICMP Interval (s)</label>
                       <input v-model.number="gatewayCreate.monitorInterval" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
@@ -1963,6 +1974,53 @@
                   <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
                     Status by packet loss: ≥{{globalSettings.gatewayHealthyThreshold}}% → Healthy · ≥{{globalSettings.gatewayDegradedThreshold}}% → Degraded · else → Down
                   </p>
+                </div>
+
+                <!-- Health Decision Rule -->
+                <div v-if="gatewayCreate.monitor">
+                  <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Health Decision Rule</p>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button"
+                      v-for="rule in [{v:'icmp_only',l:'ICMP only'},{v:'http_only',l:'HTTP only'},{v:'all',l:'All (AND)'},{v:'any',l:'Any (OR)'}]"
+                      :key="rule.v"
+                      @click="gatewayCreate.monitorRule = rule.v"
+                      class="px-3 py-1 text-xs rounded border dark:border-neutral-500"
+                      :style="gatewayCreate.monitorRule === rule.v ? 'background:#7c3aed; color:#fff; border-color:#7c3aed;' : 'background:transparent;'">
+                      {{rule.l}}
+                    </button>
+                  </div>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    ICMP only — ping only · HTTP only — HTTP only · All — both must pass · Any — either passes
+                  </p>
+                </div>
+
+                <!-- HTTP Probe (when rule requires HTTP) -->
+                <div v-if="gatewayCreate.monitor && gatewayCreate.monitorRule !== 'icmp_only'">
+                  <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">HTTP Probe</p>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">URL <span class="text-red-500">*</span></label>
+                      <input v-model="gatewayCreate.monitorHttp.url" type="text" placeholder="https://example.com"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+                      <div>
+                        <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Expected status</label>
+                        <input v-model.number="gatewayCreate.monitorHttp.expectedStatus" type="number" min="100" max="599"
+                          class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Interval (s)</label>
+                        <input v-model.number="gatewayCreate.monitorHttp.interval" type="number" min="5"
+                          class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Timeout (s)</label>
+                        <input v-model.number="gatewayCreate.monitorHttp.timeout" type="number" min="1" max="30"
+                          class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Description -->
@@ -2048,7 +2106,7 @@
                   <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Monitor Parameters</p>
                   <div class="grid grid-cols-3 gap-3">
                     <div>
-                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Probe Interval (s)</label>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">ICMP Interval (s)</label>
                       <input v-model.number="gatewayEdit.monitorInterval" type="number" min="1"
                         class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
                     </div>
@@ -2067,6 +2125,53 @@
                   <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
                     Status by packet loss: ≥{{globalSettings.gatewayHealthyThreshold}}% → Healthy · ≥{{globalSettings.gatewayDegradedThreshold}}% → Degraded · else → Down
                   </p>
+                </div>
+
+                <!-- Health Decision Rule -->
+                <div v-if="gatewayEdit.monitor">
+                  <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">Health Decision Rule</p>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button"
+                      v-for="rule in [{v:'icmp_only',l:'ICMP only'},{v:'http_only',l:'HTTP only'},{v:'all',l:'All (AND)'},{v:'any',l:'Any (OR)'}]"
+                      :key="rule.v"
+                      @click="gatewayEdit.monitorRule = rule.v"
+                      class="px-3 py-1 text-xs rounded border dark:border-neutral-500"
+                      :style="gatewayEdit.monitorRule === rule.v ? 'background:#7c3aed; color:#fff; border-color:#7c3aed;' : 'background:transparent;'">
+                      {{rule.l}}
+                    </button>
+                  </div>
+                  <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    ICMP only — ping only · HTTP only — HTTP only · All — both must pass · Any — either passes
+                  </p>
+                </div>
+
+                <!-- HTTP Probe (when rule requires HTTP) -->
+                <div v-if="gatewayEdit.monitor && gatewayEdit.monitorRule !== 'icmp_only'">
+                  <p class="text-xs font-semibold uppercase text-gray-400 dark:text-neutral-500 mb-2 tracking-wide">HTTP Probe</p>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div>
+                      <label class="block text-xs font-medium dark:text-neutral-300 mb-1">URL <span class="text-red-500">*</span></label>
+                      <input v-model="gatewayEdit.monitorHttp.url" type="text" placeholder="https://example.com"
+                        class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 font-mono">
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+                      <div>
+                        <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Expected status</label>
+                        <input v-model.number="gatewayEdit.monitorHttp.expectedStatus" type="number" min="100" max="599"
+                          class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Interval (s)</label>
+                        <input v-model.number="gatewayEdit.monitorHttp.interval" type="number" min="5"
+                          class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium dark:text-neutral-300 mb-1">Timeout (s)</label>
+                        <input v-model.number="gatewayEdit.monitorHttp.timeout" type="number" min="1" max="30"
+                          class="w-full px-2 py-1 text-sm border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div>

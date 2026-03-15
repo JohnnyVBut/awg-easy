@@ -19,9 +19,17 @@ class Gateway {
       monitorAddress:  data.monitorAddress  || '',   // IP для пинга; '' = использовать gatewayIP
       enabled:          data.enabled          !== false,
       monitor:          data.monitor          !== false,
-      monitorInterval:  data.monitorInterval  || 5,    // секунды между пробами (ping -c 1)
+      monitorInterval:  data.monitorInterval  || 5,    // секунды между пробами ICMP
       windowSeconds:    data.windowSeconds    || null, // null = использовать глобальный дефолт из Settings
       latencyThreshold: data.latencyThreshold || 500,  // мс — только для отображения
+      monitorHttp: {
+        enabled:        (data.monitorHttp || {}).enabled        ?? false,
+        url:            (data.monitorHttp || {}).url            ?? '',
+        expectedStatus: (data.monitorHttp || {}).expectedStatus ?? 200,
+        interval:       (data.monitorHttp || {}).interval       ?? 60,
+        timeout:        (data.monitorHttp || {}).timeout        ?? 5,
+      },
+      monitorRule:      data.monitorRule      || 'icmp_only', // 'icmp_only'|'http_only'|'all'|'any'
       description:      data.description      || '',
       createdAt:       data.createdAt       || new Date().toISOString(),
     };

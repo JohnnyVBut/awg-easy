@@ -357,27 +357,66 @@ QR-код с конфигом в формате SVG (для мобильного
 
 ## Gateways
 
-### `GET /api/gateways`
+### Модель Gateway
 ```json
 {
-  "gateways": [{
-    "id": "uuid", "name": "KZ GW", "interface": "wg10",
-    "gatewayIP": "10.100.1.1", "monitorAddress": "8.8.8.8",
-    "status": "online", "latency": 12.5, "packetLoss": 0
-  }]
+  "id": "uuid",
+  "name": "KZ GW",
+  "interface": "wg10",
+  "gatewayIP": "10.100.1.1",
+  "monitorAddress": "8.8.8.8",      // IP для ICMP-пинга; '' = gatewayIP
+  "monitor": true,
+  "monitorInterval": 5,             // секунды между ICMP-пробами
+  "windowSeconds": null,            // null = глобальный дефолт из Settings
+  "latencyThreshold": 500,
+  "monitorHttp": {
+    "enabled": false,
+    "url": "https://example.com",   // URL для HTTP-пробы
+    "expectedStatus": 200,          // ожидаемый HTTP-код ответа
+    "interval": 60,                 // секунды между HTTP-пробами
+    "timeout": 5                    // таймаут curl в секундах
+  },
+  "monitorRule": "icmp_only",       // "icmp_only"|"http_only"|"all"|"any"
+  "description": ""
 }
+```
+
+**monitorRule** определяет как ICMP и HTTP статусы объединяются в итоговый статус gateway:
+- `icmp_only` — только ICMP (умолчание, обратная совместимость)
+- `http_only` — только HTTP
+- `all` — оба должны быть reachable (AND)
+- `any` — достаточно одного (OR)
+
+### Статус мониторинга (добавляется к модели в ответах)
+```json
+{
+  "status": "healthy",             // "healthy"|"degraded"|"down"|"unknown"
+  "latency": 12,                   // ICMP RTT мс (avg по window)
+  "packetLoss": 0,                 // ICMP потери %
+  "lastCheck": "2026-03-15T...",
+  "httpStatus": "healthy",         // null если HTTP не включён
+  "httpLatency": 45,               // HTTP время ответа мс; null если не включён
+  "httpLastCheck": "2026-03-15T..."
+}
+```
+
+### `GET /api/gateways`
+```json
+{ "gateways": [{ /* модель + статус мониторинга */ }] }
 ```
 
 ### `POST /api/gateways`
 Создать gateway.
 ```json
-// Request
+// Request — поля monitorHttp и monitorRule опциональны
 {
   "name": "KZ Gateway",
   "interface": "wg10",
   "gatewayIP": "10.100.1.1",
-  "monitorAddress": "8.8.8.8",   // опционально, для ping-мониторинга
-  "interval": 5                   // секунды между ping, default 5
+  "monitorAddress": "8.8.8.8",
+  "monitorInterval": 5,
+  "monitorHttp": { "enabled": true, "url": "https://check.example.com", "expectedStatus": 200, "interval": 60, "timeout": 5 },
+  "monitorRule": "all"
 }
 // Response
 { "gateway": { ... } }
