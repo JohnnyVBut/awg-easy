@@ -37,6 +37,7 @@ RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirror.yandex.ru/mirrors|g'
 # Install Linux packages.
 # libstdc++ + libgcc required by Node 22 binary (dynamically linked against C++ stdlib).
 RUN apk add --no-cache \
+    curl \
     dpkg \
     dumb-init \
     iptables \
