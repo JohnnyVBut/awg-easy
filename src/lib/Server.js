@@ -1466,7 +1466,36 @@ module.exports = class Server {
       .get('/api/nat/rules', defineEventHandler(async () => {
         try {
           const nm = await NatManager.getInstance();
-          return { rules: nm.getRules() };
+          const manualRules = nm.getRules();
+
+          // Auto-rules: MASQUERADE baked into PostUp/PostDown of each TunnelInterface
+          const im = await InterfaceManager.getInstance();
+          const autoRules = im.getAll()
+            .filter(iface => iface.data.address)
+            .map(iface => {
+              // Compute subnet from CIDR (mirrors TunnelInterface._cidrToSubnet)
+              const [ip, prefix] = iface.data.address.split('/');
+              const prefixLen = parseInt(prefix, 10);
+              const parts = ip.split('.').map(Number);
+              const ipInt = (parts[0] << 24 | parts[1] << 16 | parts[2] << 8 | parts[3]) >>> 0;
+              const maskInt = prefixLen === 0 ? 0 : (0xffffffff << (32 - prefixLen)) >>> 0;
+              const sn = ((ipInt & maskInt) >>> 0);
+              const subnet = `${(sn >>> 24) & 0xff}.${(sn >>> 16) & 0xff}.${(sn >>> 8) & 0xff}.${sn & 0xff}/${prefix}`;
+              return {
+                id: `auto-${iface.id}`,
+                auto: true,
+                interfaceId: iface.id,
+                enabled: iface.data.enabled !== false,
+                name: iface.data.name || iface.id,
+                source: subnet,
+                outInterface: 'ISP',
+                type: 'MASQUERADE',
+                comment: null,
+              };
+            });
+
+          // Auto rules first (always at top), then manual
+          return { rules: [...autoRules, ...manualRules] };
         } catch (err) {
           throw createError({ status: 500, message: err.message });
         }

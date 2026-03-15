@@ -2769,18 +2769,23 @@
                 style="padding:12px 16px; gap:0;">
 
                 <!-- Enable/disable dot -->
-                <span @click="toggleNatRule(rule)"
-                  class="cursor-pointer shrink-0"
-                  :title="rule.enabled ? 'Disable' : 'Enable'">
+                <span
+                  :class="rule.auto ? '' : 'cursor-pointer'"
+                  class="shrink-0"
+                  :title="rule.auto ? 'Managed by interface' : (rule.enabled ? 'Disable' : 'Enable')"
+                  @click="rule.auto ? null : toggleNatRule(rule)">
                   <span v-if="rule.enabled"
                     style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px #bbf7d0;"></span>
                   <span v-else
                     style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#d1d5db;border:2px solid #9ca3af;"></span>
                 </span>
 
-                <!-- Name -->
-                <div style="flex:2; padding-left:12px; min-width:0;">
+                <!-- Name + auto badge -->
+                <div style="flex:2; padding-left:12px; min-width:0; display:flex; align-items:center; gap:6px;">
                   <div class="font-medium dark:text-neutral-200 truncate">{{ rule.name }}</div>
+                  <span v-if="rule.auto"
+                    class="text-xs font-semibold rounded"
+                    style="padding:1px 6px; background:#e0e7ff; color:#3730a3; flex-shrink:0;">auto</span>
                 </div>
 
                 <!-- Source -->
@@ -2796,6 +2801,7 @@
                 <!-- Out Interface -->
                 <div style="flex:1.5; min-width:0;">
                   <span class="font-mono text-sm font-medium dark:text-neutral-200">{{ rule.outInterface }}</span>
+                  <span v-if="rule.auto" class="text-xs text-gray-400 dark:text-neutral-500"> (runtime)</span>
                 </div>
 
                 <!-- NAT Type badge -->
@@ -2817,23 +2823,28 @@
                   <span v-else class="text-gray-300 dark:text-neutral-600">—</span>
                 </div>
 
-                <!-- Actions: Edit + Delete -->
-                <div style="width:72px; flex-shrink:0; display:flex; gap:4px; justify-content:flex-end;">
-                  <button @click="openNatRuleEdit(rule)"
-                    class="text-blue-600 dark:text-blue-400"
-                    style="background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px;"
-                    title="Edit rule">✎</button>
-                  <button @click="deleteNatRule(rule)"
-                    class="text-red-600"
-                    style="background:none; border:none; cursor:pointer; padding:4px 6px; font-size:16px;"
-                    title="Delete rule">✕</button>
+                <!-- Actions -->
+                <div style="width:80px; flex-shrink:0; display:flex; gap:4px; justify-content:flex-end;">
+                  <!-- Auto rule: link to interface -->
+                  <template v-if="rule.auto">
+                    <button @click="goToInterface(rule.interfaceId)"
+                      class="text-indigo-600 dark:text-indigo-400"
+                      style="background:none; border:none; cursor:pointer; padding:4px 6px; font-size:12px; white-space:nowrap;"
+                      title="Open interface">→ iface</button>
+                  </template>
+                  <!-- Manual rule: edit + delete -->
+                  <template v-else>
+                    <button @click="openNatRuleEdit(rule)"
+                      class="text-blue-600 dark:text-blue-400"
+                      style="background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px;"
+                      title="Edit rule">✎</button>
+                    <button @click="deleteNatRule(rule)"
+                      class="text-red-600"
+                      style="background:none; border:none; cursor:pointer; padding:4px 6px; font-size:16px;"
+                      title="Delete rule">✕</button>
+                  </template>
                 </div>
               </div>
-            </div>
-
-            <!-- Info note -->
-            <div class="text-xs text-gray-400 dark:text-neutral-500" style="padding:0 4px;">
-              Note: WireGuard/AmneziaWG interface rules (PostUp/PostDown MASQUERADE) are managed separately and are not shown here.
             </div>
 
           </div><!-- /outbound tab -->

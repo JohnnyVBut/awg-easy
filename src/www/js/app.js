@@ -1426,6 +1426,12 @@ new Vue({
       this.activeNatTab = tab;
     },
 
+    // Navigate to the interface page for an auto NAT rule
+    goToInterface(interfaceId) {
+      this.activePage = 'interfaces';
+      this.activeInterfaceId = interfaceId;
+    },
+
     async loadNatInterfaces() {
       try {
         const res = await this.api.getNatInterfaces();
