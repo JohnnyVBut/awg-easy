@@ -679,6 +679,19 @@ DELETE /api/nat/rules/:id         ← удалить правило
 - Заглушки "Coming soon" заменить на реальный UI
 - Backend: `ip route add/del`, `iptables-nft` правила через API
 
+### 3. UI Config через API (приоритет: низкий)
+**Что сейчас:** Эндпоинты `/api/ui-traffic-stats`, `/api/ui-chart-type`, `/api/lang`,
+`/api/wg-enable-one-time-links`, `/api/ui-sort-clients`, `/api/wg-enable-expire-time`,
+`/api/ui-avatar-settings`, `/api/remember-me` — **только GET**, читают переменные окружения
+из `src/config`. Изменить без рестарта контейнера нельзя.
+
+**Что сделать:**
+- Перенести эти параметры из env-переменных в `settings.json`
+- Добавить `PUT /api/ui-config` (или расширить `PUT /api/settings`) для записи
+- UI: раздел настроек интерфейса в Settings без необходимости редактировать `docker-compose.yml`
+
+**Файлы:** `src/config.js`, `src/lib/Settings.js`, `src/lib/Server.js`, `src/www/index.html`
+
 Полный список → `REQUIREMENTS.md` раздел "🚧 Не реализовано".
 
 ---
