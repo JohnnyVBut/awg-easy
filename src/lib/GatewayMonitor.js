@@ -54,9 +54,11 @@ class GatewayMonitor {
     const icmpTimer = setInterval(() => this._probeIcmp(gateway), icmpInterval);
     this.icmpTimers.set(gateway.id, icmpTimer);
 
-    // HTTP monitoring — только если включён и задан URL
+    // HTTP monitoring — если правило требует HTTP и задан URL
+    // (http.enabled игнорируется: достаточно monitorRule !== 'icmp_only' + url)
     const http = gateway.data.monitorHttp || {};
-    if (http.enabled && http.url) {
+    const httpNeeded = gateway.data.monitorRule !== 'icmp_only';
+    if (httpNeeded && http.url) {
       const httpInterval = (http.interval || 60) * 1000;
       debug(`Gateway ${gateway.id}: starting HTTP monitor (interval=${http.interval || 60}s, url=${http.url})`);
       this._probeHttp(gateway);
@@ -228,7 +230,7 @@ class GatewayMonitor {
     const http = this._calcWindowStats(this.httpWindows, gateway.id);
 
     const icmpStatus  = this._statusFromRate(icmp.total, icmp.successRate, thresholdHealthy, thresholdDegraded);
-    const httpEnabled = !!(gateway.data.monitorHttp?.enabled && gateway.data.monitorHttp?.url);
+    const httpEnabled = !!(gateway.data.monitorRule !== 'icmp_only' && gateway.data.monitorHttp?.url);
     const httpStatus  = httpEnabled
       ? this._statusFromRate(http.total, http.successRate, thresholdHealthy, thresholdDegraded)
       : null;

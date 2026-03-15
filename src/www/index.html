@@ -1765,8 +1765,8 @@
                   {{gw.packetLoss !== null ? gw.packetLoss + '%' : '—'}}
                 </span>
 
-                <!-- HTTP probe status (only when HTTP monitoring enabled) -->
-                <span v-if="gw.monitorHttp && gw.monitorHttp.enabled"
+                <!-- HTTP probe status (when monitorRule requires HTTP) -->
+                <span v-if="gw.monitorHttp && gw.monitorHttp.url && gw.monitorRule !== 'icmp_only'"
                   class="text-sm shrink-0 font-mono"
                   style="min-width:80px; display:flex; align-items:center; gap:5px;">
                   <span class="w-2 h-2 rounded-full shrink-0" style="display:inline-block;"
