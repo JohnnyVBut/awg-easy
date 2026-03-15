@@ -11,7 +11,7 @@ const MIN_PROBES = 3; // need at least this many probes before committing to a s
  *
  * Логика: два независимых sliding window — ICMP и HTTP(S).
  *   ICMP:  ping -c 1 -W 1 -I <iface> <target>
- *   HTTP:  curl --interface <iface> -o /dev/null -s -w "%{http_code}" <url>
+ *   HTTP:  Node.js http/https request (rejectUnauthorized=false)
  *
  * Итоговый статус определяется правилом (monitorRule):
  *   icmp_only  — только ICMP (умолчание, обратная совместимость)
@@ -142,7 +142,6 @@ class GatewayMonitor {
   }
 
   async _probeHttp(gateway) {
-    const { interface: iface } = gateway.data;
     const http = gateway.data.monitorHttp || {};
     const { url, expectedStatus = 200, timeout = 5 } = http;
 
@@ -161,19 +160,44 @@ class GatewayMonitor {
     let latency = null;
 
     try {
+      const urlObj = new URL(url);
+      const mod = urlObj.protocol === 'https:' ? require('https') : require('http');
+      const timeoutMs = timeout * 1000;
       const start = Date.now();
-      const out = await Util.exec(
-        `curl --interface ${iface} -o /dev/null -s -w "%{http_code}" --max-time ${timeout} --connect-timeout ${timeout} "${url}"`,
-        { timeout: (timeout + 2) * 1000, log: false }
-      );
-      latency = Date.now() - start;
-      const code = parseInt((out || '').trim(), 10);
-      success = code === expectedStatus;
-      if (!success) {
-        debug(`Gateway ${gateway.id}: HTTP probe got ${code}, expected ${expectedStatus}`);
-      }
-    } catch {
-      // curl timeout or network error → treat as failure
+
+      await new Promise((resolve, reject) => {
+        const req = mod.request({
+          hostname: urlObj.hostname,
+          port:     urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+          path:     (urlObj.pathname || '/') + (urlObj.search || ''),
+          method:   'GET',
+          headers:  { 'User-Agent': 'awg-easy-monitor/2.0', 'Connection': 'close' },
+          rejectUnauthorized: false, // мониторинг — не проверяем TLS cert
+        }, (res) => {
+          latency  = Date.now() - start;
+          success  = res.statusCode === expectedStatus;
+          if (!success) {
+            debug(`Gateway ${gateway.id}: HTTP probe got ${res.statusCode}, expected ${expectedStatus}`);
+          }
+          res.resume(); // дренировать тело, иначе соединение не закрывается
+          resolve();
+        });
+
+        const timer = setTimeout(() => {
+          req.destroy();
+          reject(new Error(`HTTP probe timeout after ${timeout}s`));
+        }, timeoutMs);
+
+        req.on('error', (err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+
+        req.on('close', () => clearTimeout(timer));
+        req.end();
+      });
+    } catch (err) {
+      debug(`Gateway ${gateway.id}: HTTP probe failed: ${err.message}`);
     }
 
     this._addToWindow(this.httpWindows, gateway.id, { success, latency: success ? latency : null }, httpWindowSeconds);
