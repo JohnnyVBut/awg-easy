@@ -3554,6 +3554,17 @@
                     <option value="">— none —</option>
                     <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
                   </select>
+                  <!-- Fallback option — only when a gateway is selected -->
+                  <label v-if="firewallCreate.useGroup ? !!firewallCreate.gatewayGroupId : !!firewallCreate.gatewayId"
+                    class="flex items-center gap-2 mt-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallCreate.fallbackToDefault">
+                    <span>Fallback to default gateway when down</span>
+                  </label>
+                  <p v-if="firewallCreate.useGroup ? !!firewallCreate.gatewayGroupId : !!firewallCreate.gatewayId"
+                    class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    <span v-if="firewallCreate.fallbackToDefault">If gateway goes down, traffic will be routed via the system default gateway. Restored 30s after recovery.</span>
+                    <span v-else>If gateway goes down, traffic matching this rule will be blackholed (dropped).</span>
+                  </p>
                 </div>
               </div>
 
@@ -3713,6 +3724,17 @@
                     <option value="">— none —</option>
                     <option v-for="g in gatewayGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
                   </select>
+                  <!-- Fallback option — only when a gateway is selected -->
+                  <label v-if="firewallEdit.useGroup ? !!firewallEdit.gatewayGroupId : !!firewallEdit.gatewayId"
+                    class="flex items-center gap-2 mt-2 text-sm text-gray-600 dark:text-neutral-400">
+                    <input type="checkbox" v-model="firewallEdit.fallbackToDefault">
+                    <span>Fallback to default gateway when down</span>
+                  </label>
+                  <p v-if="firewallEdit.useGroup ? !!firewallEdit.gatewayGroupId : !!firewallEdit.gatewayId"
+                    class="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                    <span v-if="firewallEdit.fallbackToDefault">If gateway goes down, traffic will be routed via the system default gateway. Restored 30s after recovery.</span>
+                    <span v-else>If gateway goes down, traffic matching this rule will be blackholed (dropped).</span>
+                  </p>
                 </div>
               </div>
 

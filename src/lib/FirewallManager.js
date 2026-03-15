@@ -47,6 +47,10 @@ class FirewallManager {
     this._rules      = [];
     this._aliasMgr   = null;
     this._gatewayMgr = null;
+
+    // Fallback state tracking (in-memory, not persisted)
+    this._fallbackActive  = new Set();   // rule IDs currently in fallback/blackhole
+    this._restoreTimers   = new Map();   // rule ID → setTimeout handle (30s restore delay)
   }
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
@@ -77,6 +81,16 @@ class FirewallManager {
 
     // Восстановить правила в ядро
     await this._rebuildChains();
+
+    // Подписаться на смену статуса gateway для fallback-логики
+    const GatewayMonitor = require('./GatewayMonitor');
+    const monitor = GatewayMonitor.getInstance();
+    monitor.on('statusChange', (gatewayId, newStatus, oldStatus) => {
+      this._handleGatewayStatusChange(gatewayId, newStatus, oldStatus).catch(err =>
+        debug(`_handleGatewayStatusChange error: ${err.message}`)
+      );
+    });
+
     debug('FirewallManager ready');
   }
 
@@ -111,8 +125,15 @@ class FirewallManager {
   /**
    * Полная перестройка: flush chains → cleanup routing → re-apply all enabled rules.
    * Вызывается после каждого изменения.
+   * После rebuild fallback-состояние сбрасывается — GatewayMonitor переподтвердит
+   * статусы и вызовет fallback снова если нужно.
    */
   async _rebuildChains() {
+    // Сбросить fallback-состояние (маршруты будут перезаписаны через ip route replace)
+    for (const timer of this._restoreTimers.values()) clearTimeout(timer);
+    this._restoreTimers.clear();
+    this._fallbackActive.clear();
+
     // Flush custom chains
     await Util.exec('iptables-nft -t filter -F FIREWALL_FORWARD', { timeout: 5000 })
       .catch(err => debug(`Flush filter: ${err.message}`));
@@ -190,20 +211,18 @@ class FirewallManager {
 
   /**
    * Применить ip route + ip rule для PBR правила.
-   * Идемпотентно: проверяем перед добавлением.
+   * Использует replace (не add) — безопасно перезаписывает stale fallback/blackhole маршруты.
    */
   async _applyRoutingForRule(rule) {
     const gw = await this._resolveGateway(rule);
 
-    // ip route add default via <gw> dev <iface> table <fwmark>
-    const routeExists = await this._routeTableHasDefault(rule.fwmark);
-    if (!routeExists) {
-      await Util.exec(
-        `ip route add default via ${gw.gatewayIP} dev ${gw.interface} table ${rule.fwmark}`,
-        { timeout: 10000 }
-      );
-      debug(`Route added: table ${rule.fwmark} via ${gw.gatewayIP} dev ${gw.interface}`);
-    }
+    // ip route replace default via <gw> dev <iface> table <fwmark>
+    // replace идемпотентен: создаёт если нет, перезаписывает если есть (в т.ч. fallback-маршрут)
+    await Util.exec(
+      `ip route replace default via ${gw.gatewayIP} dev ${gw.interface} table ${rule.fwmark}`,
+      { timeout: 10000 }
+    );
+    debug(`Route set: table ${rule.fwmark} via ${gw.gatewayIP} dev ${gw.interface}`);
 
     // ip rule add fwmark <fwmark> lookup <fwmark> priority <priority>
     const ipRuleExists = await this._ipRuleExists(rule.fwmark);
@@ -304,23 +323,24 @@ class FirewallManager {
     const hasGateway = !!(data.gatewayId || data.gatewayGroupId);
 
     const rule = {
-      id:             uuidv4(),
-      name:           data.name.trim(),
-      enabled:        true,
-      order:          this._nextOrder(),
-      interface:      data.interface || 'any',
-      protocol:       data.protocol  || 'any',
-      source:         this._normalizeEndpoint(data.source, 'src'),
-      destination:    this._normalizeEndpoint(data.destination, 'dst'),
-      action:         data.action || 'accept',
-      gatewayId:      data.gatewayId      || null,
-      gatewayGroupId: data.gatewayGroupId || null,
-      fwmark:         hasGateway
+      id:               uuidv4(),
+      name:             data.name.trim(),
+      enabled:          true,
+      order:            this._nextOrder(),
+      interface:        data.interface || 'any',
+      protocol:         data.protocol  || 'any',
+      source:           this._normalizeEndpoint(data.source, 'src'),
+      destination:      this._normalizeEndpoint(data.destination, 'dst'),
+      action:           data.action || 'accept',
+      gatewayId:        data.gatewayId      || null,
+      gatewayGroupId:   data.gatewayGroupId || null,
+      fwmark:           hasGateway
         ? (data.fwmark ? Number(data.fwmark) : this._nextFwmark())
         : null,
-      log:            Boolean(data.log),
-      comment:        data.comment || '',
-      createdAt:      new Date().toISOString(),
+      fallbackToDefault: hasGateway ? Boolean(data.fallbackToDefault) : false,
+      log:              Boolean(data.log),
+      comment:          data.comment || '',
+      createdAt:        new Date().toISOString(),
     };
 
     this._rules.push(rule);
@@ -344,17 +364,20 @@ class FirewallManager {
 
     const updated = {
       ...old,
-      name:           data.name.trim(),
-      interface:      data.interface      !== undefined ? (data.interface  || 'any') : old.interface,
-      protocol:       data.protocol       !== undefined ? (data.protocol   || 'any') : old.protocol,
-      source:         this._normalizeEndpoint(data.source      || old.source, 'src'),
-      destination:    this._normalizeEndpoint(data.destination || old.destination, 'dst'),
-      action:         data.action         !== undefined ? data.action                : old.action,
-      gatewayId:      data.gatewayId      !== undefined ? (data.gatewayId      || null) : old.gatewayId,
-      gatewayGroupId: data.gatewayGroupId !== undefined ? (data.gatewayGroupId || null) : old.gatewayGroupId,
-      fwmark:         hasGateway
+      name:              data.name.trim(),
+      interface:         data.interface      !== undefined ? (data.interface  || 'any') : old.interface,
+      protocol:          data.protocol       !== undefined ? (data.protocol   || 'any') : old.protocol,
+      source:            this._normalizeEndpoint(data.source      || old.source, 'src'),
+      destination:       this._normalizeEndpoint(data.destination || old.destination, 'dst'),
+      action:            data.action         !== undefined ? data.action                : old.action,
+      gatewayId:         data.gatewayId      !== undefined ? (data.gatewayId      || null) : old.gatewayId,
+      gatewayGroupId:    data.gatewayGroupId !== undefined ? (data.gatewayGroupId || null) : old.gatewayGroupId,
+      fwmark:            hasGateway
         ? (data.fwmark ? Number(data.fwmark) : (old.fwmark || this._nextFwmark()))
         : null,
+      fallbackToDefault: hasGateway
+        ? (data.fallbackToDefault !== undefined ? Boolean(data.fallbackToDefault) : Boolean(old.fallbackToDefault))
+        : false,
       log:     data.log     !== undefined ? Boolean(data.log)    : old.log,
       comment: data.comment !== undefined ? (data.comment || '') : old.comment,
     };
@@ -572,6 +595,177 @@ class FirewallManager {
 
   async _save() {
     await fsPromises.writeFile(DATA_FILE, JSON.stringify(this._rules, null, 2));
+  }
+
+  // ─── Gateway Fallback Logic ─────────────────────────────────────────────────
+
+  /**
+   * Обработать смену статуса gateway.
+   * Вызывается GatewayMonitor через событие 'statusChange'.
+   *
+   * @param {string} gatewayId
+   * @param {string} newStatus   'healthy'|'degraded'|'down'|'unknown'
+   * @param {string} oldStatus
+   */
+  async _handleGatewayStatusChange(gatewayId, newStatus, oldStatus) {
+    const goingDown = newStatus === 'down' && oldStatus !== 'down';
+    const comingUp  = newStatus !== 'down' && oldStatus === 'down';
+
+    if (goingDown) {
+      await this._onGatewayDown(gatewayId);
+    } else if (comingUp) {
+      await this._onGatewayUp(gatewayId);
+    }
+  }
+
+  /**
+   * Gateway упал — найти все PBR-правила которые его используют,
+   * применить fallback или blackhole.
+   */
+  async _onGatewayDown(gatewayId) {
+    debug(`Gateway ${gatewayId} went DOWN — checking PBR rules`);
+    for (const rule of this._rules) {
+      if (!rule.enabled || !rule.fwmark) continue;
+
+      // Прямое использование gateway
+      if (rule.gatewayId === gatewayId) {
+        await this._triggerFallback(rule, `gateway ${gatewayId} down`);
+        continue;
+      }
+
+      // Использование через группу — только если ВСЕ члены группы упали
+      if (rule.gatewayGroupId) {
+        const allDown = await this._isGroupAllDown(rule.gatewayGroupId);
+        if (allDown) {
+          await this._triggerFallback(rule, `all gateways in group ${rule.gatewayGroupId} down`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Gateway поднялся — запланировать восстановление маршрутов через 30s.
+   */
+  async _onGatewayUp(gatewayId) {
+    debug(`Gateway ${gatewayId} came UP — scheduling route restore in 30s`);
+    for (const rule of this._rules) {
+      if (!rule.enabled || !rule.fwmark) continue;
+      if (!this._fallbackActive.has(rule.id)) continue;
+
+      let shouldSchedule = false;
+
+      if (rule.gatewayId === gatewayId) {
+        shouldSchedule = true;
+      }
+
+      if (rule.gatewayGroupId) {
+        // Восстанавливаем если хотя бы один member группы поднялся (т.е. уже не ALL down)
+        const allDown = await this._isGroupAllDown(rule.gatewayGroupId);
+        if (!allDown) shouldSchedule = true;
+      }
+
+      if (shouldSchedule) {
+        // Отменить предыдущий таймер восстановления если есть
+        const existing = this._restoreTimers.get(rule.id);
+        if (existing) clearTimeout(existing);
+
+        debug(`Rule "${rule.name}": scheduling restore in 30s`);
+        const timer = setTimeout(async () => {
+          this._restoreTimers.delete(rule.id);
+          await this._restoreRoute(rule).catch(err =>
+            debug(`_restoreRoute failed for rule "${rule.name}": ${err.message}`)
+          );
+        }, 30_000);
+        this._restoreTimers.set(rule.id, timer);
+      }
+    }
+  }
+
+  /**
+   * Применить fallback или blackhole для правила (в зависимости от fallbackToDefault).
+   */
+  async _triggerFallback(rule, reason) {
+    if (this._fallbackActive.has(rule.id)) return; // уже в fallback-состоянии
+
+    // Отменить pending restore если есть
+    const existing = this._restoreTimers.get(rule.id);
+    if (existing) { clearTimeout(existing); this._restoreTimers.delete(rule.id); }
+
+    if (rule.fallbackToDefault) {
+      // Переключить маршрут таблицы N на системный default gateway
+      try {
+        const { via, dev } = await this._getSystemDefaultGateway();
+        await Util.exec(
+          `ip route replace default via ${via} dev ${dev} table ${rule.fwmark}`,
+          { timeout: 10000 }
+        );
+        this._fallbackActive.add(rule.id);
+        debug(`Rule "${rule.name}": fallback ACTIVE → default via ${via} dev ${dev} (${reason})`);
+      } catch (err) {
+        debug(`Rule "${rule.name}": fallback failed: ${err.message}`);
+      }
+    } else {
+      // Дропать трафик — blackhole маршрут
+      try {
+        await Util.exec(
+          `ip route replace blackhole default table ${rule.fwmark}`,
+          { timeout: 10000 }
+        );
+        this._fallbackActive.add(rule.id);
+        debug(`Rule "${rule.name}": blackhole ACTIVE (${reason})`);
+      } catch (err) {
+        debug(`Rule "${rule.name}": blackhole failed: ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Восстановить оригинальный маршрут правила после возврата gateway.
+   */
+  async _restoreRoute(rule) {
+    debug(`Rule "${rule.name}": restoring original route`);
+    try {
+      const gw = await this._resolveGateway(rule);
+      await Util.exec(
+        `ip route replace default via ${gw.gatewayIP} dev ${gw.interface} table ${rule.fwmark}`,
+        { timeout: 10000 }
+      );
+      this._fallbackActive.delete(rule.id);
+      debug(`Rule "${rule.name}": route RESTORED → via ${gw.gatewayIP} dev ${gw.interface}`);
+    } catch (err) {
+      debug(`Rule "${rule.name}": restore failed, staying in fallback: ${err.message}`);
+      // Не удаляем из _fallbackActive — попробуем снова при следующем up-событии
+    }
+  }
+
+  /**
+   * Получить системный default gateway (для fallbackToDefault).
+   * Парсит текстовый вывод `ip route show default`.
+   */
+  async _getSystemDefaultGateway() {
+    const out = await Util.exec('ip route show default', { log: false, timeout: 5000 });
+    // "default via 192.168.1.1 dev eth0 proto static metric 100"
+    const m = (out || '').match(/default via (\S+) dev (\S+)/);
+    if (!m) throw new Error('System default gateway not found');
+    return { via: m[1], dev: m[2] };
+  }
+
+  /**
+   * Проверить — ВСЕ ли участники gateway группы имеют статус 'down'.
+   * Используется для определения момента fallback для группы.
+   */
+  async _isGroupAllDown(groupId) {
+    const grp = this._gatewayMgr.getGroup(groupId);
+    if (!grp || !grp.data.gateways || grp.data.gateways.length === 0) return true;
+
+    const GatewayMonitor = require('./GatewayMonitor');
+    const monitor = GatewayMonitor.getInstance();
+
+    for (const member of grp.data.gateways) {
+      const st = monitor.getStatus(member.gatewayId);
+      if (st.status !== 'down') return false; // хотя бы один не down
+    }
+    return true; // все down
   }
 }
 

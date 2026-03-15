@@ -1,5 +1,6 @@
 'use strict';
 
+const EventEmitter = require('events');
 const Util     = require('./Util');
 const Settings = require('./Settings');
 const debug    = require('debug')('awg:GatewayMonitor');
@@ -22,8 +23,9 @@ const MIN_PROBES = 3; // need at least this many probes before committing to a s
  * Window и пороги: берутся из Settings (gatewayWindowSeconds, gatewayHealthyThreshold,
  * gatewayDegradedThreshold). Per-gateway windowSeconds переопределяет глобальный.
  */
-class GatewayMonitor {
+class GatewayMonitor extends EventEmitter {
   constructor() {
+    super();
     // gatewayId → { status, latency, packetLoss, lastCheck, httpStatus, httpLatency, httpLastCheck }
     this.statuses    = new Map();
     // gatewayId → Array<{ ts: number, success: boolean, latency: number|null }>
@@ -306,6 +308,7 @@ class GatewayMonitor {
 
     // Сохранить httpLastCheck + httpCode из предыдущего состояния (обновляются в _probeHttp)
     const prev = this.statuses.get(gateway.id) || {};
+    const prevStatus = prev.status;
     this.statuses.set(gateway.id, {
       status:        combinedStatus,
       latency:       icmp.avgLatency,
@@ -318,6 +321,11 @@ class GatewayMonitor {
     });
 
     debug(`Gateway ${gateway.id}: ${combinedStatus} | rule=${rule} | ICMP=${icmpStatus}(${icmp.avgLatency}ms,${icmp.packetLoss}%loss) | HTTP=${httpStatus}(${http.avgLatency}ms)`);
+
+    // Уведомить подписчиков о смене статуса (используется FirewallManager для fallback)
+    if (combinedStatus !== prevStatus) {
+      this.emit('statusChange', gateway.id, combinedStatus, prevStatus);
+    }
   }
 }
 

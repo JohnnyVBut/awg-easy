@@ -348,6 +348,7 @@ new Vue({
       gatewayId: '',
       gatewayGroupId: '',
       useGroup: false,
+      fallbackToDefault: false,
       log: false,
       comment: '',
     },
@@ -362,6 +363,7 @@ new Vue({
       gatewayId: '',
       gatewayGroupId: '',
       useGroup: false,
+      fallbackToDefault: false,
       log: false,
       comment: '',
     },
@@ -1790,6 +1792,7 @@ new Vue({
         destination: { type: 'any', aliasId: '', value: '', invert: false, port: '' },
         action: 'accept',
         gatewayId: '', gatewayGroupId: '', useGroup: false,
+        fallbackToDefault: false,
         log: false, comment: '',
       };
     },
@@ -1809,10 +1812,11 @@ new Vue({
         source:         buildEp(form.source),
         destination:    buildEp(form.destination),
         action:         form.action     || 'accept',
-        gatewayId:      form.useGroup ? null : (form.gatewayId || null),
-        gatewayGroupId: form.useGroup ? (form.gatewayGroupId || null) : null,
-        log:            Boolean(form.log),
-        comment:        form.comment || '',
+        gatewayId:         form.useGroup ? null : (form.gatewayId || null),
+        gatewayGroupId:    form.useGroup ? (form.gatewayGroupId || null) : null,
+        fallbackToDefault: Boolean(form.fallbackToDefault),
+        log:               Boolean(form.log),
+        comment:           form.comment || '',
       };
     },
 
@@ -1845,9 +1849,10 @@ new Vue({
         action:      rule.action || 'accept',
         gatewayId:      rule.gatewayId      || '',
         gatewayGroupId: rule.gatewayGroupId || '',
-        useGroup:    !!rule.gatewayGroupId,
-        log:         Boolean(rule.log),
-        comment:     rule.comment || '',
+        useGroup:          !!rule.gatewayGroupId,
+        fallbackToDefault: Boolean(rule.fallbackToDefault),
+        log:               Boolean(rule.log),
+        comment:           rule.comment || '',
       };
       this.showFirewallEdit = true;
     },
