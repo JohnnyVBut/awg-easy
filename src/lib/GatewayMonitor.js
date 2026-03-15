@@ -151,6 +151,12 @@ class GatewayMonitor {
     const thresholdHealthy  = settings.data.gatewayHealthyThreshold;
     const thresholdDegraded = settings.data.gatewayDegradedThreshold;
 
+    // HTTP-окно должно вмещать минимум MIN_PROBES проб при данном интервале.
+    // Иначе короткое windowSeconds (30s по умолчанию) вытеснит все пробы
+    // с HTTP-интервалом 60s → вечный 'unknown'.
+    const httpInterval = http.interval || 60;
+    const httpWindowSeconds = Math.max(windowSeconds, httpInterval * (MIN_PROBES + 1));
+
     let success = false;
     let latency = null;
 
@@ -170,7 +176,7 @@ class GatewayMonitor {
       // curl timeout or network error → treat as failure
     }
 
-    this._addToWindow(this.httpWindows, gateway.id, { success, latency: success ? latency : null }, windowSeconds);
+    this._addToWindow(this.httpWindows, gateway.id, { success, latency: success ? latency : null }, httpWindowSeconds);
 
     // Обновить httpLastCheck в текущем статусе ДО пересчёта
     const cur = this.statuses.get(gateway.id) || {};
