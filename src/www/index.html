@@ -27,6 +27,54 @@
     opacity: 0;
     transform: translateX(110%);
   }
+
+  /* ── Reusable layout utilities ───────────────────────────────────── */
+
+  /* Modal overlay */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 50;
+    overflow-y: auto;
+    padding: 40px 24px;
+  }
+
+  /* Modal panel — use together with bg-white dark:bg-neutral-700 rounded-lg */
+  .modal-panel     { margin: 0 auto; border-radius: 0.5rem; }
+  .modal-panel-xs  { max-width: 400px; }
+  .modal-panel-sm  { max-width: 450px; }
+  .modal-panel-480 { max-width: 480px; }
+  .modal-panel-500 { max-width: 500px; }
+  .modal-panel-md  { max-width: 520px; }
+  .modal-panel-540 { max-width: 540px; }
+  .modal-panel-lg  { max-width: 560px; }
+
+  /* Modal sections */
+  .modal-header { padding: 24px 24px 16px; border-bottom: 1px solid #e5e7eb; }
+  .modal-body   { padding: 16px 24px 24px; display: flex; flex-direction: column; gap: 16px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 12px; }
+
+  /* Dark mode borders for modal sections */
+  .dark .modal-header { border-bottom-color: #525252; }
+  .dark .modal-footer { border-top-color: #525252; }
+  .modal-section        { padding: 16px 24px 24px; border-top: 1px solid #e5e7eb; }
+  .dark .modal-section  { border-top-color: #525252; }
+  .modal-footer-compact { padding: 12px 24px 20px; border-top: 1px solid #e5e7eb; display: flex; gap: 8px; justify-content: flex-end; }
+  .dark .modal-footer-compact { border-top-color: #525252; }
+
+  /* Button base padding (combine with Tailwind color classes) */
+  .btn { padding: 8px 16px; }
+
+  /* Table cell padding */
+  .tc       { padding: 10px 12px; }
+  .tc-dense { padding: 6px 10px 6px 0; }
+
+  /* Alert boxes */
+  .alert-error { padding: 12px 16px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 8px; color: #991b1b; }
+  .alert-info  { padding: 10px 14px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; }
+
+  /* Empty state */
+  .empty-state { padding: 40px 24px; }
 </style>
 
 <body class="bg-gray-50 dark:bg-neutral-800">
@@ -1157,12 +1205,11 @@
 
         <!-- Create Interface Modal -->
         <div v-if="showInterfaceCreate"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showInterfaceCreate = false">
 
-          <div class="bg-white dark:bg-neutral-700 rounded-lg flex flex-col" style="max-width:450px; margin:0 auto;">
-            <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+          <div class="bg-white dark:bg-neutral-700 flex flex-col modal-panel modal-panel-sm">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-2xl font-medium dark:text-neutral-200">Create Interface</h2>
             </div>
 
@@ -1332,7 +1379,7 @@
               </div>
             </div>
 
-            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+            <div class="modal-section dark:border-neutral-600">
               <div class="flex gap-3 justify-end">
                 <button @click="showInterfaceCreate = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
@@ -1349,14 +1396,13 @@
 
         <!-- Edit Interface Modal -->
         <div v-if="showInterfaceEdit"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showInterfaceEdit = false">
 
-          <div class="bg-white dark:bg-neutral-700 rounded-lg flex flex-col" style="max-width:520px; margin:0 auto;">
+          <div class="bg-white dark:bg-neutral-700 flex flex-col modal-panel modal-panel-md">
 
             <!-- Header -->
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-2xl font-medium dark:text-neutral-200">Edit Interface</h2>
               <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">
                 {{ interfaceEdit.id }}
@@ -1537,7 +1583,7 @@
             </div><!-- /Body -->
 
             <!-- Footer -->
-            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+            <div class="modal-section dark:border-neutral-600">
               <div class="flex gap-3 justify-end">
                 <button @click="showInterfaceEdit = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
@@ -1718,8 +1764,7 @@
 
             <!-- Empty state -->
             <div v-if="gateways.length === 0"
-              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800"
-              style="padding:40px 24px;">
+              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800 empty-state">
               No gateways configured yet. Create one to start monitoring.
             </div>
 
@@ -1830,8 +1875,7 @@
 
             <!-- Empty state -->
             <div v-if="gatewayGroups.length === 0"
-              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800"
-              style="padding:40px 24px;">
+              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800 empty-state">
               No gateway groups defined yet.
             </div>
 
@@ -1896,18 +1940,17 @@
 
           <!-- ── Create Gateway Modal ───────────────────────────────────── -->
           <div v-if="showGatewayCreate"
-            class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-            style="padding:40px 24px;"
+            class="modal-overlay"
             @click.self="showGatewayCreate = false">
-            <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:480px; margin:0 auto;">
+            <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-480">
 
               <!-- Header -->
-              <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+              <div class="modal-header dark:border-neutral-600">
                 <h2 class="text-xl font-medium dark:text-neutral-200">New Gateway</h2>
               </div>
 
               <!-- Body -->
-              <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+              <div class="modal-body">
 
                 <!-- Name -->
                 <div>
@@ -2034,7 +2077,7 @@
               </div>
 
               <!-- Footer -->
-              <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+              <div class="modal-section dark:border-neutral-600">
                 <div class="flex gap-3 justify-end">
                   <button @click="showGatewayCreate = false"
                     class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded dark:text-neutral-200 text-sm transition">
@@ -2051,18 +2094,17 @@
 
           <!-- ── Edit Gateway Modal ─────────────────────────────────────── -->
           <div v-if="showGatewayEdit"
-            class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-            style="padding:40px 24px;"
+            class="modal-overlay"
             @click.self="showGatewayEdit = false">
-            <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:480px; margin:0 auto;">
+            <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-480">
 
               <!-- Header -->
-              <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+              <div class="modal-header dark:border-neutral-600">
                 <h2 class="text-xl font-medium dark:text-neutral-200">Edit Gateway</h2>
               </div>
 
               <!-- Body -->
-              <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+              <div class="modal-body">
 
                 <div>
                   <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Name <span class="text-red-500">*</span></label>
@@ -2184,7 +2226,7 @@
               </div>
 
               <!-- Footer -->
-              <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+              <div class="modal-section dark:border-neutral-600">
                 <div class="flex gap-3 justify-end">
                   <button @click="showGatewayEdit = false"
                     class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded dark:text-neutral-200 text-sm transition">
@@ -2201,18 +2243,17 @@
 
           <!-- ── Create Group Modal ─────────────────────────────────────── -->
           <div v-if="showGroupCreate"
-            class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-            style="padding:40px 24px;"
+            class="modal-overlay"
             @click.self="showGroupCreate = false">
-            <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:520px; margin:0 auto;">
+            <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-md">
 
               <!-- Header -->
-              <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+              <div class="modal-header dark:border-neutral-600">
                 <h2 class="text-xl font-medium dark:text-neutral-200">New Gateway Group</h2>
               </div>
 
               <!-- Body -->
-              <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+              <div class="modal-body">
 
                 <div>
                   <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Name <span class="text-red-500">*</span></label>
@@ -2269,7 +2310,7 @@
               </div>
 
               <!-- Footer -->
-              <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+              <div class="modal-section dark:border-neutral-600">
                 <div class="flex gap-3 justify-end">
                   <button @click="showGroupCreate = false"
                     class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded dark:text-neutral-200 text-sm transition">
@@ -2286,18 +2327,17 @@
 
           <!-- ── Edit Group Modal ───────────────────────────────────────── -->
           <div v-if="showGroupEdit"
-            class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-            style="padding:40px 24px;"
+            class="modal-overlay"
             @click.self="showGroupEdit = false">
-            <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:520px; margin:0 auto;">
+            <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-md">
 
               <!-- Header -->
-              <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+              <div class="modal-header dark:border-neutral-600">
                 <h2 class="text-xl font-medium dark:text-neutral-200">Edit Gateway Group</h2>
               </div>
 
               <!-- Body -->
-              <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+              <div class="modal-body">
 
                 <div>
                   <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Name <span class="text-red-500">*</span></label>
@@ -2354,7 +2394,7 @@
               </div>
 
               <!-- Footer -->
-              <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+              <div class="modal-section dark:border-neutral-600">
                 <div class="flex gap-3 justify-end">
                   <button @click="showGroupEdit = false"
                     class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded dark:text-neutral-200 text-sm transition">
@@ -2415,7 +2455,7 @@
               </div>
 
               <!-- Test result -->
-              <div v-if="routeTestResult" class="mt-2 rounded" style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd;">
+              <div v-if="routeTestResult" class="mt-2 rounded" class="alert-info">
                 <div class="text-sm" style="display:flex; flex-direction:column; gap:4px;">
                   <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">dst</span>
                     <span class="font-mono font-medium">{{ routeTestResult.dst || '—' }}</span></div>
@@ -2451,7 +2491,7 @@
               </div>
 
               <!-- Error state -->
-              <div v-if="!kernelRoutesLoading && kernelRoutesError" class="text-sm" style="padding:12px 16px; background:#fee2e2; border:1px solid #fca5a5; border-radius:8px; color:#991b1b;">
+              <div v-if="!kernelRoutesLoading && kernelRoutesError" class="text-sm" class="alert-error">
                 ⚠️ Error: {{ kernelRoutesError }}
               </div>
 
@@ -2465,21 +2505,21 @@
                 <table class="w-full text-sm text-left" style="border-collapse:collapse;">
                   <thead>
                     <tr style="border-bottom:1px solid #e5e7eb;">
-                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Destination</th>
-                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Gateway</th>
-                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Interface</th>
-                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Protocol</th>
-                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" style="padding:6px 10px 8px 0;">Metric</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" class="tc-dense" style="padding-bottom:8px;">Destination</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" class="tc-dense" style="padding-bottom:8px;">Gateway</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" class="tc-dense" style="padding-bottom:8px;">Interface</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" class="tc-dense" style="padding-bottom:8px;">Protocol</th>
+                      <th class="font-semibold text-gray-600 dark:text-neutral-400 text-xs" class="tc-dense" style="padding-bottom:8px;">Metric</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="(r, idx) in kernelRoutes" :key="idx"
                       :style="idx % 2 === 0 ? '' : 'background:rgba(0,0,0,0.02);'"
                       style="border-bottom:1px solid #f3f4f6;">
-                      <td class="font-mono dark:text-neutral-200" style="padding:6px 10px 6px 0;">{{ r.dst || 'default' }}</td>
-                      <td class="font-mono text-gray-600 dark:text-neutral-400" style="padding:6px 10px 6px 0;">{{ r.gateway || '—' }}</td>
-                      <td class="font-mono text-gray-600 dark:text-neutral-400" style="padding:6px 10px 6px 0;">{{ r.dev || '—' }}</td>
-                      <td style="padding:6px 10px 6px 0;">
+                      <td class="font-mono dark:text-neutral-200" class="tc-dense">{{ r.dst || 'default' }}</td>
+                      <td class="font-mono text-gray-600 dark:text-neutral-400" class="tc-dense">{{ r.gateway || '—' }}</td>
+                      <td class="font-mono text-gray-600 dark:text-neutral-400" class="tc-dense">{{ r.dev || '—' }}</td>
+                      <td class="tc-dense">
                         <span class="rounded-full text-xs font-medium"
                           style="padding:2px 8px; display:inline-block;"
                           :style="r.protocol === 'kernel' ? 'background:#e0e7ff;color:#3730a3;' :
@@ -2490,7 +2530,7 @@
                           {{ r.protocol || '—' }}
                         </span>
                       </td>
-                      <td class="text-gray-500 dark:text-neutral-500" style="padding:6px 10px 6px 0;">{{ r.metric !== undefined ? r.metric : '—' }}</td>
+                      <td class="text-gray-500 dark:text-neutral-500" class="tc-dense">{{ r.metric !== undefined ? r.metric : '—' }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -2512,8 +2552,7 @@
 
             <!-- Empty state -->
             <div v-if="staticRoutes.length === 0"
-              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800"
-              style="padding:40px 24px;">
+              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800 empty-state">
               No static routes configured. Click <strong>+ Add Route</strong> to create one.
             </div>
 
@@ -2580,18 +2619,17 @@
 
         <!-- ── Add Static Route Modal ──────────────────────────────────── -->
         <div v-if="showRouteCreate && activePage === 'routing'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showRouteCreate = false">
 
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:480px; margin:0 auto;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-480">
             <!-- Header -->
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">Add Static Route</h2>
             </div>
 
             <!-- Body -->
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
 
               <!-- Destination -->
               <div>
@@ -2699,8 +2737,7 @@
 
             <!-- Empty state -->
             <div v-if="!natRulesLoading && natRules.length === 0"
-              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800"
-              style="padding:40px 24px;">
+              class="text-center text-gray-400 dark:text-neutral-500 rounded-lg bg-gray-50 dark:bg-neutral-800 empty-state">
               No NAT rules configured. Click <strong>+ Add Rule</strong> to create one.
             </div>
 
@@ -2807,18 +2844,17 @@
 
         <!-- ── Add NAT Rule Modal ──────────────────────────────────────── -->
         <div v-if="showNatRuleCreate && activePage === 'nat'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showNatRuleCreate = false">
 
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:500px; margin:0 auto;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-500">
             <!-- Header -->
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">Add NAT Rule</h2>
             </div>
 
             <!-- Body -->
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
 
               <!-- Name -->
               <div>
@@ -2903,7 +2939,7 @@
             </div><!-- /body -->
 
             <!-- Footer -->
-            <div class="dark:border-neutral-600" style="padding:12px 24px 20px; border-top-width:1px; display:flex; gap:8px; justify-content:flex-end;">
+            <div class="modal-footer-compact dark:border-neutral-600">
               <button @click="showNatRuleCreate = false"
                 class="px-4 py-2 rounded text-sm border border-gray-300 dark:border-neutral-500 dark:text-neutral-300">
                 Cancel
@@ -2918,18 +2954,17 @@
 
         <!-- ── Edit NAT Rule Modal ─────────────────────────────────────── -->
         <div v-if="showNatRuleEdit && activePage === 'nat'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showNatRuleEdit = false">
 
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:500px; margin:0 auto;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-500">
             <!-- Header -->
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">Edit NAT Rule</h2>
             </div>
 
             <!-- Body -->
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
 
               <!-- Name -->
               <div>
@@ -3014,7 +3049,7 @@
             </div><!-- /body -->
 
             <!-- Footer -->
-            <div class="dark:border-neutral-600" style="padding:12px 24px 20px; border-top-width:1px; display:flex; gap:8px; justify-content:flex-end;">
+            <div class="modal-footer-compact dark:border-neutral-600">
               <button @click="showNatRuleEdit = false"
                 class="px-4 py-2 rounded text-sm border border-gray-300 dark:border-neutral-500 dark:text-neutral-300">
                 Cancel
@@ -3036,8 +3071,7 @@
           <div class="flex items-center justify-between">
             <h1 class="text-2xl font-bold dark:text-neutral-200">Firewall Aliases</h1>
             <button @click="showAliasCreate = true; _resetAliasCreate()"
-              class="bg-blue-600 text-white rounded-lg font-medium text-sm transition"
-              style="padding:8px 16px;">
+              class="bg-blue-600 text-white rounded-lg font-medium text-sm transition btn">
               + Add Alias
             </button>
           </div>
@@ -3056,19 +3090,19 @@
             <table class="w-full text-sm">
               <thead>
                 <tr class="bg-gray-50 dark:bg-neutral-600 text-gray-500 dark:text-neutral-400 text-xs uppercase">
-                  <th class="text-left font-medium" style="padding:10px 12px;">Name</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Type</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Entries</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Description</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Updated</th>
-                  <th style="padding:10px 12px;"></th>
+                  <th class="text-left font-medium tc">Name</th>
+                  <th class="text-left font-medium tc">Type</th>
+                  <th class="text-left font-medium tc">Entries</th>
+                  <th class="text-left font-medium tc">Description</th>
+                  <th class="text-left font-medium tc">Updated</th>
+                  <th class="tc"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="alias in aliases" :key="alias.id"
                   class="dark:border-neutral-600" style="border-top-width:1px;">
-                  <td class="dark:text-neutral-200 font-medium" style="padding:10px 12px;">{{ alias.name }}</td>
-                  <td style="padding:10px 12px;">
+                  <td class="dark:text-neutral-200 font-medium tc">{{ alias.name }}</td>
+                  <td class="tc">
                     <span class="text-xs font-medium rounded-full px-2 py-1"
                       :style="alias.type === 'ipset'      ? 'background:#f3e8ff;color:#7c3aed;' :
                               alias.type === 'network'    ? 'background:#dbeafe;color:#1e40af;' :
@@ -3079,7 +3113,7 @@
                       {{ alias.type }}
                     </span>
                   </td>
-                  <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs" style="padding:10px 12px;">
+                  <td class="text-gray-600 dark:text-neutral-400 font-mono text-xs tc">
                     <span v-if="alias.type === 'ipset'">
                       <span v-if="aliasGeneratingId === alias.id" class="text-blue-500">⟳ generating...</span>
                       <span v-else-if="alias.entryCount > 0">{{ alias.entryCount }} prefixes</span>
@@ -3093,11 +3127,11 @@
                     </span>
                     <span v-else>{{ (alias.entries || []).length }} entries</span>
                   </td>
-                  <td class="text-gray-500 dark:text-neutral-400 text-xs" style="padding:10px 12px;">{{ alias.description || '—' }}</td>
-                  <td class="text-gray-400 dark:text-neutral-500 text-xs" style="padding:10px 12px;">
+                  <td class="text-gray-500 dark:text-neutral-400 text-xs tc">{{ alias.description || '—' }}</td>
+                  <td class="text-gray-400 dark:text-neutral-500 text-xs tc">
                     {{ alias.lastUpdated ? new Date(alias.lastUpdated).toLocaleDateString() : '—' }}
                   </td>
-                  <td style="padding:10px 12px;">
+                  <td class="tc">
                     <div class="flex gap-2 justify-end">
                       <button @click="openAliasEdit(alias)"
                         class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 transition">
@@ -3117,14 +3151,13 @@
 
         <!-- ── Create Alias Modal ─────────────────────────────────────── -->
         <div v-if="showAliasCreate && activePage === 'firewall-aliases'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showAliasCreate = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-540">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">Create Alias</h2>
             </div>
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
               <!-- Name -->
               <div>
                 <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
@@ -3218,13 +3251,13 @@
                 <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Generation runs in background (~30-60s via RIPEstat API)</p>
               </div>
             </div>
-            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+            <div class="modal-footer dark:border-neutral-600">
               <button @click="showAliasCreate = false"
-                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm btn">
                 Cancel
               </button>
               <button @click="createAlias()"
-                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm btn">
                 Create
               </button>
             </div>
@@ -3233,14 +3266,13 @@
 
         <!-- ── Edit Alias Modal ───────────────────────────────────────── -->
         <div v-if="showAliasEdit && activePage === 'firewall-aliases'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showAliasEdit = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-540">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">Edit Alias</h2>
             </div>
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
               <!-- Name -->
               <div>
                 <label class="text-sm font-medium dark:text-neutral-300">Name *</label>
@@ -3354,13 +3386,13 @@
                 </div>
               </div>
             </div>
-            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+            <div class="modal-footer dark:border-neutral-600">
               <button @click="showAliasEdit = false"
-                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm btn">
                 Cancel
               </button>
               <button @click="saveAliasEdit()"
-                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm btn">
                 Save
               </button>
             </div>
@@ -3376,8 +3408,7 @@
           <div class="flex items-center justify-between">
             <h1 class="text-2xl font-bold dark:text-neutral-200">Firewall Rules</h1>
             <button @click="openFirewallCreate()"
-              class="bg-blue-600 text-white rounded-lg font-medium text-sm transition"
-              style="padding:8px 16px;">
+              class="bg-blue-600 text-white rounded-lg font-medium text-sm transition btn">
               + Add Rule
             </button>
           </div>
@@ -3401,14 +3432,14 @@
                 <tr class="bg-gray-50 dark:bg-neutral-600 text-gray-500 dark:text-neutral-400 text-xs uppercase">
                   <th class="text-center font-medium" style="padding:10px 8px; width:36px;">#</th>
                   <th class="text-center font-medium" style="padding:10px 8px; width:36px;">En</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Name</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Iface</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Proto</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Source</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Destination</th>
-                  <th class="text-center font-medium" style="padding:10px 12px;">Action</th>
-                  <th class="text-left font-medium" style="padding:10px 12px;">Gateway</th>
-                  <th style="padding:10px 12px;"></th>
+                  <th class="text-left font-medium tc">Name</th>
+                  <th class="text-left font-medium tc">Iface</th>
+                  <th class="text-left font-medium tc">Proto</th>
+                  <th class="text-left font-medium tc">Source</th>
+                  <th class="text-left font-medium tc">Destination</th>
+                  <th class="text-center font-medium tc">Action</th>
+                  <th class="text-left font-medium tc">Gateway</th>
+                  <th class="tc"></th>
                 </tr>
               </thead>
               <tbody>
@@ -3423,33 +3454,33 @@
                       style="display:inline-block; width:10px; height:10px; border-radius:50%;"></span>
                   </td>
                   <!-- Name -->
-                  <td class="dark:text-neutral-200 font-medium" style="padding:10px 12px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  <td class="dark:text-neutral-200 font-medium tc" style=" max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                     {{ rule.name || '—' }}
                   </td>
                   <!-- Interface -->
-                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px;">
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400 tc">
                     {{ rule.interface === 'any' ? '*' : rule.interface }}
                   </td>
                   <!-- Protocol -->
-                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px;">
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400 tc">
                     {{ rule.protocol === 'any' ? '*' : rule.protocol }}
                   </td>
                   <!-- Source -->
-                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400 tc" style=" max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                     <span v-if="rule.source && rule.source.invert" style="color:#ef4444;">!</span>{{ _firewallEndpointLabel(rule.source) }}<span v-if="rule.source && rule.source.port" class="text-gray-400">:{{ rule.source.port }}</span><span v-if="rule.source && rule.source.portAliasId" style="color:#a78bfa;">:[alias]</span>
                   </td>
                   <!-- Destination -->
-                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  <td class="font-mono text-xs text-gray-600 dark:text-neutral-400 tc" style=" max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                     <span v-if="rule.destination && rule.destination.invert" style="color:#ef4444;">!</span>{{ _firewallEndpointLabel(rule.destination) }}<span v-if="rule.destination && rule.destination.port" class="text-gray-400">:{{ rule.destination.port }}</span><span v-if="rule.destination && rule.destination.portAliasId" style="color:#a78bfa;">:[alias]</span>
                   </td>
                   <!-- Action badge -->
-                  <td class="text-center" style="padding:10px 12px;">
+                  <td class="text-center tc">
                     <span class="text-xs font-bold rounded" :style="_firewallActionStyle(rule.action)" style="padding:3px 8px;">
                       {{ rule.action ? rule.action.toUpperCase() : '—' }}
                     </span>
                   </td>
                   <!-- Gateway -->
-                  <td class="text-xs text-gray-600 dark:text-neutral-400" style="padding:10px 12px; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  <td class="text-xs text-gray-600 dark:text-neutral-400 tc" style=" max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                     {{ _firewallGatewayLabel(rule) }}
                   </td>
                   <!-- Actions -->
@@ -3482,14 +3513,13 @@
 
         <!-- ── Add Firewall Rule Modal ──────────────────────────────────── -->
         <div v-if="showFirewallCreate && activePage === 'firewall'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showFirewallCreate = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:560px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-lg">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">Add Firewall Rule</h2>
             </div>
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
 
               <!-- Name -->
               <div>
@@ -3671,13 +3701,13 @@
               </div>
 
             </div>
-            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+            <div class="modal-footer dark:border-neutral-600">
               <button @click="showFirewallCreate = false"
-                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm btn">
                 Cancel
               </button>
               <button @click="createFirewallRule()"
-                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm btn">
                 Create Rule
               </button>
             </div>
@@ -3686,14 +3716,13 @@
 
         <!-- ── Edit Firewall Rule Modal ─────────────────────────────────── -->
         <div v-if="showFirewallEdit && activePage === 'firewall'"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showFirewallEdit = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:560px; margin:0 auto;">
-            <div class="dark:border-neutral-600" style="padding:24px 24px 16px; border-bottom-width:1px;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-lg">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">Edit Firewall Rule</h2>
             </div>
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
 
               <!-- Name -->
               <div>
@@ -3875,13 +3904,13 @@
               </div>
 
             </div>
-            <div class="dark:border-neutral-600 flex justify-end gap-3" style="padding:16px 24px; border-top-width:1px;">
+            <div class="modal-footer dark:border-neutral-600">
               <button @click="showFirewallEdit = false"
-                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-gray-200 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded-lg font-medium text-sm btn">
                 Cancel
               </button>
               <button @click="saveFirewallEdit()"
-                class="bg-blue-600 text-white rounded-lg font-medium text-sm" style="padding:8px 16px;">
+                class="bg-blue-600 text-white rounded-lg font-medium text-sm btn">
                 Save
               </button>
             </div>
@@ -3890,18 +3919,17 @@
 
         <!-- Template Create / Edit Modal -->
         <div v-if="showTemplateModal"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showTemplateModal = false">
 
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:520px; margin:0 auto;">
-            <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-md">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">
                 {{ templateEditTarget ? 'Edit Template' : 'New AWG2 Template' }}
               </h2>
             </div>
 
-            <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="modal-body">
 
               <!-- Name + Default -->
               <div class="flex gap-3 items-end">
@@ -3993,7 +4021,7 @@
 
             </div><!-- /content area -->
 
-            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+            <div class="modal-section dark:border-neutral-600">
               <div class="flex gap-3 justify-end">
                 <button @click="showTemplateModal = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition text-sm">
@@ -4011,10 +4039,9 @@
 
         <!-- Generate AWG2 Profile Modal -->
         <div v-if="showGenerateModal"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showGenerateModal = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:540px; margin:0 auto;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-540">
             <div style="padding:24px 24px 16px; border-bottom:1px solid #e5e7eb;" class="dark:border-neutral-600">
               <div class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold dark:text-neutral-100">⚡ Generate AWG2 Profile</h2>
@@ -4028,7 +4055,7 @@
                 Port of <a href="https://github.com/JohnnyVBut/AmneziaWG-Architect" target="_blank" class="underline">AmneziaWG-Architect</a>. Generates obfuscation parameters (H1-H4, S1-S4, Jc/Jmin/Jmax, I1-I5 CPS signatures).
               </p>
             </div>
-            <div class="dark:text-neutral-200" style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div class="dark:text-neutral-200" class="modal-body">
               <div>
                 <label class="block text-sm font-medium mb-1">Protocol Profile</label>
                 <select v-model="generateForm.profile"
@@ -4120,12 +4147,11 @@
 
         <!-- Create Peer Modal -->
         <div v-if="showPeerCreate"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showPeerCreate = false">
 
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:450px; margin:0 auto;">
-            <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-sm">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-2xl font-medium dark:text-neutral-200">Add Peer</h2>
               <p v-if="selectedInterface" class="text-sm text-gray-500 dark:text-neutral-400">
                 Adding to {{ selectedInterface.name }} ({{ selectedInterface.id }})
@@ -4260,7 +4286,7 @@
               </div>
             </div>
 
-            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+            <div class="modal-section dark:border-neutral-600">
               <div class="flex gap-3 justify-end">
                 <button @click="showPeerCreate = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition">
@@ -4280,11 +4306,10 @@
 
         <!-- Quick Peer Create Dialog -->
         <div v-if="showQuickPeerCreate"
-          class="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto"
-          style="padding:40px 24px;"
+          class="modal-overlay"
           @click.self="showQuickPeerCreate = false">
-          <div class="bg-white dark:bg-neutral-700 rounded-lg" style="max-width:400px; margin:0 auto;">
-            <div class="border-b dark:border-neutral-600" style="padding:24px 24px 16px;">
+          <div class="bg-white dark:bg-neutral-700 modal-panel modal-panel-xs">
+            <div class="modal-header dark:border-neutral-600">
               <h2 class="text-xl font-medium dark:text-neutral-200">New Peer</h2>
               <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">
                 IP will be assigned automatically. Keys will be generated on server.
@@ -4303,7 +4328,7 @@
                   class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200">
               </div>
             </div>
-            <div class="dark:border-neutral-600" style="padding:16px 24px 24px; border-top-width:1px;">
+            <div class="modal-section dark:border-neutral-600">
               <div class="flex gap-3 justify-end">
                 <button @click="showQuickPeerCreate = false"
                   class="px-4 py-2 border border-gray-300 dark:border-neutral-500 rounded hover:bg-gray-50 dark:hover:bg-neutral-600 dark:text-neutral-200 transition text-sm">
