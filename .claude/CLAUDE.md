@@ -460,6 +460,7 @@ GET/POST /api/templates
 GET/PUT/DELETE /api/templates/:id
 POST /api/templates/:id/set-default
 POST /api/templates/:id/apply          ← возвращает AWG2 params с fresh H1-H4
+POST /api/templates/generate           ← генерация AWG2 параметров { profile, intensity, host, saveName? }
 
 GET/POST /api/tunnel-interfaces
 GET/PATCH/DELETE /api/tunnel-interfaces/:id
@@ -477,11 +478,30 @@ POST /api/tunnel-interfaces/:id/peers/:peerId/enable
 POST /api/tunnel-interfaces/:id/peers/:peerId/disable
 GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 
+GET    /api/routing/table          ← kernel routes (по таблице, default=main)
+GET    /api/routing/tables         ← список routing tables (из ip rule show)
+GET    /api/routing/test           ← route test: { ip } → { via, dev, src, ... }
+GET    /api/routing/routes         ← статические маршруты (из routes.json)
+POST   /api/routing/routes         ← создать { destination, via, dev, metric, table, ... }
+PATCH  /api/routing/routes/:id     ← обновить | toggle: { enabled: bool }
+DELETE /api/routing/routes/:id     ← удалить
+
 GET    /api/nat/interfaces        ← список сетевых интерфейсов хоста (ip -o link show)
 GET    /api/nat/rules             ← список NAT правил
 POST   /api/nat/rules             ← создать правило { name, source, outInterface, type, toSource, comment }
 PATCH  /api/nat/rules/:id         ← обновить правило | toggle: { enabled: bool }
 DELETE /api/nat/rules/:id         ← удалить правило
+
+GET/POST /api/gateways                    ← CRUD шлюзов + статус мониторинга
+GET/PATCH/DELETE /api/gateways/:id
+GET/POST /api/gateway-groups              ← CRUD групп шлюзов
+GET/PATCH/DELETE /api/gateway-groups/:id
+
+GET    /api/aliases               ← список алиасов
+POST   /api/aliases               ← создать { name, type, entries }
+GET/PATCH/DELETE /api/aliases/:id
+POST   /api/aliases/:id/upload    ← загрузить файл префиксов → ipset
+POST   /api/aliases/:id/generate  ← сгенерировать через prefixes.py { country?, asn?, asnList? }
 
 GET    /api/firewall/interfaces   ← список интерфейсов хоста (для поля interface)
 GET    /api/firewall/rules        ← список правил (sorted by order)
@@ -501,11 +521,12 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | Страница | Ключ `activePage` | Статус |
 |----------|------------------|--------|
 | Interfaces | `'interfaces'` | ✅ динамические вкладки, per-interface view (info + peers) |
-| Gateways | `'gateways'` | ⏳ placeholder ("Coming soon") |
+| Gateways | `'gateways'` | ✅ CRUD + live мониторинг (ping/latency/loss) + Gateway Groups |
 | Routing | `'routing'` | ✅ Status (kernel routes + route test) + Static routes CRUD + OSPF placeholder |
 | NAT | `'nat'` | ✅ Outbound NAT CRUD + toggle + Port Forwarding placeholder |
-| Firewall | `'firewall'` | ⏳ placeholder ("Coming soon") |
-| Settings | `'settings'` | ✅ Global Settings + AWG2 Templates |
+| Firewall → Aliases | `'firewall-aliases'` | ✅ CRUD host/network/ipset + upload + generate (prefixes) |
+| Firewall → Rules | `'firewall'` | ✅ CRUD + ACCEPT/DROP/REJECT + PBR (gateway) + ↑↓ order |
+| Settings | `'settings'` | ✅ Global Settings + AWG2 Templates + Generate (⚡) |
 | Administration | `'administration'` | ✅ Admin Tunnel (бывший Clients tab) |
 
 ---
@@ -545,21 +566,37 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | `d40d56b` | feature/kernel-module | fix: NAT rule deduplication via iptables -C check, preserves packet counters |
 | `47e91bf` | feature/kernel-module | fix: NAT rules deduplicated on container restart (idempotent _applyRule) |
 | `25948d6` | feature/kernel-module | chore: prefixes.py — вспомогательный скрипт агрегации префиксов |
-| (pending) | feature/kernel-module | feat: AWG2 parameter generator — порт AmneziaWG-Architect (AwgParamGenerator.js + API + UI) |
+| `1b54fd8` | feature/kernel-module | feat: AWG2 parameter generator — порт AmneziaWG-Architect (AwgParamGenerator.js + API + UI) |
+| `fc0df23` | feature/kernel-module | fix(generator): remove `<c>` tag from all CPS signatures |
+| `3be4389` | feature/kernel-module | feat: Firewall Aliases + Policy-Based Routing (PBR) |
+| `18930a3` | feature/kernel-module | fix(ipset): replace python3 dependency with pure Node.js PrefixFetcher |
+| `0b59bb2` | feature/kernel-module | fix(ui): alias auto-generate on create — save genOpts before form reset |
+| `f90eea5` | feature/kernel-module | fix(ui): alias table — show 'empty' instead of '0 prefixes' + correct generate indicator |
+| `ab1b9cb` | feature/kernel-module | fix(api): alias/policy CRUD — fix id mismatch + upload JSON instead of multipart |
+| `faf13f4` | feature/kernel-module | refactor(ui): move Upload button into Edit Alias modal |
+| `2025867` | feature/kernel-module | feat(ipset): add CIDR aggregation to PrefixFetcher (collapse_addresses) |
+| `57a9352` | feature/kernel-module | fix(ui): alias edit modal — restore genSource from saved generatorOpts |
+| `f639ffa` | feature/kernel-module | fix(ui): restore public IP display for client peers |
+| `edec89a` | feature/kernel-module | docs: add English version of API reference (docs/API.en.md) |
+| `b566fce` | feature/kernel-module | docs: require API docs update in both languages for every new endpoint |
+| `1bdbd8f` | feature/kernel-module | docs: add low-priority wishlist item — UI config writable via API |
+| `c488cca` | feature/kernel-module | feat: Firewall Rules — unified filter + PBR (replaces PolicyManager) |
 
 ---
 
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** (pending) feat: Firewall Rules (унификация PBR + filter)
+**Последний коммит:** `c488cca` feat: Firewall Rules — unified filter + PBR (replaces PolicyManager)
 
-**Что готово:**
-- NAT, Routing (static + status), Toast, Gateways + GatewayGroups + GatewayMonitor
-- Firewall Aliases (host/network/ipset, upload, generate via prefixes.py)
-- **FirewallManager** — полноценная замена PolicyManager: filter + mangle chains, ACCEPT/DROP/REJECT, PBR через gateway
-- Firewall Rules API + UI (полная страница: таблица + Add/Edit модалы)
-- Routing: Policy tab удалён, PBR переехал в Firewall → Rules
+**Что готово (протестировано на production):**
+- Interfaces: CRUD, start/stop, peers, S2S interconnect, dashboard
+- Routing: static routes + status + kernel route test
+- NAT: Outbound MASQUERADE/SNAT CRUD
+- Gateways: CRUD + live ping monitoring + Gateway Groups
+- Firewall Aliases: host/network/ipset + upload + generate (RIPE prefixes)
+- Firewall Rules: ACCEPT/DROP/REJECT + PBR (gateway) + ↑↓ order
+- AWG2 Templates: CRUD + Generate (7 CPS-профилей)
 
 ---
 
