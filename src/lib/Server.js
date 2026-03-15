@@ -1470,7 +1470,7 @@ module.exports = class Server {
 
           // Auto-rules: MASQUERADE baked into PostUp/PostDown of each TunnelInterface
           const im = await InterfaceManager.getInstance();
-          const autoRules = im.getAll()
+          const autoRules = im.getAllInterfaces()
             .filter(iface => iface.data.address)
             .map(iface => {
               // Compute subnet from CIDR (mirrors TunnelInterface._cidrToSubnet)
