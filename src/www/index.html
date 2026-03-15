@@ -2790,12 +2790,21 @@
 
                 <!-- Source -->
                 <div style="flex:2; min-width:0;">
-                  <span v-if="!rule.source"
-                    class="text-xs rounded-full font-medium"
-                    style="padding:2px 8px; display:inline-block; background:#f3f4f6; color:#6b7280;">
-                    any
-                  </span>
-                  <span v-else class="font-mono text-sm dark:text-neutral-300">{{ rule.source }}</span>
+                  <template v-if="rule.sourceAliasId">
+                    <span class="text-xs font-semibold rounded"
+                      style="padding:2px 8px; display:inline-block; background:#ede9fe; color:#5b21b6;">
+                      {{ (aliases.find(a => a.id === rule.sourceAliasId) || {}).name || rule.sourceAliasId }}
+                    </span>
+                  </template>
+                  <template v-else-if="rule.source">
+                    <span class="font-mono text-sm dark:text-neutral-300">{{ rule.source }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="text-xs rounded-full font-medium"
+                      style="padding:2px 8px; display:inline-block; background:#f3f4f6; color:#6b7280;">
+                      any
+                    </span>
+                  </template>
                 </div>
 
                 <!-- Out Interface -->
@@ -2903,6 +2912,17 @@
                       type="text" placeholder="e.g. 10.8.0.5"
                       class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
                       style="width:160px;" />
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleCreate.sourceType" value="alias" />
+                    Alias
+                    <select v-if="natRuleCreate.sourceType === 'alias'"
+                      v-model="natRuleCreate.sourceAliasId"
+                      class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                      style="min-width:160px;">
+                      <option value="">— select alias —</option>
+                      <option v-for="a in _natIpAliases()" :key="a.id" :value="a.id">{{ a.name }}</option>
+                    </select>
                   </label>
                 </div>
               </div>
@@ -3013,6 +3033,17 @@
                       type="text" placeholder="e.g. 10.8.0.5"
                       class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
                       style="width:160px;" />
+                  </label>
+                  <label class="flex items-center gap-2 text-sm dark:text-neutral-300 cursor-pointer">
+                    <input type="radio" v-model="natRuleEdit.sourceType" value="alias" />
+                    Alias
+                    <select v-if="natRuleEdit.sourceType === 'alias'"
+                      v-model="natRuleEdit.sourceAliasId"
+                      class="border border-gray-300 dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-100 rounded px-2 py-1 text-sm"
+                      style="min-width:160px;">
+                      <option value="">— select alias —</option>
+                      <option v-for="a in _natIpAliases()" :key="a.id" :value="a.id">{{ a.name }}</option>
+                    </select>
                   </label>
                 </div>
               </div>

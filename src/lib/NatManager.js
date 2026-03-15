@@ -139,15 +139,16 @@ class NatManager {
     this._validate(data);
 
     const rule = {
-      id:           this._uuid(),
-      name:         data.name.trim(),
-      enabled:      true,
-      source:       (data.source || '').trim(),
-      outInterface: data.outInterface.trim(),
-      type:         data.type,
-      toSource:     data.type === 'SNAT' ? (data.toSource || '').trim() : null,
-      comment:      (data.comment || '').trim(),
-      createdAt:    new Date().toISOString(),
+      id:            this._uuid(),
+      name:          data.name.trim(),
+      enabled:       true,
+      source:        data.sourceAliasId ? '' : (data.source || '').trim(),
+      sourceAliasId: data.sourceAliasId || null,
+      outInterface:  data.outInterface.trim(),
+      type:          data.type,
+      toSource:      data.type === 'SNAT' ? (data.toSource || '').trim() : null,
+      comment:       (data.comment || '').trim(),
+      createdAt:     new Date().toISOString(),
     };
 
     await this._applyRule(rule);
@@ -175,12 +176,13 @@ class NatManager {
 
     const updated = {
       ...old,
-      name:         data.name.trim(),
-      source:       (data.source || '').trim(),
-      outInterface: data.outInterface.trim(),
-      type:         data.type,
-      toSource:     data.type === 'SNAT' ? (data.toSource || '').trim() : null,
-      comment:      (data.comment || '').trim(),
+      name:          data.name.trim(),
+      source:        data.sourceAliasId ? '' : (data.source || '').trim(),
+      sourceAliasId: data.sourceAliasId || null,
+      outInterface:  data.outInterface.trim(),
+      type:          data.type,
+      toSource:      data.type === 'SNAT' ? (data.toSource || '').trim() : null,
+      comment:       (data.comment || '').trim(),
     };
 
     // Удалить старое правило из ядра (если было активно)
@@ -274,10 +276,12 @@ class NatManager {
     if (data.type === 'SNAT' && (!data.toSource || !data.toSource.trim())) {
       throw createError({ status: 400, message: 'SNAT requires a target IP (toSource)' });
     }
-    // Валидация source (если указан): должен быть IP или CIDR
-    const src = (data.source || '').trim();
-    if (src && !/^[\d.]+(?:\/\d{1,2})?$/.test(src)) {
-      throw createError({ status: 400, message: 'Invalid source address or CIDR' });
+    // Валидация source (если указан и не alias): должен быть IP или CIDR
+    if (!data.sourceAliasId) {
+      const src = (data.source || '').trim();
+      if (src && !/^[\d.]+(?:\/\d{1,2})?$/.test(src)) {
+        throw createError({ status: 400, message: 'Invalid source address or CIDR' });
+      }
     }
     // Валидация toSource IP
     if (data.type === 'SNAT') {
@@ -289,56 +293,97 @@ class NatManager {
   }
 
   /**
-   * Построить команду iptables-nft для данного правила.
+   * Построить список команд iptables-nft для правила.
+   * Один rule → N команд (по одной на каждый entry алиаса, или одна для plain source).
    *
-   * @param {object}  rule   - NAT правило
-   * @param {'A'|'D'} action - 'A' = append (добавить), 'D' = delete (удалить)
-   * @returns {string} полная команда
+   * @param {object}       rule   - NAT правило
+   * @param {'A'|'D'|'C'}  action - 'A' = append, 'D' = delete, 'C' = check
+   * @returns {Promise<string[]>} список команд
    */
-  _buildCmd(rule, action) {
-    // Базовая команда: -t nat -A/-D POSTROUTING
-    let cmd = `iptables-nft -t nat -${action} POSTROUTING`;
+  async _buildCmds(rule, action) {
+    const srcParts = await this._resolveSrcParts(rule);
+    return srcParts.map(srcPart => {
+      let cmd = `iptables-nft -t nat -${action} POSTROUTING`;
+      if (srcPart) cmd += ` ${srcPart}`;
+      cmd += ` -o ${rule.outInterface}`;
+      if (rule.type === 'MASQUERADE') cmd += ' -j MASQUERADE';
+      else cmd += ` -j SNAT --to-source ${rule.toSource}`;
+      return cmd;
+    });
+  }
 
-    // Опциональный source (-s)
-    if (rule.source) {
-      cmd += ` -s ${rule.source}`;
+  /**
+   * Вернуть массив source-частей команды iptables-nft для правила.
+   * null/'' = без ограничения по source (any).
+   * @returns {Promise<Array<string|null>>}
+   */
+  async _resolveSrcParts(rule) {
+    if (rule.sourceAliasId) {
+      return this._resolveAliasSrcParts(rule.sourceAliasId);
     }
+    if (rule.source) return [`-s ${rule.source}`];
+    return [null]; // any
+  }
 
-    // Выходной интерфейс (-o)
-    cmd += ` -o ${rule.outInterface}`;
-
-    // Действие: MASQUERADE или SNAT
-    if (rule.type === 'MASQUERADE') {
-      cmd += ' -j MASQUERADE';
-    } else if (rule.type === 'SNAT') {
-      cmd += ` -j SNAT --to-source ${rule.toSource}`;
+  /**
+   * Разложить алиас на массив iptables source-частей.
+   * host/network → ['-s 10.0.0.1', '-s 10.0.0.2', ...]
+   * ipset        → ['-m set --match-set <name> src']
+   * group        → рекурсивный обход участников
+   */
+  async _resolveAliasSrcParts(aliasId) {
+    const { getInstance } = require('./AliasManager');
+    const am = await getInstance();
+    const alias = am.getAlias(aliasId);
+    if (!alias) {
+      debug(`Alias ${aliasId} not found, applying no source restriction`);
+      return [null];
     }
-
-    return cmd;
+    if (alias.type === 'ipset') {
+      return [`-m set --match-set ${alias.name} src`];
+    }
+    if (alias.type === 'host' || alias.type === 'network') {
+      const entries = alias.entries || [];
+      if (entries.length === 0) return [null];
+      return entries.map(e => `-s ${e}`);
+    }
+    if (alias.type === 'group') {
+      const parts = [];
+      for (const memberId of (alias.memberIds || [])) {
+        const sub = await this._resolveAliasSrcParts(memberId);
+        parts.push(...sub.filter(p => p !== null));
+      }
+      return parts.length > 0 ? parts : [null];
+    }
+    // port/port-group — не применимо для L3 NAT
+    debug(`Alias ${aliasId} type "${alias.type}" not applicable for NAT source, ignoring`);
+    return [null];
   }
 
   /**
    * Добавить правило в ядро через iptables-nft (идемпотентно: -C перед -A).
-   * После предварительной очистки в init() (_flushRule) дубликатов нет,
-   * поэтому -C здесь защищает только от случайного двойного вызова.
    */
   async _applyRule(rule) {
-    const checkCmd = this._buildCmd(rule, 'C');
-    const addCmd   = this._buildCmd(rule, 'A');
-    try {
-      await Util.exec(checkCmd, { log: false, timeout: 5000 });
-      debug(`Apply (already in kernel): ${addCmd}`);
-    } catch {
-      debug(`Apply:  ${addCmd}`);
-      await Util.exec(addCmd);
+    const cmds = await this._buildCmds(rule, 'A');
+    const checkCmds = await this._buildCmds(rule, 'C');
+    for (let i = 0; i < cmds.length; i++) {
+      try {
+        await Util.exec(checkCmds[i], { log: false, timeout: 5000 });
+        debug(`Apply (already in kernel): ${cmds[i]}`);
+      } catch {
+        debug(`Apply:  ${cmds[i]}`);
+        await Util.exec(cmds[i]);
+      }
     }
   }
 
   /** Удалить правило из ядра через iptables-nft. */
   async _removeRule(rule) {
-    const cmd = this._buildCmd(rule, 'D');
-    debug(`Remove: ${cmd}`);
-    await Util.exec(cmd);
+    const cmds = await this._buildCmds(rule, 'D');
+    for (const cmd of cmds) {
+      debug(`Remove: ${cmd}`);
+      await Util.exec(cmd);
+    }
   }
 
   /**
@@ -346,13 +391,15 @@ class NatManager {
    * Используется в init() для очистки дубликатов накопленных при предыдущих запусках.
    */
   async _flushRule(rule) {
-    const delCmd = this._buildCmd(rule, 'D');
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      try {
-        await Util.exec(delCmd, { log: false, timeout: 5000 });
-      } catch {
-        break; // Копий больше нет
+    const cmds = await this._buildCmds(rule, 'D');
+    for (const delCmd of cmds) {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        try {
+          await Util.exec(delCmd, { log: false, timeout: 5000 });
+        } catch {
+          break; // Копий больше нет
+        }
       }
     }
   }

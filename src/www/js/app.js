@@ -282,8 +282,9 @@ new Vue({
     showNatRuleEdit: false,       // модал редактирования правила
     natRuleCreate: {
       name: '',
-      sourceType: 'any',          // 'any' | 'subnet' | 'ip'
-      sourceValue: '',            // значение при sourceType !== 'any'
+      sourceType: 'any',          // 'any' | 'subnet' | 'ip' | 'alias'
+      sourceValue: '',            // значение при sourceType subnet/ip
+      sourceAliasId: '',          // alias id при sourceType === 'alias'
       outInterface: '',
       type: 'MASQUERADE',         // 'MASQUERADE' | 'SNAT'
       toSource: '',               // целевой IP при type === 'SNAT'
@@ -294,6 +295,7 @@ new Vue({
       name: '',
       sourceType: 'any',
       sourceValue: '',
+      sourceAliasId: '',
       outInterface: '',
       type: 'MASQUERADE',
       toSource: '',
@@ -1466,19 +1468,24 @@ new Vue({
     openNatRuleEdit(rule) {
       let sourceType = 'any';
       let sourceValue = '';
-      if (rule.source) {
+      let sourceAliasId = '';
+      if (rule.sourceAliasId) {
+        sourceType = 'alias';
+        sourceAliasId = rule.sourceAliasId;
+      } else if (rule.source) {
         sourceType = rule.source.includes('/') ? 'subnet' : 'ip';
         sourceValue = rule.source;
       }
       this.natRuleEdit = {
-        id:           rule.id,
-        name:         rule.name,
+        id:            rule.id,
+        name:          rule.name,
         sourceType,
         sourceValue,
-        outInterface: rule.outInterface,
-        type:         rule.type,
-        toSource:     rule.toSource || '',
-        comment:      rule.comment || '',
+        sourceAliasId,
+        outInterface:  rule.outInterface,
+        type:          rule.type,
+        toSource:      rule.toSource || '',
+        comment:       rule.comment || '',
       };
       this.showNatRuleEdit = true;
     },
@@ -1486,12 +1493,20 @@ new Vue({
     /**
      * Вычислить итоговое значение source из полей формы.
      * sourceType='any'    → '' (без -s в iptables)
+     * sourceType='alias'  → '' (source пуст, sourceAliasId заполнен)
      * sourceType='subnet' → sourceValue (CIDR)
      * sourceType='ip'     → sourceValue (single IP)
      */
     _natFormSource(form) {
-      if (form.sourceType === 'any') return '';
+      if (form.sourceType === 'any' || form.sourceType === 'alias') return '';
       return (form.sourceValue || '').trim();
+    },
+
+    /** Алиасы, применимые как L3 source в NAT (host/network/group/ipset, без port/port-group). */
+    _natIpAliases() {
+      return (this.aliases || []).filter(a =>
+        ['host', 'network', 'group', 'ipset'].includes(a.type)
+      );
     },
 
     /**
@@ -1513,18 +1528,19 @@ new Vue({
     async createNatRule() {
       try {
         const data = {
-          name:         this.natRuleCreate.name,
-          source:       this._natFormSource(this.natRuleCreate),
-          outInterface: this.natRuleCreate.outInterface,
-          type:         this.natRuleCreate.type,
-          toSource:     this.natRuleCreate.type === 'SNAT' ? this.natRuleCreate.toSource : null,
-          comment:      this.natRuleCreate.comment,
+          name:          this.natRuleCreate.name,
+          source:        this._natFormSource(this.natRuleCreate),
+          sourceAliasId: this.natRuleCreate.sourceType === 'alias' ? this.natRuleCreate.sourceAliasId : null,
+          outInterface:  this.natRuleCreate.outInterface,
+          type:          this.natRuleCreate.type,
+          toSource:      this.natRuleCreate.type === 'SNAT' ? this.natRuleCreate.toSource : null,
+          comment:       this.natRuleCreate.comment,
         };
         await this.api.createNatRule(data);
         // Сброс формы
         this.showNatRuleCreate = false;
         this.natRuleCreate = {
-          name: '', sourceType: 'any', sourceValue: '',
+          name: '', sourceType: 'any', sourceValue: '', sourceAliasId: '',
           outInterface: this.natInterfaces.length > 0 ? this.natInterfaces[0].name : '',
           type: 'MASQUERADE', toSource: '', comment: '',
         };
@@ -1538,12 +1554,13 @@ new Vue({
     async saveNatRule() {
       try {
         const data = {
-          name:         this.natRuleEdit.name,
-          source:       this._natFormSource(this.natRuleEdit),
-          outInterface: this.natRuleEdit.outInterface,
-          type:         this.natRuleEdit.type,
-          toSource:     this.natRuleEdit.type === 'SNAT' ? this.natRuleEdit.toSource : null,
-          comment:      this.natRuleEdit.comment,
+          name:          this.natRuleEdit.name,
+          source:        this._natFormSource(this.natRuleEdit),
+          sourceAliasId: this.natRuleEdit.sourceType === 'alias' ? this.natRuleEdit.sourceAliasId : null,
+          outInterface:  this.natRuleEdit.outInterface,
+          type:          this.natRuleEdit.type,
+          toSource:      this.natRuleEdit.type === 'SNAT' ? this.natRuleEdit.toSource : null,
+          comment:       this.natRuleEdit.comment,
         };
         await this.api.updateNatRule({ ruleId: this.natRuleEdit.id, ...data });
         this.showNatRuleEdit = false;
