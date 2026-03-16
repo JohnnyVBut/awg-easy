@@ -1383,6 +1383,18 @@ new Vue({
       }
     },
 
+    /**
+     * Отображаемый лейбл для gateway IP в результатах Route Lookup.
+     * Если IP совпадает с известным гейтвеем — добавляет его имя в скобках.
+     * Если не найден — помечает "(default gateway)".
+     */
+    _routeGatewayLabel(ip) {
+      if (!ip) return '—';
+      const gw = (this.gateways || []).find(g => g.gatewayIP === ip);
+      if (gw) return `${ip} (${gw.name})`;
+      return `${ip} (default gateway)`;
+    },
+
     async createRoute() {
       try {
         const data = {
