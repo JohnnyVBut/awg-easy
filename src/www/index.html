@@ -2448,33 +2448,19 @@
               <h3 class="font-semibold dark:text-neutral-200 mb-2">Route Lookup</h3>
               <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
                 <div style="display:flex; flex-direction:column; gap:3px;">
-                  <label class="text-xs text-gray-500 dark:text-neutral-400">Destination</label>
-                  <input v-model="routeTestIp" type="text" placeholder="e.g. 8.8.8.8"
+                  <label class="text-xs text-gray-500 dark:text-neutral-400">Source IP <span style="color:#9ca3af;">(optional)</span></label>
+                  <input v-model="routeTestSrc" type="text" placeholder="e.g. 192.168.1.5"
                     @keyup.enter="testRoute"
                     class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm"
                     style="width:180px;" />
                 </div>
+                <div style="display:flex; flex-direction:column; gap:3px; align-self:flex-end; padding-bottom:2px; color:#9ca3af; font-size:18px;">→</div>
                 <div style="display:flex; flex-direction:column; gap:3px;">
-                  <label class="text-xs text-gray-500 dark:text-neutral-400">Source</label>
-                  <select v-model="routeTestSrc"
+                  <label class="text-xs text-gray-500 dark:text-neutral-400">Destination IP</label>
+                  <input v-model="routeTestIp" type="text" placeholder="e.g. 8.8.8.8"
+                    @keyup.enter="testRoute"
                     class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm"
-                    style="min-width:180px;">
-                    <option value="">Default (system)</option>
-                    <optgroup label="Tunnel interfaces (source IP)" v-if="tunnelInterfaces.length">
-                      <option v-for="iface in tunnelInterfaces" :key="iface.id"
-                        :value="iface.address ? iface.address.split('/')[0] : ''">
-                        {{ iface.name || iface.id }}
-                        <template v-if="iface.address"> ({{ iface.address.split('/')[0] }})</template>
-                      </option>
-                    </optgroup>
-                    <optgroup label="PBR rules — tests fwmark policy routing"
-                      v-if="firewallRules.filter(r => r.fwmark && r.enabled).length">
-                      <option v-for="rule in firewallRules.filter(r => r.fwmark && r.enabled)"
-                        :key="rule.id" :value="'mark:' + rule.fwmark">
-                        {{ rule.name }} (mark {{ rule.fwmark }})
-                      </option>
-                    </optgroup>
-                  </select>
+                    style="width:180px;" />
                 </div>
                 <div style="display:flex; flex-direction:column; justify-content:flex-end; padding-top:18px;">
                   <button @click="testRoute" :disabled="routeTestLoading"
@@ -2485,13 +2471,23 @@
                 </div>
               </div>
 
-              <!-- Test result -->
-              <div v-if="routeTestResult" class="mt-2 rounded" class="alert-info">
+              <!-- PBR trace result -->
+              <div v-if="routeTestMatchedRule !== null && routeTestSrc" class="mt-3 text-sm rounded"
+                style="padding:8px 12px; background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.3);">
+                <span style="color:#16a34a;">✓ PBR matched:</span>
+                <span class="font-medium dark:text-neutral-200"> {{ routeTestMatchedRule ? routeTestMatchedRule.name : '' }}</span>
+                <span class="text-gray-500" v-if="routeTestMatchedRule"> (fwmark={{ routeTestMatchedRule.fwmark }})</span>
+              </div>
+              <div v-if="routeTestMatchedRule === null && routeTestSrc && (routeTestResult || routeTestError)" class="mt-3 text-sm rounded"
+                style="padding:8px 12px; background:rgba(156,163,175,0.1); border:1px solid rgba(156,163,175,0.3); color:#6b7280;">
+                ✗ No PBR rule matched — default routing
+              </div>
+
+              <!-- Route result -->
+              <div v-if="routeTestResult" class="mt-2 rounded" style="padding:10px 12px; background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.15);">
                 <div class="text-sm" style="display:flex; flex-direction:column; gap:4px;">
-                  <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">dst</span>
-                    <span class="font-mono font-medium">{{ routeTestResult.dst || '—' }}</span></div>
                   <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">gateway</span>
-                    <span class="font-mono">{{ _routeGatewayLabel(routeTestResult.gateway) }}</span></div>
+                    <span class="font-mono font-medium">{{ _routeGatewayLabel(routeTestResult.gateway) }}</span></div>
                   <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">dev</span>
                     <span class="font-mono">{{ routeTestResult.dev || '—' }}</span></div>
                   <div><span class="text-gray-500" style="min-width:80px;display:inline-block;">src</span>

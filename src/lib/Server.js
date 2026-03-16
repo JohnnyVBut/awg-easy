@@ -18,6 +18,7 @@ const NatManager = require('./NatManager');
 const AliasManager = require('./AliasManager');
 const IpsetManager = require('./IpsetManager');
 const FirewallManager = require('./FirewallManager');
+const PolicyManager = require('./PolicyManager');
 const Settings = require('./Settings');
 const AwgParamGenerator = require('./AwgParamGenerator');
 const Util = require('./Util');
@@ -1384,19 +1385,30 @@ module.exports = class Server {
       }))
 
       /**
-       * GET /api/routing/test?ip=8.8.8.8
-       * Тест: ip route get <ip>
+       * GET /api/routing/test?ip=8.8.8.8[&src=1.2.3.4]
+       * Тест маршрута: ip route get <ip>
+       *
+       * Если src указан — сначала симулирует PBR-решение через PolicyManager.simulateTrace(src, ip):
+       *   - Если нашлось совпадающее PBR-правило → ip route get <ip> mark <fwmark>
+       *   - Если нет → ip route get <ip>
+       * Возвращает: { result, matchedRule: { id, name, fwmark } | null, steps: [...] }
        */
       .get('/api/routing/test', defineEventHandler(async (event) => {
         const qs = event.node.req.url.includes('?')
           ? new URLSearchParams(event.node.req.url.split('?')[1])
           : new URLSearchParams();
-        const ip   = qs.get('ip')   || '';
-        const src  = qs.get('src')  || '';
-        const markStr = qs.get('mark');
-        const mark = markStr !== null ? parseInt(markStr, 10) : undefined;
-        const rm = await RouteManager.getInstance();
-        return { result: await rm.testRoute(ip, src || undefined, mark) };
+        const ip  = qs.get('ip')  || '';
+        const src = qs.get('src') || '';
+        const rm  = await RouteManager.getInstance();
+
+        if (src && ip) {
+          const pm = await PolicyManager.getInstance();
+          const { matchedRule, steps } = await pm.simulateTrace(src, ip);
+          const result = await rm.testRoute(ip, undefined, matchedRule ? matchedRule.fwmark : undefined);
+          return { result, matchedRule, steps };
+        }
+
+        return { result: await rm.testRoute(ip), matchedRule: null, steps: [] };
       }))
 
       /**

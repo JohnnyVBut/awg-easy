@@ -260,8 +260,10 @@ new Vue({
     kernelRoutesLoading: false,
     staticRoutes: [],
     routeTestIp: '',
-    routeTestSrc: '',          // '' = default, IP-адрес интерфейса при выборе из дропдауна
+    routeTestSrc: '',          // source IP (опционально) — запускает policy trace
     routeTestResult: null,
+    routeTestMatchedRule: null, // { id, name, fwmark } | null
+    routeTestSteps: [],         // шаги trace для отладки
     routeTestLoading: false,
     routeTestError: '',
     showRouteCreate: false,
@@ -700,7 +702,6 @@ new Vue({
         this.loadStaticRoutes();
         if (!this.gateways.length) this.loadGateways();
         if (!this.gatewayGroups.length) this.loadGatewayGroups();
-        if (!this.firewallRules.length) this.loadFirewallRules(); // для PBR-правил в Route Lookup
       }
       if (pageId === 'nat') {
         this.loadNatInterfaces();
@@ -1373,15 +1374,14 @@ new Vue({
       if (!this.routeTestIp) return;
       this.routeTestLoading = true;
       this.routeTestResult = null;
+      this.routeTestMatchedRule = null;
+      this.routeTestSteps = [];
       this.routeTestError = '';
       try {
-        // routeTestSrc может быть '' | 'IP' | 'mark:N'
-        const val = this.routeTestSrc || '';
-        let srcIp, mark;
-        if (val.startsWith('mark:')) mark = parseInt(val.slice(5), 10);
-        else srcIp = val || undefined;
-        const res = await this.api.testRoute(this.routeTestIp, srcIp, mark);
-        this.routeTestResult = res.result;
+        const res = await this.api.testRoute(this.routeTestIp, this.routeTestSrc || undefined);
+        this.routeTestResult      = res.result;
+        this.routeTestMatchedRule = res.matchedRule || null;
+        this.routeTestSteps       = res.steps || [];
       } catch (err) {
         this.routeTestError = err.message || 'Error';
       } finally {

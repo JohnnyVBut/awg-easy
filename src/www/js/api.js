@@ -594,10 +594,9 @@ class API {
     });
   }
 
-  async testRoute(ip, src, mark) {
+  async testRoute(ip, src) {
     let qs = `ip=${encodeURIComponent(ip)}`;
-    if (mark !== undefined) qs += `&mark=${mark}`;
-    else if (src) qs += `&src=${encodeURIComponent(src)}`;
+    if (src) qs += `&src=${encodeURIComponent(src)}`;
     return this.call({ method: 'get', path: `/routing/test?${qs}` });
   }
 
