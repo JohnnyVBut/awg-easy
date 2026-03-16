@@ -80,16 +80,23 @@ docker compose down && docker compose up -d
 **Файл:** `src/lib/TunnelInterface.js` → метод `generateWgConfig()`
 **Причина:** Ubuntu 22.04 использует nftables. FORWARD нужен -i И -o. NAT только для клиентских интерфейсов.
 
+**ВАЖНО: PostUp использует `-A FORWARD` (append), НЕ `-I FORWARD` (insert).**
+FirewallManager вставляет `FIREWALL_FORWARD` jump в позицию 1 при инициализации.
+Если PostUp использует `-I FORWARD`, wg ACCEPT-правила вставляются перед `FIREWALL_FORWARD`
+при каждом `restart()` (FIX-8) → весь трафик этого интерфейса обходит файрвол.
+С `-A FORWARD` wg ACCEPT-правила всегда добавляются после `FIREWALL_FORWARD` → файрвол работает.
+
 ```javascript
 // ПРАВИЛЬНО (disableRoutes=false — клиентский интерфейс):
-config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE\n`;
-config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -j MASQUERADE 2>/dev/null || true\n`;
+config += `PostUp = ${getIsp}; iptables-nft -A FORWARD -i ${this.id} -j ACCEPT; iptables-nft -A FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -o $ISP -j MASQUERADE\n`;
+config += `PostDown = ${getIsp}; iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -o $ISP -j MASQUERADE 2>/dev/null || true\n`;
 
 // ПРАВИЛЬНО (disableRoutes=true — interconnect интерфейс, без NAT):
-config += `PostUp = iptables-nft -I FORWARD -i ${this.id} -j ACCEPT; iptables-nft -I FORWARD -o ${this.id} -j ACCEPT\n`;
-config += `PostDown = iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true\n`;
+config += `PostUp = ${getIsp}; iptables-nft -A FORWARD -i ${this.id} -j ACCEPT; iptables-nft -A FORWARD -o ${this.id} -j ACCEPT; iptables-nft -t nat -A POSTROUTING -s ${subnet} -o $ISP -j MASQUERADE\n`;
+config += `PostDown = ${getIsp}; iptables-nft -D FORWARD -i ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -D FORWARD -o ${this.id} -j ACCEPT 2>/dev/null || true; iptables-nft -t nat -D POSTROUTING -s ${subnet} -o $ISP -j MASQUERADE 2>/dev/null || true\n`;
 
-// НЕПРАВИЛЬНО: iptables (без -nft), только -i без -o, или MASQUERADE при disableRoutes=true
+// НЕПРАВИЛЬНО: iptables (без -nft), только -i без -o, MASQUERADE при disableRoutes=true,
+// или -I FORWARD (insert) вместо -A FORWARD (append) — ломает FIREWALL_FORWARD порядок
 ```
 
 ### FIX-2: Конфиг регенерируется перед каждым start() + down→up при "already exists"
