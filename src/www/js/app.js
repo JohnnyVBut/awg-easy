@@ -700,6 +700,7 @@ new Vue({
         this.loadStaticRoutes();
         if (!this.gateways.length) this.loadGateways();
         if (!this.gatewayGroups.length) this.loadGatewayGroups();
+        if (!this.firewallRules.length) this.loadFirewallRules(); // для PBR-правил в Route Lookup
       }
       if (pageId === 'nat') {
         this.loadNatInterfaces();
@@ -1374,7 +1375,12 @@ new Vue({
       this.routeTestResult = null;
       this.routeTestError = '';
       try {
-        const res = await this.api.testRoute(this.routeTestIp, this.routeTestSrc || undefined);
+        // routeTestSrc может быть '' | 'IP' | 'mark:N'
+        const val = this.routeTestSrc || '';
+        let srcIp, mark;
+        if (val.startsWith('mark:')) mark = parseInt(val.slice(5), 10);
+        else srcIp = val || undefined;
+        const res = await this.api.testRoute(this.routeTestIp, srcIp, mark);
         this.routeTestResult = res.result;
       } catch (err) {
         this.routeTestError = err.message || 'Error';

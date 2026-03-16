@@ -1391,10 +1391,12 @@ module.exports = class Server {
         const qs = event.node.req.url.includes('?')
           ? new URLSearchParams(event.node.req.url.split('?')[1])
           : new URLSearchParams();
-        const ip  = qs.get('ip')  || '';
-        const src = qs.get('src') || '';
+        const ip   = qs.get('ip')   || '';
+        const src  = qs.get('src')  || '';
+        const markStr = qs.get('mark');
+        const mark = markStr !== null ? parseInt(markStr, 10) : undefined;
         const rm = await RouteManager.getInstance();
-        return { result: await rm.testRoute(ip, src || undefined) };
+        return { result: await rm.testRoute(ip, src || undefined, mark) };
       }))
 
       /**

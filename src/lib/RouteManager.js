@@ -222,16 +222,26 @@ class RouteManager {
    * Парсит текстовый вывод (без -j).
    * Пример: "10.8.0.5 dev wg0 src 10.8.0.1 uid 0"
    */
-  async testRoute(ip, srcIp) {
+  async testRoute(ip, srcIp, mark) {
     if (!ip || !/^[\d.a-fA-F:]+$/.test(ip)) {
       throw createError({ status: 400, message: 'Invalid IP address' });
     }
     if (srcIp && !/^[\d.a-fA-F:]+$/.test(srcIp)) {
       throw createError({ status: 400, message: 'Invalid source IP address' });
     }
-    const cmd = srcIp
-      ? `ip route get ${ip} from ${srcIp}`
-      : `ip route get ${ip}`;
+    if (mark !== undefined && (isNaN(mark) || mark < 0)) {
+      throw createError({ status: 400, message: 'Invalid firewall mark' });
+    }
+    // mark и from — взаимоисключающие: mark симулирует PBR (netfilter mark уже выставлен),
+    // from симулирует конкретный source IP. Объединять нельзя — разная семантика.
+    let cmd;
+    if (mark !== undefined) {
+      cmd = `ip route get ${ip} mark ${mark}`;
+    } else if (srcIp) {
+      cmd = `ip route get ${ip} from ${srcIp}`;
+    } else {
+      cmd = `ip route get ${ip}`;
+    }
     const out = await Util.exec(cmd, { timeout: 5000 });
     if (!out) return null;
     // ip route get возвращает одну строку (или несколько, если есть nexthop)

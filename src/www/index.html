@@ -2460,11 +2460,18 @@
                     class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm"
                     style="min-width:180px;">
                     <option value="">Default (system)</option>
-                    <optgroup label="Tunnel interfaces" v-if="tunnelInterfaces.length">
+                    <optgroup label="Tunnel interfaces (source IP)" v-if="tunnelInterfaces.length">
                       <option v-for="iface in tunnelInterfaces" :key="iface.id"
                         :value="iface.address ? iface.address.split('/')[0] : ''">
                         {{ iface.name || iface.id }}
                         <template v-if="iface.address"> ({{ iface.address.split('/')[0] }})</template>
+                      </option>
+                    </optgroup>
+                    <optgroup label="PBR rules — tests fwmark policy routing"
+                      v-if="firewallRules.filter(r => r.fwmark && r.enabled).length">
+                      <option v-for="rule in firewallRules.filter(r => r.fwmark && r.enabled)"
+                        :key="rule.id" :value="'mark:' + rule.fwmark">
+                        {{ rule.name }} (mark {{ rule.fwmark }})
                       </option>
                     </optgroup>
                   </select>
