@@ -506,6 +506,121 @@ class FirewallManager {
     return [...this._rules].sort((a, b) => a.order - b.order);
   }
 
+  // ─── Policy Trace ──────────────────────────────────────────────────────────
+
+  /**
+   * Симулировать PBR-решение для пары (srcIP, dstIP).
+   *
+   * Проходит по enabled PBR-правилам (r.fwmark != null) в порядке order.
+   * Для каждого правила проверяет совпадение source и destination.
+   * Возвращает первое совпавшее правило (или null).
+   *
+   * @param {string} srcIP
+   * @param {string} dstIP
+   * @returns {Promise<{ matchedRule: object|null, steps: object[] }>}
+   */
+  async simulateTrace(srcIP, dstIP) {
+    const steps  = [];
+    const sorted = [...this._rules]
+      .filter(r => r.enabled && r.fwmark)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    for (const rule of sorted) {
+      const srcMatch = await this._matchEndpoint(rule.source, srcIP);
+      const dstMatch = await this._matchEndpoint(rule.destination, dstIP);
+      const matched  = srcMatch && dstMatch;
+      steps.push({ id: rule.id, name: rule.name, fwmark: rule.fwmark, srcMatch, dstMatch, matched });
+      if (matched) {
+        return {
+          matchedRule: { id: rule.id, name: rule.name, fwmark: rule.fwmark },
+          steps,
+        };
+      }
+    }
+    return { matchedRule: null, steps };
+  }
+
+  /**
+   * Проверить, совпадает ли IP с endpoint-условием правила.
+   * @param {object} ep  - { type, aliasId?, value?, invert }
+   * @param {string} ip
+   * @returns {Promise<boolean>}
+   */
+  async _matchEndpoint(ep, ip) {
+    if (!ep || ep.type === 'any') return true;
+
+    let rawMatch = false;
+    if (ep.type === 'cidr') {
+      rawMatch = this._ipInCidr(ip, ep.value);
+    } else if (ep.type === 'alias') {
+      rawMatch = await this._matchAlias(ep.aliasId, ip);
+    }
+
+    return ep.invert ? !rawMatch : rawMatch;
+  }
+
+  /**
+   * Проверить вхождение IP в алиас (CIDR-список или ipset).
+   * @param {string} aliasId
+   * @param {string} ip
+   * @returns {Promise<boolean>}
+   */
+  async _matchAlias(aliasId, ip) {
+    let spec;
+    try {
+      spec = this._aliasMgr.getMatchSpec(aliasId);
+    } catch {
+      return false; // алиас удалён
+    }
+    if (spec.type === 'ipset') {
+      return this._ipsetTest(spec.name, ip);
+    }
+    return (spec.entries || []).some(cidr => this._ipInCidr(ip, cidr));
+  }
+
+  /**
+   * Проверить членство IP в kernel ipset.
+   * exit 0 → в сете, non-zero → нет.
+   * @param {string} setName
+   * @param {string} ip
+   * @returns {Promise<boolean>}
+   */
+  async _ipsetTest(setName, ip) {
+    try {
+      await Util.exec(`ipset test ${setName} ${ip}`, { log: false, timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Проверить вхождение IPv4-адреса в CIDR.
+   * @param {string} ip
+   * @param {string} cidr
+   * @returns {boolean}
+   */
+  _ipInCidr(ip, cidr) {
+    try {
+      if (!cidr || !ip) return false;
+      if (!cidr.includes('/')) return ip === cidr;
+      const [network, bitsStr] = cidr.split('/');
+      const bits = parseInt(bitsStr, 10);
+      if (isNaN(bits) || bits < 0 || bits > 32) return false;
+      const mask   = bits === 0 ? 0 : (~((1 << (32 - bits)) - 1)) >>> 0;
+      const ipInt  = this._ipToInt(ip);
+      const netInt = this._ipToInt(network);
+      return (ipInt & mask) === (netInt & mask);
+    } catch {
+      return false;
+    }
+  }
+
+  /** IPv4 → uint32 */
+  _ipToInt(ip) {
+    return ip.split('.').reduce((acc, octet) => ((acc << 8) + parseInt(octet, 10)) >>> 0, 0);
+  }
+
   /** Список сетевых интерфейсов хоста (для выбора в UI). */
   async getNetworkInterfaces() {
     try {

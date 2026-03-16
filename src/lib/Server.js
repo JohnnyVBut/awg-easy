@@ -18,7 +18,6 @@ const NatManager = require('./NatManager');
 const AliasManager = require('./AliasManager');
 const IpsetManager = require('./IpsetManager');
 const FirewallManager = require('./FirewallManager');
-const PolicyManager = require('./PolicyManager');
 const Settings = require('./Settings');
 const AwgParamGenerator = require('./AwgParamGenerator');
 const Util = require('./Util');
@@ -1402,8 +1401,8 @@ module.exports = class Server {
         const rm  = await RouteManager.getInstance();
 
         if (src && ip) {
-          const pm = await PolicyManager.getInstance();
-          const { matchedRule, steps } = await pm.simulateTrace(src, ip);
+          const fm = await FirewallManager.getInstance();
+          const { matchedRule, steps } = await fm.simulateTrace(src, ip);
           const result = await rm.testRoute(ip, undefined, matchedRule ? matchedRule.fwmark : undefined);
           return { result, matchedRule, steps };
         }
