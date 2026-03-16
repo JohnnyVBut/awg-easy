@@ -247,6 +247,7 @@ class RouteManager {
       if (k === 'via')   { result.gateway = v; i++; }
       if (k === 'dev')   { result.dev = v; i++; }
       if (k === 'src')   { result.prefsrc = v; i++; }
+      if (k === 'from')  { result.prefsrc = v; i++; }  // 'ip route get X from Y' → output includes 'from Y' instead of 'src Y'
       if (k === 'proto') { result.protocol = v; i++; }
       if (k === 'table') { result.table = v; i++; }
     }
