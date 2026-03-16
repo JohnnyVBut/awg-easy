@@ -502,7 +502,9 @@ GET /api/tunnel-interfaces/:id/export-obfuscation         ← AWG2 params JSON
 
 GET    /api/routing/table          ← kernel routes (по таблице, default=main)
 GET    /api/routing/tables         ← список routing tables (из ip rule show)
-GET    /api/routing/test           ← route test: { ip } → { via, dev, src, ... }
+GET    /api/routing/test           ← route test: { ip[, src] } → { result, matchedRule, steps }
+                                    если src указан: simulateTrace (FirewallManager PBR rules) →
+                                    matchedRule: { id, name, fwmark } | null
 GET    /api/routing/routes         ← статические маршруты (из routes.json)
 POST   /api/routing/routes         ← создать { destination, via, dev, metric, table, ... }
 PATCH  /api/routing/routes/:id     ← обновить | toggle: { enabled: bool }
@@ -625,11 +627,11 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
-**Последний коммит:** `c722be5` feat(nat): alias support in NAT rules source field
+**Последний коммит:** `586a515` fix(routing): simulateTrace uses FirewallManager (not PolicyManager)
 
 **Что готово (протестировано на production):**
 - Interfaces: CRUD, start/stop, peers, S2S interconnect, dashboard
-- Routing: static routes + status + kernel route test
+- Routing: static routes + status + policy-aware Route Lookup (src→dst + PBR trace)
 - NAT: Outbound MASQUERADE/SNAT CRUD + alias source + auto правила от интерфейсов
 - Gateways: CRUD + live ping/HTTP monitoring + Gateway Groups + fallback при down
 - Firewall Aliases: host/network/ipset/group + L4 port/port-group + upload + generate (RIPE)
@@ -653,12 +655,13 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | PATCH /api/tunnel-interfaces/:id | ✅ | hot-reload через syncconf, без даунтайма |
 | RouteManager: getKernelRoutes (text parse) | ✅ TESTED | ip route show (без -j), работает на всех ядрах |
 | RouteManager: getRoutingTables (ip rule show) | ✅ TESTED | обнаруживает хостовые таблицы (table 100 vpn_kz) |
-| RouteManager: testRoute (text parse) | ✅ | ip route get, без -j |
+| RouteManager: testRoute (text parse) | ✅ TESTED | ip route get [mark N], без -j |
+| FirewallManager: simulateTrace(srcIP, dstIP) | ✅ TESTED | проходит по PBR правилам (fwmark, order), ipset test + CIDR |
 | RouteManager: addRoute/deleteRoute/toggleRoute | ✅ | персистентность в routes.json, HTTP 400 с деталью ошибки |
 | RouteManager: restoreAll() + reapplyForDevice() | ✅ | маршруты восстанавливаются после рестарта контейнера |
 | Routing API: GET /api/routing/table | ✅ | kernel routes по таблице |
 | Routing API: GET /api/routing/tables | ✅ | список таблиц |
-| Routing API: GET /api/routing/test | ✅ | route get |
+| Routing API: GET /api/routing/test | ✅ TESTED | policy-aware: src+dst → simulateTrace → PBR или default |
 | Routing API: GET/POST/PATCH/DELETE /api/routing/routes | ✅ | static routes CRUD |
 | NatManager: addRule/updateRule/deleteRule/toggleRule | ✅ | персистентность в nat-rules.json |
 | NatManager: idempotent _applyRule (-C check) | ✅ | дубли не создаются при рестарте контейнера |
@@ -711,7 +714,7 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | Settings: Global Settings + AWG2 Templates | ✅ | |
 | AWG2 дропдаун доступен сразу после логина | ✅ | fix: loadSettings() в login() |
 | Administration: Admin Tunnel (старый Clients) | ✅ | |
-| Routing: Status tab (kernel routes + route test) | ✅ TESTED | работает на Москве и КЗ |
+| Routing: Status tab (kernel routes + route test) | ✅ TESTED | policy-aware Route Lookup: src→dst, PBR match + ipset test, протестировано на КЗ |
 | Routing: Static tab (CRUD + toggle) | ✅ | персистентность в routes.json |
 | Routing: OSPF tab | ⏳ | placeholder "Coming soon" |
 | Routing: таблица 100 в дропдауне | ✅ TESTED | обнаруживается через ip rule show |
