@@ -1388,11 +1388,13 @@ module.exports = class Server {
        * Тест: ip route get <ip>
        */
       .get('/api/routing/test', defineEventHandler(async (event) => {
-        const ip = event.node.req.url.includes('?')
-          ? new URLSearchParams(event.node.req.url.split('?')[1]).get('ip') || ''
-          : '';
+        const qs = event.node.req.url.includes('?')
+          ? new URLSearchParams(event.node.req.url.split('?')[1])
+          : new URLSearchParams();
+        const ip  = qs.get('ip')  || '';
+        const src = qs.get('src') || '';
         const rm = await RouteManager.getInstance();
-        return { result: await rm.testRoute(ip) };
+        return { result: await rm.testRoute(ip, src || undefined) };
       }))
 
       /**

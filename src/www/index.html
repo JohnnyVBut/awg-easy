@@ -2446,16 +2446,36 @@
             <!-- Route Lookup card -->
             <div class="bg-white dark:bg-neutral-800 rounded-lg shadow-sm" style="padding:20px 24px;">
               <h3 class="font-semibold dark:text-neutral-200 mb-2">Route Lookup</h3>
-              <div class="flex gap-2 items-center">
-                <input v-model="routeTestIp" type="text" placeholder="e.g. 8.8.8.8"
-                  @keyup.enter="testRoute"
-                  class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm"
-                  style="width:200px;" />
-                <button @click="testRoute" :disabled="routeTestLoading"
-                  class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium transition"
-                  style="min-width:70px;">
-                  {{ routeTestLoading ? '...' : 'Test' }}
-                </button>
+              <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
+                <div style="display:flex; flex-direction:column; gap:3px;">
+                  <label class="text-xs text-gray-500 dark:text-neutral-400">Destination</label>
+                  <input v-model="routeTestIp" type="text" placeholder="e.g. 8.8.8.8"
+                    @keyup.enter="testRoute"
+                    class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm"
+                    style="width:180px;" />
+                </div>
+                <div style="display:flex; flex-direction:column; gap:3px;">
+                  <label class="text-xs text-gray-500 dark:text-neutral-400">Source</label>
+                  <select v-model="routeTestSrc"
+                    class="border border-gray-300 dark:bg-neutral-700 dark:border-neutral-500 dark:text-neutral-100 rounded px-3 py-2 text-sm"
+                    style="min-width:180px;">
+                    <option value="">Default (system)</option>
+                    <optgroup label="Tunnel interfaces" v-if="tunnelInterfaces.length">
+                      <option v-for="iface in tunnelInterfaces" :key="iface.id"
+                        :value="iface.address ? iface.address.split('/')[0] : ''">
+                        {{ iface.name || iface.id }}
+                        <template v-if="iface.address"> ({{ iface.address.split('/')[0] }})</template>
+                      </option>
+                    </optgroup>
+                  </select>
+                </div>
+                <div style="display:flex; flex-direction:column; justify-content:flex-end; padding-top:18px;">
+                  <button @click="testRoute" :disabled="routeTestLoading"
+                    class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium transition"
+                    style="min-width:70px;">
+                    {{ routeTestLoading ? '...' : 'Test' }}
+                  </button>
+                </div>
               </div>
 
               <!-- Test result -->

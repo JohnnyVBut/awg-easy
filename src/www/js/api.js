@@ -594,11 +594,11 @@ class API {
     });
   }
 
-  async testRoute(ip) {
-    return this.call({
-      method: 'get',
-      path: `/routing/test?ip=${encodeURIComponent(ip)}`,
-    });
+  async testRoute(ip, src) {
+    const qs = src
+      ? `ip=${encodeURIComponent(ip)}&src=${encodeURIComponent(src)}`
+      : `ip=${encodeURIComponent(ip)}`;
+    return this.call({ method: 'get', path: `/routing/test?${qs}` });
   }
 
   async getStaticRoutes() {

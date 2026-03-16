@@ -222,11 +222,17 @@ class RouteManager {
    * Парсит текстовый вывод (без -j).
    * Пример: "10.8.0.5 dev wg0 src 10.8.0.1 uid 0"
    */
-  async testRoute(ip) {
+  async testRoute(ip, srcIp) {
     if (!ip || !/^[\d.a-fA-F:]+$/.test(ip)) {
       throw createError({ status: 400, message: 'Invalid IP address' });
     }
-    const out = await Util.exec(`ip route get ${ip}`, { timeout: 5000 });
+    if (srcIp && !/^[\d.a-fA-F:]+$/.test(srcIp)) {
+      throw createError({ status: 400, message: 'Invalid source IP address' });
+    }
+    const cmd = srcIp
+      ? `ip route get ${ip} from ${srcIp}`
+      : `ip route get ${ip}`;
+    const out = await Util.exec(cmd, { timeout: 5000 });
     if (!out) return null;
     // ip route get возвращает одну строку (или несколько, если есть nexthop)
     // Берём первую значимую строку

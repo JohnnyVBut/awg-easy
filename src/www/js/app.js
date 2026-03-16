@@ -260,6 +260,7 @@ new Vue({
     kernelRoutesLoading: false,
     staticRoutes: [],
     routeTestIp: '',
+    routeTestSrc: '',          // '' = default, IP-адрес интерфейса при выборе из дропдауна
     routeTestResult: null,
     routeTestLoading: false,
     routeTestError: '',
@@ -1373,7 +1374,7 @@ new Vue({
       this.routeTestResult = null;
       this.routeTestError = '';
       try {
-        const res = await this.api.testRoute(this.routeTestIp);
+        const res = await this.api.testRoute(this.routeTestIp, this.routeTestSrc || undefined);
         this.routeTestResult = res.result;
       } catch (err) {
         this.routeTestError = err.message || 'Error';
