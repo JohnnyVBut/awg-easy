@@ -299,6 +299,17 @@ ALTER TABLE firewall_rules ADD COLUMN log              INTEGER NOT NULL DEFAULT 
 ALTER TABLE firewall_rules ADD COLUMN comment          TEXT    NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 6,
+		sql: `
+-- Add missing columns to peers table (present in Peer.js model but absent from v1 schema).
+ALTER TABLE peers ADD COLUMN endpoint       TEXT NOT NULL DEFAULT '';
+ALTER TABLE peers ADD COLUMN address        TEXT NOT NULL DEFAULT '';  -- tunnel IP with iface mask
+ALTER TABLE peers ADD COLUMN updated_at     TEXT NOT NULL DEFAULT '';
+ALTER TABLE peers ADD COLUMN expired_at     TEXT NOT NULL DEFAULT '';  -- '' = no expiry
+ALTER TABLE peers ADD COLUMN one_time_link  TEXT NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func runMigrations(db *sql.DB) error {
