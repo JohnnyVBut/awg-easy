@@ -74,17 +74,9 @@ func main() {
 		}))
 	}
 
-	// ── Static files (embed.FS) ───────────────────────────────────────────────
-	// Frontend is embedded into the binary at compile time via //go:embed.
-	// No external files needed at runtime — binary is fully self-contained.
-	app.Use("/", filesystem.New(filesystem.Config{
-		Root:         frontend.FS(),
-		Index:        "index.html",
-		Browse:       false,
-		NotFoundFile: "index.html", // SPA fallback: unknown paths → index.html
-	}))
-
 	// ── API routes ────────────────────────────────────────────────────────────
+	// Must be registered BEFORE the static middleware so /api/* requests are
+	// handled by the API handlers and not swallowed by the SPA fallback.
 	apiGroup := app.Group("/api")
 
 	// ── Unprotected routes (health + auth) ───────────────────────────────────
@@ -115,6 +107,17 @@ func main() {
 	api.RegisterAliases(apiGroup)
 	api.RegisterFirewall(apiGroup)
 	api.RegisterGateways(apiGroup)
+
+	// ── Static files (embed.FS) ───────────────────────────────────────────────
+	// Registered AFTER all /api/* routes so the SPA fallback (index.html) does
+	// not intercept API requests.
+	// Frontend is embedded into the binary at compile time — no disk files needed.
+	app.Use("/", filesystem.New(filesystem.Config{
+		Root:         frontend.FS(),
+		Index:        "index.html",
+		Browse:       false,
+		NotFoundFile: "index.html", // unknown paths → SPA, Vue handles routing
+	}))
 
 	// ── Manager initialisation (FIX-13: strict order) ─────────────────────────
 	//
