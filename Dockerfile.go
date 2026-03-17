@@ -6,9 +6,12 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Download dependencies first (cached layer)
-COPY go.mod go.sum ./
-RUN go mod download
+# Download dependencies.
+# go.sum генерируется автоматически при первой сборке (go mod tidy).
+# Если go.sum уже есть в репозитории — он будет скопирован и использован как lock-file.
+COPY go.mod ./
+COPY go.sum* ./
+RUN go mod tidy
 
 # Copy source and build
 # CGO_ENABLED=0: fully static binary, no libc dependency

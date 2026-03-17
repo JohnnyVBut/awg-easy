@@ -1,9 +1,9 @@
 version: '3'
 
 services:
-  awg-easy:
+  awg-router:
     image: awg2-easy-go:latest
-    container_name: awg-easy
+    container_name: awg-router
     restart: unless-stopped
 
     environment:
