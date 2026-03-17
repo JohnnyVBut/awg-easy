@@ -1,0 +1,60 @@
+# ============================================================
+# AWG-Easy 3.0 — Go/Fiber build
+# ============================================================
+# Stage 1: Build Go binary
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /app
+
+# Download dependencies first (cached layer)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build
+# CGO_ENABLED=0: fully static binary, no libc dependency
+# -ldflags="-s -w": strip debug symbols → smaller binary
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY www/ ./www/
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w" \
+    -o awg-easy \
+    ./cmd/awg-easy
+
+# ============================================================
+# Stage 2: Runtime image
+# Base: amneziawg-go (has awg-quick, awg, wg-quick, wg tools)
+# ============================================================
+FROM amneziavpn/amneziawg-go:latest
+
+HEALTHCHECK --interval=1m --timeout=5s --retries=3 \
+    CMD /usr/bin/timeout 5s /bin/sh -c "/usr/bin/wg show | /bin/grep -q interface || exit 1"
+
+# Switch to Yandex mirror (faster from RU/CIS)
+RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirror.yandex.ru/mirrors|g' /etc/apk/repositories
+
+# Runtime dependencies:
+# - dumb-init: proper PID 1 signal handling
+# - iptables / iptables-legacy: firewall management
+# - iproute2: ip route/rule commands
+# - ipset: alias ipsets for firewall rules
+# NOTE: no node, no libstdc++, no libgcc — Go binary is static
+RUN apk add --no-cache \
+    dumb-init \
+    iptables \
+    iptables-legacy \
+    iproute2 \
+    ipset
+
+# Use iptables-nft (same as feature/kernel-module branch)
+RUN update-alternatives --install /sbin/iptables iptables /sbin/iptables-legacy 10 \
+    --slave /sbin/iptables-restore iptables-restore /sbin/iptables-legacy-restore \
+    --slave /sbin/iptables-save iptables-save /sbin/iptables-legacy-save
+
+# Copy the static Go binary from build stage
+COPY --from=builder /app/awg-easy /usr/local/bin/awg-easy
+
+# Data directory (mapped via volume in docker-compose)
+RUN mkdir -p /etc/wireguard/data
+
+CMD ["/usr/bin/dumb-init", "awg-easy", "--data-dir", "/etc/wireguard/data"]
