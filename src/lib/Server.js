@@ -1403,11 +1403,24 @@ module.exports = class Server {
         if (src && ip) {
           const fm = await FirewallManager.getInstance();
           const { matchedRule, steps } = await fm.simulateTrace(src, ip);
-          const result = await rm.testRoute(ip, undefined, matchedRule?.fwmark || undefined);
+          let result;
+          try {
+            result = await rm.testRoute(ip, undefined, matchedRule?.fwmark || undefined);
+          } catch (err) {
+            const detail = (err.stderr || err.message || '').trim();
+            throw createError({ status: 400, message: `ip route: ${detail}` });
+          }
           return { result, matchedRule, steps };
         }
 
-        return { result: await rm.testRoute(ip), matchedRule: null, steps: [] };
+        let result;
+        try {
+          result = await rm.testRoute(ip);
+        } catch (err) {
+          const detail = (err.stderr || err.message || '').trim();
+          throw createError({ status: 400, message: `ip route: ${detail}` });
+        }
+        return { result, matchedRule: null, steps: [] };
       }))
 
       /**
