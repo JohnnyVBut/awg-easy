@@ -13,8 +13,11 @@ services:
       # Web UI password (bcrypt hash)
       - PASSWORD_HASH=$$2y$$05$$abcdefghijklmnopqrstuv
 
-      # Web UI port (default: 51821)
-      - PORT=51821
+      # Web UI port (TCP)
+      - PORT=8888
+
+      # Default WireGuard/AWG listen port (UDP) — используется при создании интерфейсов
+      - WG_PORT=555
 
       # Debug logging
       - DEBUG=true

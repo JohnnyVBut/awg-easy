@@ -22,8 +22,9 @@ import (
 // Flag takes priority over ENV (standard Go service pattern).
 type Config struct {
 	DataDir      string // --data-dir / DATA_DIR
-	Port         int    // --port / PORT
-	Host         string // --host / WG_HOST  (required)
+	Port         int    // --port / PORT         (TCP, Web UI)
+	WGPort       int    // --wg-port / WG_PORT   (UDP, WireGuard default)
+	Host         string // --host / WG_HOST      (required)
 	PasswordHash string // --password-hash / PASSWORD_HASH
 	Debug        bool   // --debug / DEBUG
 }
@@ -99,8 +100,8 @@ func main() {
 
 	// ── Start ─────────────────────────────────────────────────────────────────
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("AWG-Easy 3.0 | host=%s | port=%d | data=%s | debug=%v",
-		cfg.Host, cfg.Port, cfg.DataDir, cfg.Debug)
+	log.Printf("AWG-Easy 3.0 | host=%s | port=%d (tcp) | wg-port=%d (udp) | data=%s | debug=%v",
+		cfg.Host, cfg.Port, cfg.WGPort, cfg.DataDir, cfg.Debug)
 
 	// Запуск в горутине чтобы не блокировать graceful shutdown ниже.
 	go func() {
@@ -131,8 +132,12 @@ func parseConfig() Config {
 		"Path to data directory (JSON storage)")
 
 	flag.IntVar(&cfg.Port, "port",
-		envInt("PORT", 51821),
-		"Web UI listen port")
+		envInt("PORT", 8888),
+		"Web UI listen port (TCP)")
+
+	flag.IntVar(&cfg.WGPort, "wg-port",
+		envInt("WG_PORT", 555),
+		"Default WireGuard/AWG listen port (UDP) for new interfaces")
 
 	flag.StringVar(&cfg.Host, "host",
 		envStr("WG_HOST", ""),
