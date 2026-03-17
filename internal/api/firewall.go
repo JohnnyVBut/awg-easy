@@ -39,10 +39,15 @@ func getFirewallInterfaces(c *fiber.Ctx) error {
 }
 
 // GET /api/firewall/rules
+// Frontend does: Array.isArray(res) ? res : (res.rules || [])
+// Return a bare (non-nil) array so Array.isArray passes and no TypeError on nil.
 func getFirewallRules(c *fiber.Ctx) error {
 	rules, err := firewall.Get().GetRules()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if rules == nil {
+		rules = []firewall.Rule{}
 	}
 	return c.JSON(rules)
 }

@@ -46,12 +46,16 @@ func RegisterGateways(api fiber.Router) {
 
 // GET /api/gateways
 // Returns all gateways with live monitoring status (latency, packet loss, HTTP).
+// Wrapped as { gateways: [...] } because the frontend does `res.gateways || []`.
 func listGateways(c *fiber.Ctx) error {
 	gws, err := gateway.Get().GetAllGatewaysWithStatus()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(gws)
+	if gws == nil {
+		gws = []gateway.GatewayWithStatus{}
+	}
+	return c.JSON(fiber.Map{"gateways": gws})
 }
 
 // GET /api/gateways/:id
@@ -104,12 +108,16 @@ func deleteGateway(c *fiber.Ctx) error {
 // ── Gateway group handlers ─────────────────────────────────────────────────────
 
 // GET /api/gateway-groups
+// Wrapped as { groups: [...] } because the frontend does `res.groups || []`.
 func listGatewayGroups(c *fiber.Ctx) error {
 	groups, err := gateway.Get().GetGroups()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(groups)
+	if groups == nil {
+		groups = []gateway.GatewayGroup{}
+	}
+	return c.JSON(fiber.Map{"groups": groups})
 }
 
 // GET /api/gateway-groups/:id

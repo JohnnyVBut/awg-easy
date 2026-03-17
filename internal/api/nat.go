@@ -38,12 +38,16 @@ func getNatInterfaces(c *fiber.Ctx) error {
 
 // GET /api/nat/rules
 // Returns all NAT rules including auto-rules from tunnel interfaces (read-only badges).
+// Wrapped as { rules: [...] } because the frontend does `res.rules || []`.
 func getNatRules(c *fiber.Ctx) error {
 	rules, err := nat.Get().GetRules()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(rules)
+	if rules == nil {
+		rules = []nat.NatRule{}
+	}
+	return c.JSON(fiber.Map{"rules": rules})
 }
 
 // POST /api/nat/rules

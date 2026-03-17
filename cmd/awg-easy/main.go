@@ -91,6 +91,9 @@ func main() {
 	// Session login/logout — intentionally not behind AuthMiddleware.
 	api.RegisterAuth(apiGroup)
 
+	// Legacy shims that are safe without auth (lang, release, feature flags).
+	api.RegisterCompat(apiGroup)
+
 	// ── Auth gate — all routes below require authentication ───────────────────
 	apiGroup.Use(api.AuthMiddleware)
 
@@ -107,6 +110,9 @@ func main() {
 	api.RegisterAliases(apiGroup)
 	api.RegisterFirewall(apiGroup)
 	api.RegisterGateways(apiGroup)
+
+	// Legacy shims that require auth (old wireguard/client list → empty array).
+	api.RegisterCompatAuth(apiGroup)
 
 	// ── Static files (embed.FS) ───────────────────────────────────────────────
 	// Registered AFTER all /api/* routes so the SPA fallback (index.html) does
