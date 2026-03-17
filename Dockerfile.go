@@ -1,27 +1,34 @@
 # ============================================================
 # AWG-Easy 3.0 — Go/Fiber build
 # ============================================================
+# syntax=docker/dockerfile:1.4
 # Stage 1: Build Go binary
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
 # Download dependencies.
-# go mod tidy без исходников удаляет все зависимости — использовать нельзя.
-# go get скачивает пакет и все транзитивные зависимости, создаёт go.sum.
-# После первой сборки go.sum можно закоммитить для воспроизводимых сборок.
+# go get скачивает пакеты и создаёт go.sum без исходников.
+# BuildKit cache mount: /root/go/pkg/mod кэшируется между сборками →
+# повторная сборка без изменений в go.mod занимает секунды, не минуты.
 COPY go.mod ./
-RUN go get github.com/gofiber/fiber/v2@v2.52.5 && \
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go get github.com/gofiber/fiber/v2@v2.52.5 && \
     go get modernc.org/sqlite@v1.33.1 && \
     go get github.com/google/uuid@v1.6.0
 
-# Copy source and build
-# CGO_ENABLED=0: fully static binary, no libc dependency
-# -ldflags="-s -w": strip debug symbols → smaller binary
+# Copy source and build.
+# CGO_ENABLED=0: fully static binary, no libc dependency.
+# -ldflags="-s -w": strip debug symbols → smaller binary.
+# BuildKit cache mount: go build cache сохраняется → только изменённые
+# пакеты перекомпилируются. modernc.org/sqlite (~380s) кэшируется после первой сборки.
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY www/ ./www/
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" \
     -o awg-easy \
     ./cmd/awg-easy
@@ -53,7 +60,6 @@ RUN apk add --no-cache \
 
 # Use iptables-legacy as default iptables.
 # Alpine не имеет update-alternatives (это команда dpkg/Debian).
-# Используем ln -sf напрямую.
 RUN ln -sf /sbin/iptables-legacy         /sbin/iptables && \
     ln -sf /sbin/iptables-legacy-restore /sbin/iptables-restore && \
     ln -sf /sbin/iptables-legacy-save    /sbin/iptables-save
