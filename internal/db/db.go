@@ -275,6 +275,19 @@ DROP TABLE routes;
 ALTER TABLE routes_new RENAME TO routes;
 `,
 	},
+	{
+		version: 4,
+		sql: `
+-- Add missing columns to gateways table (present in Gateway.js model but absent from v1 schema).
+ALTER TABLE gateways ADD COLUMN monitor           INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE gateways ADD COLUMN latency_threshold INTEGER NOT NULL DEFAULT 500;
+ALTER TABLE gateways ADD COLUMN monitor_rule      TEXT    NOT NULL DEFAULT 'icmp_only';
+ALTER TABLE gateways ADD COLUMN description       TEXT    NOT NULL DEFAULT '';
+
+-- Add description to gateway_groups.
+ALTER TABLE gateway_groups ADD COLUMN description TEXT NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func runMigrations(db *sql.DB) error {
