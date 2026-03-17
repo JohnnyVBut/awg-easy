@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/JohnnyVBut/awg-easy/internal/awgparams"
 	"github.com/JohnnyVBut/awg-easy/internal/settings"
 )
 
@@ -71,12 +72,54 @@ func RegisterSettings(api fiber.Router) {
 		return c.JSON(fiber.Map{"templates": list})
 	})
 
-	// POST /api/templates/generate — generate AWG2 params (stub)
+	// POST /api/templates/generate — generate AWG2 obfuscation params
 	// Registered BEFORE /:id routes so Fiber doesn't interpret "generate" as an id.
-	// Will be implemented when AwgParamGenerator is ported (module 4).
+	// Body: { profile?, intensity?, host?, iterCount?, jc?, saveName? }
+	// Returns: { params, profiles } | { params, profiles, template } if saveName provided
 	api.Post("/templates/generate", func(c *fiber.Ctx) error {
-		return fiber.NewError(fiber.StatusNotImplemented,
-			"AwgParamGenerator not yet ported — coming in module 4")
+		var body struct {
+			Profile   string  `json:"profile"`
+			Intensity string  `json:"intensity"`
+			Host      string  `json:"host"`
+			IterCount int     `json:"iterCount"`
+			Jc        int     `json:"jc"`
+			SaveName  string  `json:"saveName"`
+		}
+		// Body is optional — ignore parse errors, use zero values → defaults
+		_ = c.BodyParser(&body)
+
+		params := awgparams.Generate(awgparams.Options{
+			Profile:   body.Profile,
+			Intensity: body.Intensity,
+			Host:      body.Host,
+			IterCount: body.IterCount,
+			Jc:        body.Jc,
+		})
+
+		if body.SaveName != "" {
+			tmpl, err := settings.CreateTemplate(settings.Template{
+				Name: body.SaveName,
+				Jc: params.Jc, Jmin: params.Jmin, Jmax: params.Jmax,
+				S1: params.S1, S2: params.S2, S3: params.S3, S4: params.S4,
+				H1: params.H1, H2: params.H2, H3: params.H3, H4: params.H4,
+				I1: params.I1, I2: params.I2, I3: params.I3, I4: params.I4, I5: params.I5,
+			})
+			if err != nil {
+				return fiber.NewError(fiber.StatusBadRequest, err.Error())
+			}
+			log.Printf("awgparams: generated + saved as %q (profile=%s)", body.SaveName, params.Profile)
+			return c.JSON(fiber.Map{
+				"params":   params,
+				"profiles": awgparams.Profiles,
+				"template": tmpl,
+			})
+		}
+
+		log.Printf("awgparams: generated profile=%s intensity=%s", params.Profile, body.Intensity)
+		return c.JSON(fiber.Map{
+			"params":   params,
+			"profiles": awgparams.Profiles,
+		})
 	})
 
 	// POST /api/templates — create new template
