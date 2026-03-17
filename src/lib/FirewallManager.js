@@ -191,11 +191,18 @@ class FirewallManager {
               .catch(err => debug(`Log rule: ${err.message}`));
           }
 
-          // Mangle MARK (для PBR правил)
+          // Mangle MARK (для PBR правил с gateway)
           if (rule.action === 'accept' && (rule.gatewayId || rule.gatewayGroupId)) {
             const mangleCmd = `iptables-nft -t mangle -A FIREWALL_MANGLE${matchFlags} -j MARK --set-mark ${rule.fwmark}`;
             await Util.exec(mangleCmd, { timeout: 10000 })
               .catch(err => debug(`Mangle rule: ${err.message}`));
+          }
+
+          // Mangle RETURN (для правил без gateway — предотвращает проставление fwmark последующими PBR-правилами)
+          if (!rule.gatewayId && !rule.gatewayGroupId) {
+            const mangleCmd = `iptables-nft -t mangle -A FIREWALL_MANGLE${matchFlags} -j RETURN`;
+            await Util.exec(mangleCmd, { timeout: 10000 })
+              .catch(err => debug(`Mangle RETURN rule: ${err.message}`));
           }
 
           // Filter action
@@ -509,11 +516,11 @@ class FirewallManager {
   // ─── Policy Trace ──────────────────────────────────────────────────────────
 
   /**
-   * Симулировать PBR-решение для пары (srcIP, dstIP).
+   * Симулировать решение маршрутизации для пары (srcIP, dstIP).
    *
-   * Проходит по enabled PBR-правилам (r.fwmark != null) в порядке order.
-   * Для каждого правила проверяет совпадение source и destination.
-   * Возвращает первое совпавшее правило (или null).
+   * Проходит по всем enabled правилам в порядке order (первое совпадение побеждает).
+   * Правила без gateway (fwmark=null) добавляют RETURN в mangle — они блокируют
+   * последующие PBR-правила и направляют трафик через default routing.
    *
    * @param {string} srcIP
    * @param {string} dstIP
@@ -522,17 +529,17 @@ class FirewallManager {
   async simulateTrace(srcIP, dstIP) {
     const steps  = [];
     const sorted = [...this._rules]
-      .filter(r => r.enabled && r.fwmark)
+      .filter(r => r.enabled)
       .sort((a, b) => (a.order || 0) - (b.order || 0));
 
     for (const rule of sorted) {
       const srcMatch = await this._matchEndpoint(rule.source, srcIP);
       const dstMatch = await this._matchEndpoint(rule.destination, dstIP);
       const matched  = srcMatch && dstMatch;
-      steps.push({ id: rule.id, name: rule.name, fwmark: rule.fwmark, srcMatch, dstMatch, matched });
+      steps.push({ id: rule.id, name: rule.name, fwmark: rule.fwmark || null, srcMatch, dstMatch, matched });
       if (matched) {
         return {
-          matchedRule: { id: rule.id, name: rule.name, fwmark: rule.fwmark },
+          matchedRule: { id: rule.id, name: rule.name, fwmark: rule.fwmark || null },
           steps,
         };
       }
