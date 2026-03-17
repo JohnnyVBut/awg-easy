@@ -203,7 +203,7 @@ func (t *TunnelInterface) Delete() error {
 		return fmt.Errorf("delete interface %s: %w", t.ID, err)
 	}
 	// Config file is best-effort (may not exist if interface was never started).
-	_ = os.Remove(fmt.Sprintf("/etc/wireguard/%s.conf", t.ID))
+	_ = os.Remove(fmt.Sprintf("/etc/amnezia/amneziawg/%s.conf", t.ID))
 
 	log.Printf("tunnel: interface %s deleted", t.ID)
 	return nil
@@ -611,10 +611,17 @@ func (t *TunnelInterface) KernelRemovePeer(peerID string) {
 
 // ── Config generation ─────────────────────────────────────────────────────────
 
-// RegenerateConfig writes the wg-quick config to /etc/wireguard/<id>.conf (mode 0600).
+// confDir is the directory where wg-quick / awg-quick look for configs.
+// In the amneziavpn/amneziawg-go container image both binaries use this path.
+const confDir = "/etc/amnezia/amneziawg"
+
+// RegenerateConfig writes the wg-quick config to /etc/amnezia/amneziawg/<id>.conf (mode 0600).
 func (t *TunnelInterface) RegenerateConfig() error {
+	if err := os.MkdirAll(confDir, 0700); err != nil {
+		return fmt.Errorf("mkdir %s: %w", confDir, err)
+	}
 	config := t.generateWgConfig()
-	path := fmt.Sprintf("/etc/wireguard/%s.conf", t.ID)
+	path := fmt.Sprintf("%s/%s.conf", confDir, t.ID)
 	if err := os.WriteFile(path, []byte(config), 0600); err != nil {
 		return fmt.Errorf("write config %s: %w", path, err)
 	}
