@@ -341,7 +341,11 @@ type gatewayScanner interface {
 }
 
 func scanGateway(rows *sql.Rows) (Gateway, error) {
-	return scanGatewayRow(rows)
+	gw, err := scanGatewayRow(rows)
+	if err != nil || gw == nil {
+		return Gateway{}, err
+	}
+	return *gw, nil
 }
 
 func scanGatewayRow(s gatewayScanner) (*Gateway, error) {
