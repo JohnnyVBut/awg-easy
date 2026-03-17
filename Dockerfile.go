@@ -11,7 +11,9 @@ WORKDIR /app
 # go get скачивает пакет и все транзитивные зависимости, создаёт go.sum.
 # После первой сборки go.sum можно закоммитить для воспроизводимых сборок.
 COPY go.mod ./
-RUN go get github.com/gofiber/fiber/v2@v2.52.5
+RUN go get github.com/gofiber/fiber/v2@v2.52.5 && \
+    go get modernc.org/sqlite@v1.33.1 && \
+    go get github.com/google/uuid@v1.6.0
 
 # Copy source and build
 # CGO_ENABLED=0: fully static binary, no libc dependency

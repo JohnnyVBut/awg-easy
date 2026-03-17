@@ -16,6 +16,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	fiberlog "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+
+	"github.com/JohnnyVBut/awg-easy/internal/db"
 )
 
 // Config holds all runtime configuration resolved from flags and ENV.
@@ -73,6 +75,12 @@ func main() {
 			"host":    cfg.Host,
 		})
 	})
+
+	// ── Database ──────────────────────────────────────────────────────────────
+	if err := db.Init(cfg.DataDir); err != nil {
+		log.Fatalf("db init: %v", err)
+	}
+	defer db.Close()
 
 	// ── Manager initialization (FIX-13: строгий порядок) ─────────────────────
 	// TODO: раскомментировать по мере реализации модулей:
