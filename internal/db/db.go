@@ -288,6 +288,17 @@ ALTER TABLE gateways ADD COLUMN description       TEXT    NOT NULL DEFAULT '';
 ALTER TABLE gateway_groups ADD COLUMN description TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 5,
+		sql: `
+-- Add missing columns to firewall_rules table.
+-- JS model has fwmark, gatewayGroupId, log, comment which were absent from v1 schema.
+ALTER TABLE firewall_rules ADD COLUMN fwmark           INTEGER;           -- nullable, auto-assigned per PBR rule
+ALTER TABLE firewall_rules ADD COLUMN gateway_group_id TEXT    NOT NULL DEFAULT '';
+ALTER TABLE firewall_rules ADD COLUMN log              INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE firewall_rules ADD COLUMN comment          TEXT    NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func runMigrations(db *sql.DB) error {
