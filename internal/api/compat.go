@@ -29,9 +29,10 @@ func RegisterCompat(r fiber.Router) {
 	})
 
 	// GET /api/release — current release version integer.
-	// Stub: return 0 so the "new release available" banner never appears.
+	// Return a large sentinel so currentRelease >= latestRelease.version is
+	// always true and the "new release available" banner never appears.
 	r.Get("/release", func(c *fiber.Ctx) error {
-		return c.JSON(0)
+		return c.JSON(999999)
 	})
 
 	// GET /api/remember-me — whether the "remember me" checkbox is shown.
