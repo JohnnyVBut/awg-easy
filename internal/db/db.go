@@ -239,8 +239,18 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 `,
 	},
-	// Future migrations go here:
-	// { version: 2, sql: `ALTER TABLE interfaces ADD COLUMN ...` },
+	{
+		version: 2,
+		sql: `
+-- Add missing columns to aliases table (present in AliasManager.js model).
+-- SQLite does not support adding multiple columns in one ALTER TABLE statement.
+ALTER TABLE aliases ADD COLUMN description  TEXT    NOT NULL DEFAULT '';
+ALTER TABLE aliases ADD COLUMN member_ids   TEXT    NOT NULL DEFAULT '[]';
+ALTER TABLE aliases ADD COLUMN ipset_name   TEXT    NOT NULL DEFAULT '';
+ALTER TABLE aliases ADD COLUMN entry_count  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE aliases ADD COLUMN last_updated TEXT    NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func runMigrations(db *sql.DB) error {
