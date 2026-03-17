@@ -7,11 +7,11 @@ FROM golang:1.23-alpine AS builder
 WORKDIR /app
 
 # Download dependencies.
-# go.sum генерируется автоматически при первой сборке (go mod tidy).
-# Если go.sum уже есть в репозитории — он будет скопирован и использован как lock-file.
+# go mod tidy без исходников удаляет все зависимости — использовать нельзя.
+# go get скачивает пакет и все транзитивные зависимости, создаёт go.sum.
+# После первой сборки go.sum можно закоммитить для воспроизводимых сборок.
 COPY go.mod ./
-COPY go.sum* ./
-RUN go mod tidy
+RUN go get github.com/gofiber/fiber/v2@v2.52.5
 
 # Copy source and build
 # CGO_ENABLED=0: fully static binary, no libc dependency
