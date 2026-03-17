@@ -1,6 +1,5 @@
 // AWG-Easy 3.0 — Go/Fiber entry point.
-// Phase 1: HTTP skeleton + static file serving.
-// Managers (tunnel, routing, nat, firewall, gateway) are added module by module.
+// All managers are initialised in FIX-13 order before the HTTP server starts.
 package main
 
 import (
@@ -17,8 +16,15 @@ import (
 	fiberlog "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"github.com/JohnnyVBut/awg-easy/internal/aliases"
 	"github.com/JohnnyVBut/awg-easy/internal/api"
 	"github.com/JohnnyVBut/awg-easy/internal/db"
+	"github.com/JohnnyVBut/awg-easy/internal/firewall"
+	"github.com/JohnnyVBut/awg-easy/internal/gateway"
+	"github.com/JohnnyVBut/awg-easy/internal/ipset"
+	"github.com/JohnnyVBut/awg-easy/internal/nat"
+	"github.com/JohnnyVBut/awg-easy/internal/routing"
+	"github.com/JohnnyVBut/awg-easy/internal/tunnel"
 )
 
 // Config holds all runtime configuration resolved from flags and ENV.
@@ -35,21 +41,31 @@ type Config struct {
 func main() {
 	cfg := parseConfig()
 
+	// ── Database ──────────────────────────────────────────────────────────────
+	// Must be first: all managers depend on db.DB().
+	if err := db.Init(cfg.DataDir); err != nil {
+		log.Fatalf("db init: %v", err)
+	}
+	defer db.Close()
+
+	// ── Auth subsystem ────────────────────────────────────────────────────────
+	// Initialise before registering routes so middleware is ready.
+	api.InitAuth(cfg.PasswordHash)
+
+	// ── Fiber app + middleware ────────────────────────────────────────────────
 	app := fiber.New(fiber.Config{
 		AppName:               "AWG-Easy 3.0",
-		DisableStartupMessage: true, // мы сами печатаем стартовое сообщение
+		DisableStartupMessage: true,
 		ReadTimeout:           30 * time.Second,
 		WriteTimeout:          30 * time.Second,
 		IdleTimeout:           60 * time.Second,
 		ErrorHandler:          errorHandler,
 	})
 
-	// ── Middleware ────────────────────────────────────────────────────────────
-
-	// Panic recovery — превращает панику в HTTP 500 (не роняет сервер).
+	// Panic recovery — turns panics into HTTP 500 without crashing the server.
 	app.Use(recover.New())
 
-	// Request logging — только в debug режиме.
+	// Request logging — debug mode only.
 	if cfg.Debug {
 		app.Use(fiberlog.New(fiberlog.Config{
 			Format: "[${time}] ${method} ${path} → ${status} (${latency})\n",
@@ -57,10 +73,9 @@ func main() {
 	}
 
 	// ── Static files ──────────────────────────────────────────────────────────
-	// Serve frontend from www/ directory.
-	// Phase 2: заменить на embed.FS для ISO (полностью offline).
+	// Serve frontend from ./www directory.
 	app.Static("/", "./www", fiber.Static{
-		Compress: true,  // gzip для JS/CSS
+		Compress: true,
 		Index:    "index.html",
 		Browse:   false,
 	})
@@ -68,7 +83,7 @@ func main() {
 	// ── API routes ────────────────────────────────────────────────────────────
 	apiGroup := app.Group("/api")
 
-	// Healthcheck
+	// ── Unprotected routes (health + auth) ───────────────────────────────────
 	apiGroup.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
@@ -77,52 +92,79 @@ func main() {
 		})
 	})
 
-	// Settings + Templates
+	// Session login/logout — intentionally not behind AuthMiddleware.
+	api.RegisterAuth(apiGroup)
+
+	// ── Auth gate — all routes below require authentication ───────────────────
+	apiGroup.Use(api.AuthMiddleware)
+
+	// Settings + Templates (registered before other managers are ready, but
+	// settings package only needs db which is already initialised above).
 	api.RegisterSettings(apiGroup)
 
-	// TODO: по мере реализации модулей добавлять здесь:
-	// api.RegisterInterfaces(apiGroup)
-	// api.RegisterRouting(apiGroup)
-	// api.RegisterNat(apiGroup)
-	// api.RegisterFirewall(apiGroup)
-	// api.RegisterGateways(apiGroup)
+	// Remaining handlers are registered here; they call package-level Get()
+	// which is safe after SetInstance calls below.
+	api.RegisterInterfaces(apiGroup)
+	api.RegisterPeers(apiGroup)
+	api.RegisterRouting(apiGroup)
+	api.RegisterNat(apiGroup)
+	api.RegisterAliases(apiGroup)
+	api.RegisterFirewall(apiGroup)
+	api.RegisterGateways(apiGroup)
 
-	// ── Database ──────────────────────────────────────────────────────────────
-	if err := db.Init(cfg.DataDir); err != nil {
-		log.Fatalf("db init: %v", err)
-	}
-	defer db.Close()
-
-	// ── Manager initialization (FIX-13: строгий порядок) ─────────────────────
-	// TODO: раскомментировать по мере реализации модулей:
+	// ── Manager initialisation (FIX-13: strict order) ─────────────────────────
 	//
-	// if err := settings.Init(cfg.DataDir); err != nil {
-	//     log.Fatalf("settings init: %v", err)
-	// }
-	// if err := tunnel.InitInterfaceManager(cfg.DataDir); err != nil {
-	//     log.Fatalf("interface manager init: %v", err)
-	// }
-	// rm, err := routing.Init(cfg.DataDir)
-	// if err != nil { log.Fatalf("route manager init: %v", err) }
-	// if err := rm.RestoreAll(); err != nil {
-	//     log.Printf("route restore warning: %v", err)
-	// }
-	// if err := nat.Init(cfg.DataDir); err != nil {
-	//     log.Fatalf("nat manager init: %v", err)
-	// }
-	// if err := firewall.Init(cfg.DataDir); err != nil {
-	//     log.Fatalf("firewall init: %v", err)
-	// }
-	// if err := gateway.Init(cfg.DataDir); err != nil {
-	//     log.Fatalf("gateway init: %v", err)
-	// }
+	// Order: ipset/aliases/gateway/firewall are independent of wg interfaces.
+	// tunnel.Init brings up all wg interfaces synchronously.
+	// routing.RestoreAll and nat.RestoreAll are called AFTER tunnel.Init so that
+	// the wg interfaces exist before we add routes/NAT rules to them.
+	//
+	// 1. IpsetManager — no kernel ops, just data dir setup.
+	ipsetMgr, err := ipset.New(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("ipset init: %v", err)
+	}
 
-	// ── Start ─────────────────────────────────────────────────────────────────
+	// 2. AliasManager — depends on IpsetManager.
+	aliasMgr := aliases.New(ipsetMgr)
+	aliases.SetInstance(aliasMgr)
+
+	// 3. GatewayManager — independent of wg interfaces.
+	gwMgr := gateway.NewManager()
+	if err := gwMgr.Init(); err != nil {
+		log.Printf("gateway init warning: %v", err)
+	}
+	gateway.SetInstance(gwMgr)
+
+	// 4. FirewallManager — depends on AliasManager + GatewayManager.
+	fwMgr := firewall.New(aliasMgr, gwMgr)
+	if err := fwMgr.Init(); err != nil {
+		log.Printf("firewall init warning: %v", err)
+	}
+	firewall.SetInstance(fwMgr)
+
+	// 5. InterfaceManager — brings up all wg/awg interfaces synchronously.
+	//    Must complete before RestoreAll() calls below.
+	if _, err := tunnel.Init(cfg.Host); err != nil {
+		log.Fatalf("tunnel interface manager init: %v", err)
+	}
+
+	// 6. RouteManager — RestoreAll() adds kernel routes AFTER interfaces exist.
+	rmgr := routing.New()
+	rmgr.RestoreAll()
+	routing.SetInstance(rmgr)
+
+	// 7. NatManager — RestoreAll() applies iptables rules AFTER interfaces exist.
+	natMgr := nat.New(aliasMgr)
+	natMgr.RestoreAll()
+	nat.SetInstance(natMgr)
+
+	// ── Start HTTP server ──────────────────────────────────────────────────────
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("AWG-Easy 3.0 | host=%s | port=%d (tcp) | wg-port=%d (udp) | data=%s | debug=%v",
 		cfg.Host, cfg.Port, cfg.WGPort, cfg.DataDir, cfg.Debug)
 
-	// Запуск в горутине чтобы не блокировать graceful shutdown ниже.
+	// Run in a goroutine so the signal wait below is not blocked.
 	go func() {
 		if err := app.Listen(addr); err != nil {
 			log.Fatalf("server: %v", err)
@@ -180,8 +222,8 @@ func parseConfig() Config {
 }
 
 // errorHandler converts errors to JSON responses.
-// *fiber.Error (e.g. createError({ status: 400, message: "..." })) → proper status code.
-// Everything else → 500.
+// *fiber.Error (e.g. fiber.NewError(400, "...")) → uses that status code.
+// Everything else → 500 Internal Server Error.
 func errorHandler(c *fiber.Ctx, err error) error {
 	code := fiber.StatusInternalServerError
 	msg := "Internal Server Error"

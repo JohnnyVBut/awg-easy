@@ -1390,3 +1390,20 @@ func strOr(s, def string) string {
 	}
 	return s
 }
+
+// ── Singleton accessor ────────────────────────────────────────────────────────
+
+var fwInstance *Manager
+
+// SetInstance stores the initialized Manager for package-level access.
+// Must be called from main() before serving requests.
+func SetInstance(m *Manager) { fwInstance = m }
+
+// Get returns the package-level Manager singleton.
+// Panics with a clear message if SetInstance was not called (programming error).
+func Get() *Manager {
+	if fwInstance == nil {
+		panic("firewall: manager not initialized — call SetInstance before Get()")
+	}
+	return fwInstance
+}

@@ -17,7 +17,8 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
     go get github.com/gofiber/fiber/v2@v2.52.5 && \
     go get modernc.org/sqlite@v1.33.1 && \
     go get github.com/google/uuid@v1.6.0 && \
-    go get rsc.io/qr@v0.2.0
+    go get rsc.io/qr@v0.2.0 && \
+    go get golang.org/x/crypto@v0.31.0
 
 # Copy source and build.
 # CGO_ENABLED=0: fully static binary, no libc dependency.

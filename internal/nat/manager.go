@@ -566,3 +566,20 @@ func isIPv4Addr(s string) bool {
 	}
 	return len(s) > 0
 }
+
+// ── Singleton accessor ────────────────────────────────────────────────────────
+
+var instance *Manager
+
+// SetInstance stores the initialized Manager for package-level access.
+// Must be called from main() before serving requests.
+func SetInstance(m *Manager) { instance = m }
+
+// Get returns the package-level Manager singleton.
+// Panics with a clear message if SetInstance was not called (programming error).
+func Get() *Manager {
+	if instance == nil {
+		panic("nat: manager not initialized — call SetInstance before Get()")
+	}
+	return instance
+}
