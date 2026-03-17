@@ -1403,7 +1403,7 @@ module.exports = class Server {
         if (src && ip) {
           const fm = await FirewallManager.getInstance();
           const { matchedRule, steps } = await fm.simulateTrace(src, ip);
-          const result = await rm.testRoute(ip, undefined, matchedRule ? matchedRule.fwmark : undefined);
+          const result = await rm.testRoute(ip, undefined, matchedRule?.fwmark || undefined);
           return { result, matchedRule, steps };
         }
 
