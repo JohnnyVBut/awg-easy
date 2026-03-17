@@ -17,6 +17,7 @@ import (
 	fiberlog "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"github.com/JohnnyVBut/awg-easy/internal/api"
 	"github.com/JohnnyVBut/awg-easy/internal/db"
 )
 
@@ -65,16 +66,26 @@ func main() {
 	})
 
 	// ── API routes ────────────────────────────────────────────────────────────
-	// Регистрируются по мере добавления модулей.
-	// Placeholder: healthcheck чтобы убедиться что сервер работает.
-	api := app.Group("/api")
-	api.Get("/health", func(c *fiber.Ctx) error {
+	apiGroup := app.Group("/api")
+
+	// Healthcheck
+	apiGroup.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"version": "3.0.0-alpha",
 			"host":    cfg.Host,
 		})
 	})
+
+	// Settings + Templates
+	api.RegisterSettings(apiGroup)
+
+	// TODO: по мере реализации модулей добавлять здесь:
+	// api.RegisterInterfaces(apiGroup)
+	// api.RegisterRouting(apiGroup)
+	// api.RegisterNat(apiGroup)
+	// api.RegisterFirewall(apiGroup)
+	// api.RegisterGateways(apiGroup)
 
 	// ── Database ──────────────────────────────────────────────────────────────
 	if err := db.Init(cfg.DataDir); err != nil {
