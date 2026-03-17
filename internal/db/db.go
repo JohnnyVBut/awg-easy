@@ -251,6 +251,30 @@ ALTER TABLE aliases ADD COLUMN entry_count  INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE aliases ADD COLUMN last_updated TEXT    NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 3,
+		sql: `
+-- Rebuild routes table:
+--   1. Add description column (was missing from v1)
+--   2. Make metric nullable (NULL = no explicit metric, was NOT NULL DEFAULT 0)
+CREATE TABLE routes_new (
+    id          TEXT    PRIMARY KEY,
+    description TEXT    NOT NULL DEFAULT '',
+    destination TEXT    NOT NULL DEFAULT '',
+    via         TEXT    NOT NULL DEFAULT '',
+    dev         TEXT    NOT NULL DEFAULT '',
+    metric      INTEGER,
+    table_name  TEXT    NOT NULL DEFAULT 'main',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO routes_new (id, destination, via, dev, metric, table_name, enabled, created_at)
+    SELECT id, destination, via, dev, NULLIF(metric, 0), table_name, enabled, created_at
+    FROM routes;
+DROP TABLE routes;
+ALTER TABLE routes_new RENAME TO routes;
+`,
+	},
 }
 
 func runMigrations(db *sql.DB) error {
