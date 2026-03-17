@@ -14,12 +14,14 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	fiberlog "github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
 	"github.com/JohnnyVBut/awg-easy/internal/aliases"
 	"github.com/JohnnyVBut/awg-easy/internal/api"
 	"github.com/JohnnyVBut/awg-easy/internal/db"
 	"github.com/JohnnyVBut/awg-easy/internal/firewall"
+	"github.com/JohnnyVBut/awg-easy/internal/frontend"
 	"github.com/JohnnyVBut/awg-easy/internal/gateway"
 	"github.com/JohnnyVBut/awg-easy/internal/ipset"
 	"github.com/JohnnyVBut/awg-easy/internal/nat"
@@ -72,13 +74,15 @@ func main() {
 		}))
 	}
 
-	// ── Static files ──────────────────────────────────────────────────────────
-	// Serve frontend from ./www directory.
-	app.Static("/", "./www", fiber.Static{
-		Compress: true,
-		Index:    "index.html",
-		Browse:   false,
-	})
+	// ── Static files (embed.FS) ───────────────────────────────────────────────
+	// Frontend is embedded into the binary at compile time via //go:embed.
+	// No external files needed at runtime — binary is fully self-contained.
+	app.Use("/", filesystem.New(filesystem.Config{
+		Root:         frontend.FS(),
+		Index:        "index.html",
+		Browse:       false,
+		NotFoundFile: "index.html", // SPA fallback: unknown paths → index.html
+	}))
 
 	// ── API routes ────────────────────────────────────────────────────────────
 	apiGroup := app.Group("/api")

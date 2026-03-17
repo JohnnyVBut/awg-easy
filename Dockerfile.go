@@ -27,7 +27,8 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
 # пакеты перекомпилируются. modernc.org/sqlite (~380s) кэшируется после первой сборки.
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-COPY www/ ./www/
+# www/ is now embedded via internal/frontend/embed.go (//go:embed all:www).
+# No separate COPY needed — included in COPY internal/ above.
 RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build \
