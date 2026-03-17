@@ -49,10 +49,12 @@ RUN apk add --no-cache \
     iproute2 \
     ipset
 
-# Use iptables-nft (same as feature/kernel-module branch)
-RUN update-alternatives --install /sbin/iptables iptables /sbin/iptables-legacy 10 \
-    --slave /sbin/iptables-restore iptables-restore /sbin/iptables-legacy-restore \
-    --slave /sbin/iptables-save iptables-save /sbin/iptables-legacy-save
+# Use iptables-legacy as default iptables.
+# Alpine не имеет update-alternatives (это команда dpkg/Debian).
+# Используем ln -sf напрямую.
+RUN ln -sf /sbin/iptables-legacy         /sbin/iptables && \
+    ln -sf /sbin/iptables-legacy-restore /sbin/iptables-restore && \
+    ln -sf /sbin/iptables-legacy-save    /sbin/iptables-save
 
 # Copy the static Go binary from build stage
 COPY --from=builder /app/awg-easy /usr/local/bin/awg-easy
