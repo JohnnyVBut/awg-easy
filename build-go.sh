@@ -21,7 +21,7 @@ if [[ "$BRANCH" != "feature/go-rewrite" ]]; then
 fi
 
 echo -e "${GREEN}Building Docker image (Go/Fiber)...${NC}"
-docker build --network=host -f Dockerfile.go -t awg2-easy-go:latest .
+DOCKER_BUILDKIT=1 docker build --network=host -f Dockerfile.go -t awg2-easy-go:latest .
 
 echo ""
 echo -e "${GREEN}✓ Build complete!${NC}"
