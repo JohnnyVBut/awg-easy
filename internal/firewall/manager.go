@@ -28,7 +28,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/bits"
 	"net"
 	"strings"
 	"sync"
@@ -1156,43 +1155,29 @@ func (m *Manager) ipsetTest(setName, ip string) bool {
 }
 
 // ipInCIDR reports whether ip falls within cidr (e.g. "10.0.0.0/8").
+// Uses net.ParseCIDR + ipNet.Contains — correct and handles host-bits-set CIDRs.
+//
+// Previous implementation used bits.RotateLeft32(^uint32(0), -prefixLen) for
+// the subnet mask. Rotating all-ones by any amount always returns all-ones
+// (0xFFFFFFFF), so the mask was never applied and only exact-address matches
+// succeeded. This broke SimulateTrace CIDR source matching (FIX-GO-10).
 func ipInCIDR(ipStr, cidr string) bool {
 	if cidr == "" || ipStr == "" {
 		return false
 	}
-	if !strings.Contains(cidr, "/") {
-		return ipStr == cidr
-	}
-	// Parse and check using the standard library.
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
 		return false
 	}
-	// net.ParseCIDR returns the network address; we need to mask the input IP.
-	parts := strings.SplitN(cidr, "/", 2)
-	if len(parts) != 2 {
+	if !strings.Contains(cidr, "/") {
+		// Host address without prefix — exact match.
+		return ip.Equal(net.ParseIP(cidr))
+	}
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
 		return false
 	}
-	netIP := net.ParseIP(parts[0])
-	if netIP == nil {
-		return false
-	}
-	prefixLen := 0
-	fmt.Sscanf(parts[1], "%d", &prefixLen)
-	if prefixLen < 0 || prefixLen > 32 {
-		return false
-	}
-
-	// Convert to uint32 and apply mask.
-	ipv4 := ip.To4()
-	netv4 := netIP.To4()
-	if ipv4 == nil || netv4 == nil {
-		return false
-	}
-	mask := uint32(bits.RotateLeft32(^uint32(0), -prefixLen))
-	a := uint32(ipv4[0])<<24 | uint32(ipv4[1])<<16 | uint32(ipv4[2])<<8 | uint32(ipv4[3])
-	n := uint32(netv4[0])<<24 | uint32(netv4[1])<<16 | uint32(netv4[2])<<8 | uint32(netv4[3])
-	return a&mask == n&mask
+	return ipNet.Contains(ip)
 }
 
 // ── Private: DB helpers ───────────────────────────────────────────────────────
