@@ -271,21 +271,19 @@ func (m *Manager) GetKernelRoutes(table string) ([]KernelRoute, error) {
 	return parseTextRoutes(out), nil
 }
 
-// TestRoute runs "ip route get <ip> [from <src>] [mark <mark>]" and parses the result.
+// TestRoute runs "ip route get <ip> [mark <mark>]" and parses the result.
 // Returns nil if the command produces no output.
+//
 // FIX-11: text output only, no -j.
-// FIX-15: kernel errors (empty routing table) returned as "ip route: <detail>".
-func (m *Manager) TestRoute(ip, srcIP string, mark *int) (*RouteResult, error) {
-	// Build command — mark and from are mutually exclusive:
-	// mark simulates PBR (netfilter mark already set),
-	// from simulates a specific source IP.
+// FIX-15: kernel errors returned as "ip route: <detail>".
+// FIX-GO-8: "ip route get <dst> from <src>" is NOT used — when src is a
+// non-local address the kernel returns "RTNETLINK: Network unreachable".
+// PBR simulation is done via firewall.SimulateTrace → fwmark → mark flag.
+func (m *Manager) TestRoute(ip string, mark *int) (*RouteResult, error) {
 	var cmd string
-	switch {
-	case mark != nil:
+	if mark != nil {
 		cmd = fmt.Sprintf("ip route get %s mark %d", ip, *mark)
-	case srcIP != "":
-		cmd = fmt.Sprintf("ip route get %s from %s", ip, srcIP)
-	default:
+	} else {
 		cmd = fmt.Sprintf("ip route get %s", ip)
 	}
 

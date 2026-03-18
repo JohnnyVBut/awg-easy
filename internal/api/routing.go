@@ -17,6 +17,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/JohnnyVBut/awg-easy/internal/firewall"
 	"github.com/JohnnyVBut/awg-easy/internal/routing"
 )
 
@@ -63,28 +64,63 @@ func getRoutingTables(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"tables": tables})
 }
 
-// GET /api/routing/test?ip=8.8.8.8&src=10.8.0.2&mark=1000
-// Returns route lookup result with optional PBR trace.
-// FIX-15: kernel errors (e.g. "RTNETLINK: Invalid argument") returned as HTTP 400.
+// GET /api/routing/test?ip=8.8.8.8[&src=192.168.1.5][&mark=1000]
+//
+// Route lookup with optional Policy-Based Routing trace.
+//
+// When src is provided:
+//  1. SimulateTrace(src, dst) — walks firewall rules to find which PBR rule
+//     (and fwmark) applies to the src→dst pair.
+//  2. If a rule with fwmark matched → ip route get <dst> mark <fwmark>
+//     (uses the policy routing table, not the default table).
+//  3. If no rule matched → ip route get <dst>  (default routing).
+//
+// Note: "ip route get <dst> from <src>" is intentionally NOT used because
+// <src> is typically not a local interface address, which causes the kernel
+// to return "RTNETLINK answers: Network unreachable" (FIX-GO-8).
+//
+// When only mark is provided (no src): ip route get <dst> mark <mark>.
+// FIX-15: kernel errors returned as HTTP 400 with detail from stderr.
 func testRoute(c *fiber.Ctx) error {
 	ip := c.Query("ip")
 	if ip == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "ip query parameter is required")
 	}
-	src := c.Query("src")   // optional source IP for PBR trace
-	markStr := c.Query("mark") // optional fwmark (integer string)
+	src := c.Query("src")      // optional source IP for PBR trace
+	markStr := c.Query("mark") // optional explicit fwmark override
 
-	// Parse optional mark integer.
-	var mark *int
+	// Parse optional explicit mark integer.
+	var explicitMark *int
 	if markStr != "" {
 		n, err := strconv.Atoi(markStr)
 		if err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "mark must be an integer")
 		}
-		mark = &n
+		explicitMark = &n
 	}
 
-	result, err := routing.Get().TestRoute(ip, src, mark)
+	// PBR trace: when src is given, walk firewall rules to find the fwmark.
+	var matchedRule interface{} // nil or *firewall.MatchedRule — serialised to JSON
+	var steps interface{}       // nil or []firewall.TraceStep
+	var routeMark *int          // mark to pass to ip route get
+
+	if src != "" {
+		trace, err := firewall.Get().SimulateTrace(src, ip)
+		if err != nil {
+			// Non-fatal — fall through to default route lookup.
+			steps = []interface{}{}
+		} else {
+			matchedRule = trace.MatchedRule // nil if no rule matched
+			steps = trace.Steps
+			if trace.MatchedRule != nil && trace.MatchedRule.Fwmark != nil {
+				routeMark = trace.MatchedRule.Fwmark
+			}
+		}
+	} else {
+		routeMark = explicitMark
+	}
+
+	result, err := routing.Get().TestRoute(ip, routeMark)
 	if err != nil {
 		// FIX-15: kernel errors start with "ip route:" → HTTP 400 with detail.
 		if strings.HasPrefix(err.Error(), "ip route:") {
@@ -92,12 +128,17 @@ func testRoute(c *fiber.Ctx) error {
 		}
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	// Wrap as { result, matchedRule, steps } because the frontend does:
-	//   res.result, res.matchedRule || null, res.steps || []
+
+	if steps == nil {
+		steps = []interface{}{}
+	}
+
+	// Response shape: { result, matchedRule: null|{id,name,fwmark}, steps: [] }
+	// Frontend uses: res.result, res.matchedRule || null, res.steps || []
 	return c.JSON(fiber.Map{
 		"result":      result,
-		"matchedRule": nil,
-		"steps":       []fiber.Map{},
+		"matchedRule": matchedRule,
+		"steps":       steps,
 	})
 }
 
