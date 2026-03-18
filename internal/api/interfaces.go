@@ -12,9 +12,12 @@
 //	POST   /api/tunnel-interfaces/:id/restart
 //	GET    /api/tunnel-interfaces/:id/export-params
 //	GET    /api/tunnel-interfaces/:id/export-obfuscation
+//	GET    /api/tunnel-interfaces/:id/backup    ← download interface+peers as JSON
+//	PUT    /api/tunnel-interfaces/:id/restore   ← restore peers from JSON backup
 package api
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -42,6 +45,9 @@ func RegisterInterfaces(api fiber.Router) {
 
 	g.Get("/:id/export-params", exportInterfaceParams)
 	g.Get("/:id/export-obfuscation", exportObfuscation)
+
+	g.Get("/:id/backup", backupInterface)
+	g.Put("/:id/restore", restoreInterface)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -235,6 +241,73 @@ func exportObfuscation(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	return c.JSON(params)
+}
+
+// GET /api/tunnel-interfaces/:id/backup
+// Downloads the interface config and all peers as a single JSON file.
+// The file can be restored via PUT /restore.
+func backupInterface(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	t := mgr().GetInterface(id)
+	if t == nil {
+		return fiber.NewError(fiber.StatusNotFound, "interface not found")
+	}
+
+	peers := t.GetAllPeers()
+	if peers == nil {
+		peers = []*peer.Peer{}
+	}
+
+	c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.json"`, id))
+	c.Set("Content-Type", "application/json")
+	return c.JSON(fiber.Map{
+		"interface": ifaceJSON(t, false),
+		"peers":     peers,
+	})
+}
+
+// PUT /api/tunnel-interfaces/:id/restore
+// Restores peers from a JSON backup produced by GET /backup.
+// All existing peers on the interface are removed first, then backup peers are re-created.
+// Body: { file: { peers: [...] } }
+func restoreInterface(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	var body struct {
+		File struct {
+			Peers []peer.PeerInput `json:"peers"`
+		} `json:"file"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
+	}
+	if body.File.Peers == nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid backup: missing peers array")
+	}
+
+	t := mgr().GetInterface(id)
+	if t == nil {
+		return fiber.NewError(fiber.StatusNotFound, "interface not found")
+	}
+
+	// Remove all existing peers first.
+	existing, _ := mgr().GetPeers(id)
+	for _, p := range existing {
+		_ = mgr().RemovePeer(id, p.ID)
+	}
+
+	// Re-create peers from backup. Keys are preserved (GenerateKeys stays false
+	// as long as PublicKey is non-empty — AddPeer skips generation in that case).
+	for _, inp := range body.File.Peers {
+		if _, err := mgr().AddPeer(id, inp); err != nil {
+			// Log and continue — partial restore is better than aborting.
+			fmt.Printf("restore: AddPeer %q failed: %v\n", inp.Name, err)
+		}
+	}
+
+	t = mgr().GetInterface(id)
+	return c.JSON(fiber.Map{"interface": ifaceJSON(t, true)})
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

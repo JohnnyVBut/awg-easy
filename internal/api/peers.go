@@ -4,7 +4,7 @@
 //
 //	GET    /api/tunnel-interfaces/:id/peers
 //	POST   /api/tunnel-interfaces/:id/peers
-//	POST   /api/tunnel-interfaces/:id/peers/import-json   ← interconnect import
+//	POST   /api/tunnel-interfaces/:id/peers/import-json        ← interconnect import
 //	GET    /api/tunnel-interfaces/:id/peers/:peerId
 //	PATCH  /api/tunnel-interfaces/:id/peers/:peerId
 //	DELETE /api/tunnel-interfaces/:id/peers/:peerId
@@ -12,10 +12,18 @@
 //	GET    /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 //	POST   /api/tunnel-interfaces/:id/peers/:peerId/enable
 //	POST   /api/tunnel-interfaces/:id/peers/:peerId/disable
+//	PUT    /api/tunnel-interfaces/:id/peers/:peerId/name        ← rename peer
+//	PUT    /api/tunnel-interfaces/:id/peers/:peerId/address     ← update AllowedIPs
+//	PUT    /api/tunnel-interfaces/:id/peers/:peerId/expireDate  ← set/clear expiry
+//	POST   /api/tunnel-interfaces/:id/peers/:peerId/generateOneTimeLink
+//	GET    /api/tunnel-interfaces/:id/peers/:peerId/export-json ← S2S interconnect export
 package api
 
 import (
+	"crypto/rand"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -39,6 +47,13 @@ func RegisterPeers(api fiber.Router) {
 
 	g.Post("/:peerId/enable", enablePeer)
 	g.Post("/:peerId/disable", disablePeer)
+
+	// Fine-grained update endpoints (ported from Node.js API).
+	g.Put("/:peerId/name", renamePeer)
+	g.Put("/:peerId/address", updatePeerAddress)
+	g.Put("/:peerId/expireDate", updatePeerExpireDate)
+	g.Post("/:peerId/generateOneTimeLink", generatePeerOneTimeLink)
+	g.Get("/:peerId/export-json", exportPeerJSON)
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -249,4 +264,147 @@ func togglePeer(c *fiber.Ctx, enabled bool) error {
 		return fiber.NewError(fiber.StatusNotFound, err.Error())
 	}
 	return c.JSON(p)
+}
+
+// ── Fine-grained update endpoints ─────────────────────────────────────────────
+
+// PUT /api/tunnel-interfaces/:id/peers/:peerId/name
+// Body: { name: string }
+// Thin wrapper over PATCH that matches the Node.js API contract.
+func renamePeer(c *fiber.Ctx) error {
+	ifaceID := c.Params("id")
+	peerID := c.Params("peerId")
+
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
+	}
+	name := strings.TrimSpace(body.Name)
+	p, err := mgr().UpdatePeer(ifaceID, peerID, peer.PeerUpdate{Name: &name})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.JSON(fiber.Map{"peer": p})
+}
+
+// PUT /api/tunnel-interfaces/:id/peers/:peerId/address
+// Body: { address: string }  — sets AllowedIPs (the peer's tunnel IP/CIDR).
+// Mirrors Node.js: updatePeer(id, peerId, { allowedIPs: address }).
+func updatePeerAddress(c *fiber.Ctx) error {
+	ifaceID := c.Params("id")
+	peerID := c.Params("peerId")
+
+	var body struct {
+		Address string `json:"address"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
+	}
+	addr := strings.TrimSpace(body.Address)
+	p, err := mgr().UpdatePeer(ifaceID, peerID, peer.PeerUpdate{AllowedIPs: &addr})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.JSON(fiber.Map{"peer": p})
+}
+
+// PUT /api/tunnel-interfaces/:id/peers/:peerId/expireDate
+// Body: { expireDate: string | null }  — RFC3339 or "YYYY-MM-DD"; empty/null to clear.
+// Mirrors Node.js: new Date(expireDate).toISOString() → expiredAt.
+func updatePeerExpireDate(c *fiber.Ctx) error {
+	ifaceID := c.Params("id")
+	peerID := c.Params("peerId")
+
+	var body struct {
+		ExpireDate *string `json:"expireDate"` // pointer so null is distinguishable from ""
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
+	}
+
+	var expiredAt string // "" means clear
+	if body.ExpireDate != nil && strings.TrimSpace(*body.ExpireDate) != "" {
+		raw := strings.TrimSpace(*body.ExpireDate)
+		// Try RFC3339 first, then date-only format.
+		for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+			if t, err := time.Parse(layout, raw); err == nil {
+				expiredAt = t.UTC().Format(time.RFC3339)
+				break
+			}
+		}
+		if expiredAt == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "invalid expireDate: expected RFC3339 or YYYY-MM-DD")
+		}
+	}
+
+	p, err := mgr().UpdatePeer(ifaceID, peerID, peer.PeerUpdate{ExpiredAt: &expiredAt})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.JSON(fiber.Map{"peer": p})
+}
+
+// POST /api/tunnel-interfaces/:id/peers/:peerId/generateOneTimeLink
+// Generates a random 32-char hex one-time link token and stores it on the peer.
+// The frontend then constructs a URL: /api/.../:peerId/config?token=<link>
+func generatePeerOneTimeLink(c *fiber.Ctx) error {
+	ifaceID := c.Params("id")
+	peerID := c.Params("peerId")
+
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to generate link token")
+	}
+	link := fmt.Sprintf("%x", b)
+
+	p, err := mgr().UpdatePeer(ifaceID, peerID, peer.PeerUpdate{OneTimeLink: &link})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.JSON(fiber.Map{"peer": p})
+}
+
+// GET /api/tunnel-interfaces/:id/peers/:peerId/export-json
+// Returns peer parameters suitable for import on the remote side (S2S workflow).
+// Only available for interconnect peers — client peers are not exported this way.
+// Response matches the format that POST /peers/import-json expects.
+func exportPeerJSON(c *fiber.Ctx) error {
+	ifaceID := c.Params("id")
+	peerID := c.Params("peerId")
+
+	t := mgr().GetInterface(ifaceID)
+	if t == nil {
+		return fiber.NewError(fiber.StatusNotFound, "interface not found")
+	}
+
+	p := mgr().GetPeer(ifaceID, peerID)
+	if p == nil {
+		return fiber.NewError(fiber.StatusNotFound, "peer not found")
+	}
+	if p.PeerType != "interconnect" {
+		return fiber.NewError(fiber.StatusBadRequest, "export-json is only available for interconnect peers")
+	}
+
+	// Construct endpoint: WG_HOST:listenPort (mirrors exportPeerParams in Node.js TunnelInterface).
+	endpoint := ""
+	if host := getWGHost(); host != "" {
+		endpoint = fmt.Sprintf("%s:%d", host, t.ListenPort)
+	}
+
+	clientAllowedIPs := p.ClientAllowedIPs
+	if clientAllowedIPs == "" {
+		clientAllowedIPs = "0.0.0.0/0"
+	}
+
+	return c.JSON(fiber.Map{
+		"name":                p.Name,
+		"publicKey":           p.PublicKey,
+		"presharedKey":        p.PresharedKey,
+		"endpoint":            endpoint,
+		"persistentKeepalive": p.PersistentKeepalive,
+		"allowedIPs":          p.AllowedIPs,       // this side's tunnel IP /32
+		"clientAllowedIPs":    clientAllowedIPs,   // what remote will route through us
+	})
 }
