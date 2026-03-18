@@ -18,11 +18,13 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/JohnnyVBut/awg-easy/internal/firewall"
 	"github.com/JohnnyVBut/awg-easy/internal/peer"
 	"github.com/JohnnyVBut/awg-easy/internal/settings"
 	"github.com/JohnnyVBut/awg-easy/internal/tunnel"
@@ -197,6 +199,12 @@ func startInterface(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
+	// Rebuild firewall PBR routing after interface comes up.
+	// wg-quick up creates the interface → "ip route replace ... dev wgX table N"
+	// can now succeed (FIX-GO-9).
+	if err := firewall.Get().RebuildChains(); err != nil {
+		log.Printf("firewall rebuildChains after start %s: %v", c.Params("id"), err)
+	}
 	return c.JSON(fiber.Map{"interface": ifaceJSON(t, false)})
 }
 
@@ -214,6 +222,12 @@ func restartInterface(c *fiber.Ctx) error {
 	t, err := mgr().RestartInterface(c.Params("id"))
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	// wg-quick down removes all routes from the interface including custom-table
+	// routes used by PBR (e.g. "default via X dev wgY table 1000").
+	// Rebuild firewall chains so those routes are re-added (FIX-GO-9).
+	if err := firewall.Get().RebuildChains(); err != nil {
+		log.Printf("firewall rebuildChains after restart %s: %v", c.Params("id"), err)
 	}
 	return c.JSON(fiber.Map{"interface": ifaceJSON(t, false)})
 }

@@ -172,6 +172,16 @@ func main() {
 		log.Fatalf("tunnel interface manager init: %v", err)
 	}
 
+	// 5b. FirewallManager — rebuild PBR routing chains NOW that wg interfaces
+	//     are up. The Init() call above (step 4) created iptables chains and
+	//     registered the gateway-monitor callback, but applyRoutingForRule()
+	//     failed for any rule whose dev= interface did not exist yet.
+	//     Re-running RebuildChains() here guarantees "ip route replace default
+	//     via X dev wgY table N" executes with wgY already present.
+	if err := fwMgr.RebuildChains(); err != nil {
+		log.Printf("firewall post-tunnel rebuildChains warning: %v", err)
+	}
+
 	// 6. RouteManager — RestoreAll() adds kernel routes AFTER interfaces exist.
 	rmgr := routing.New()
 	rmgr.RestoreAll()

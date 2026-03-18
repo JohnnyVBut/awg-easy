@@ -523,6 +523,14 @@ func (m *Manager) initChains() error {
 	return nil
 }
 
+// RebuildChains is the public entry point for rebuildChains.
+// Called from main.go after WireGuard interfaces are up, and from interface
+// start/restart handlers so that "ip route replace ... dev wgX table N"
+// always runs with the interface already in existence.
+func (m *Manager) RebuildChains() error {
+	return m.rebuildChains()
+}
+
 // rebuildChains flushes both chains, cleans up PBR routing, then re-applies
 // all enabled rules in order. Also resets fallback state.
 func (m *Manager) rebuildChains() error {
@@ -661,8 +669,12 @@ func (m *Manager) applyRoutingForRule(rule *Rule) error {
 
 	fwmark := *rule.Fwmark
 
-	// ip route replace default via <gw> dev <iface> table <fwmark>
-	cmd := fmt.Sprintf("ip route replace default via %s dev %s table %d", gw.gatewayIP, gw.iface, fwmark)
+	// ip route replace default via <gw> dev <iface> onlink table <fwmark>
+	// "onlink" bypasses the kernel's reachability check for the next-hop IP.
+	// Required when the gateway IP is not in the same subnet as the interface
+	// (e.g. a remote KZ server reachable via ens3, or a WireGuard peer whose
+	// address lives in a different /24 than the local interface address).
+	cmd := fmt.Sprintf("ip route replace default via %s dev %s onlink table %d", gw.gatewayIP, gw.iface, fwmark)
 	if _, err := util.Exec(cmd, 10*time.Second, true); err != nil {
 		return fmt.Errorf("ip route replace: %w", err)
 	}
@@ -1017,7 +1029,7 @@ func (m *Manager) triggerFallback(rule *Rule, reason string) {
 			log.Printf("firewall: triggerFallback: cannot get system default gw: %v", err)
 			return
 		}
-		cmd := fmt.Sprintf("ip route replace default via %s dev %s table %d", gw.gatewayIP, gw.iface, fwmark)
+		cmd := fmt.Sprintf("ip route replace default via %s dev %s onlink table %d", gw.gatewayIP, gw.iface, fwmark)
 		if _, err := util.Exec(cmd, 10*time.Second, true); err != nil {
 			log.Printf("firewall: triggerFallback: %v", err)
 			return
@@ -1044,7 +1056,7 @@ func (m *Manager) restoreRoute(rule *Rule) error {
 		return err
 	}
 	fwmark := *rule.Fwmark
-	cmd := fmt.Sprintf("ip route replace default via %s dev %s table %d", gw.gatewayIP, gw.iface, fwmark)
+	cmd := fmt.Sprintf("ip route replace default via %s dev %s onlink table %d", gw.gatewayIP, gw.iface, fwmark)
 	if _, err := util.Exec(cmd, 10*time.Second, true); err != nil {
 		return err
 	}
