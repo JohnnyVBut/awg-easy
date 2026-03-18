@@ -663,6 +663,8 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | `1b8b6ab` | feat(api): 7 пропущенных эндпоинтов из Node.js версии (name/address/expireDate/generateOneTimeLink/export-json/backup/restore) |
 | `1637848` | fix(aliases): добавлен GET /aliases/:id/generate/:jobId — эндпоинт статуса джоба |
 | `a035f81` | fix(aliases): race condition — watchJob обновляет DB после фронтенд-поллинга (FinalizeGeneration) |
+| `8ef5b12` | docs: sync CLAUDE.md — Go rewrite session |
+| `9aee3e6` | fix(routing): route test — SimulateTrace + fwmark instead of 'from' flag (FIX-GO-8) |
 
 ### API contract — обёртка ответов
 
@@ -720,6 +722,21 @@ Fiber `fiberlog.New()` логирует каждый запрос.
 Эндпоинт отсутствовал → 404 → catch → clearInterval → "empty" без тоста об ошибке.
 Фикс: добавлен `GET /:id/generate/:jobId → getAliasJobStatus`.
 
+**FIX-GO-8: Route test — "ip route get from <non-local>" → Network unreachable**
+При лукапе с `src=192.168.100.3` (адрес не принадлежит локальному интерфейсу контейнера)
+`ip route get <dst> from <src>` возвращает "RTNETLINK answers: Network unreachable".
+В Node.js `from` никогда не использовался — вместо него `simulateTrace(src, dst)` находил
+fwmark из правил файрвола, затем `ip route get <dst> mark <fwmark>` работал корректно.
+
+Фикс: `testRoute` handler теперь делает:
+1. `firewall.SimulateTrace(src, dst)` — находит первое совпадающее PBR-правило
+2. Если правило с fwmark найдено → `ip route get <dst> mark <fwmark>` (policy table)
+3. Если правило без fwmark или не найдено → `ip route get <dst>` (default table)
+Ответ теперь содержит реальные `matchedRule` и `steps` (не null/[]).
+
+`routing.TestRoute` упрощён: убран параметр `srcIP string` — PBR трассировка
+теперь ответственность handler'а, а не менеджера маршрутов.
+
 ### Compat layer (internal/api/compat.go)
 
 **RegisterCompat** (без авторизации):
@@ -741,7 +758,7 @@ Fiber `fiberlog.New()` логирует каждый запрос.
 ### Checkpoint Go rewrite
 
 **Активная ветка:** `feature/go-rewrite`
-**Последний коммит:** `a035f81` fix(aliases): eliminate race between watchJob and frontend poll
+**Последний коммит:** `9aee3e6` fix(routing): route test — SimulateTrace + fwmark instead of 'from' flag
 
 **Что работает (протестировано на production):**
 - Interfaces: CRUD, start/stop/restart, peers, S2S interconnect, export-params, backup/restore
@@ -755,7 +772,6 @@ Fiber `fiberlog.New()` логирует каждый запрос.
 - Auth: session cookie, bcrypt
 
 **Что не реализовано:**
-- `GET /routing/test` — matchedRule/steps всегда null/[] (simulateTrace не портирован)
 - Admin Tunnel (wg0) — заглушка 501
 - Port Forwarding (DNAT)
 - One-time links (generateOneTimeLink сохраняет токен, но `/cnf/:link` не реализован)
