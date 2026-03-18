@@ -393,6 +393,27 @@ func (m *Manager) GetJobStatus(jobID string) ipset.JobStatus {
 	return m.ipsetMgr.GetJobStatus(jobID)
 }
 
+// FinalizeGeneration eagerly writes entryCount to the alias DB row when the
+// job is done. Called from the HTTP polling handler so the DB is guaranteed to
+// be up-to-date before the frontend receives the "done" response and calls
+// loadAliases(). This fixes the race condition where watchJob's 2-second sleep
+// interval causes the DB update to arrive after the frontend's 3-second poll.
+// The write is idempotent — if watchJob already updated the row, this is a no-op.
+func (m *Manager) FinalizeGeneration(aliasID string, entryCount int) {
+	a, err := m.GetByID(aliasID)
+	if err != nil || a == nil {
+		return
+	}
+	if a.EntryCount == entryCount {
+		return // already up to date
+	}
+	a.EntryCount = entryCount
+	a.LastUpdated = time.Now().UTC().Format(time.RFC3339)
+	if err := updateAlias(a); err != nil {
+		log.Printf("aliases: FinalizeGeneration %s: %v", aliasID, err)
+	}
+}
+
 // ── Match specs (used by FirewallManager) ────────────────────────────────────
 
 // GetMatchSpec returns the iptables match specification for an alias.

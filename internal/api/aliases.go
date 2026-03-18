@@ -146,8 +146,18 @@ func generateAlias(c *fiber.Ctx) error {
 // Response: { status: "running"|"done"|"error"|"unknown", entryCount?, error? }
 // The frontend polls this every 3s until status == "done" or "error",
 // then calls loadAliases() to refresh the prefix count.
+//
+// When status is "done" this handler eagerly writes entryCount to the DB
+// (FinalizeGeneration) before responding, so that the subsequent loadAliases()
+// call from the frontend always sees the updated count.
+// This fixes the race condition where watchJob's 2s sleep can arrive after
+// the frontend's 3s poll, causing loadAliases() to read entryCount=0.
 func getAliasJobStatus(c *fiber.Ctx) error {
+	aliasID := c.Params("id")
 	jobID := c.Params("jobId")
 	status := aliases.Get().GetJobStatus(jobID)
+	if status.Status == "done" && status.EntryCount > 0 {
+		aliases.Get().FinalizeGeneration(aliasID, status.EntryCount)
+	}
 	return c.JSON(status)
 }
