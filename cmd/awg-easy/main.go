@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	fiberlog "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
@@ -67,12 +66,23 @@ func main() {
 	// Panic recovery — turns panics into HTTP 500 without crashing the server.
 	app.Use(recover.New())
 
-	// Request logging — debug mode only.
-	if cfg.Debug {
-		app.Use(fiberlog.New(fiberlog.Config{
-			Format: "[${time}] ${method} ${path} → ${status} (${latency})\n",
-		}))
-	}
+	// Request logging: log mutations (POST/PATCH/DELETE/PUT) and errors (4xx/5xx).
+	// Successful GET requests (200-399) are never logged — they occur every second
+	// from the frontend setInterval polling and would spam the container log.
+	app.Use(func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		status := c.Response().StatusCode()
+		method := c.Method()
+		if method != "GET" || status >= 400 {
+			log.Printf("[%s] %s %s → %d (%s)",
+				time.Now().Format("15:04:05"),
+				method, c.Path(), status,
+				time.Since(start).Round(time.Microsecond),
+			)
+		}
+		return err
+	})
 
 	// ── API routes ────────────────────────────────────────────────────────────
 	// Must be registered BEFORE the static middleware so /api/* requests are
