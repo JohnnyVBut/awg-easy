@@ -44,12 +44,16 @@ func RegisterPeers(api fiber.Router) {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 // GET /api/tunnel-interfaces/:id/peers
+// Wrapped as { peers: [...] } because the frontend does `data.peers || []`.
 func listPeers(c *fiber.Ctx) error {
 	peers, err := mgr().GetPeers(c.Params("id"))
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, err.Error())
 	}
-	return c.JSON(peers)
+	if peers == nil {
+		peers = []*peer.Peer{}
+	}
+	return c.JSON(fiber.Map{"peers": peers})
 }
 
 // GET /api/tunnel-interfaces/:id/peers/:peerId
@@ -84,7 +88,8 @@ func createPeer(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	return c.Status(fiber.StatusCreated).JSON(p)
+	// Wrap as { peer: {...} } because the frontend does `res.peer && res.peer.id`.
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"peer": p})
 }
 
 // POST /api/tunnel-interfaces/:id/peers/import-json
@@ -138,7 +143,7 @@ func importPeerJSON(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	return c.Status(fiber.StatusCreated).JSON(p)
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"peer": p})
 }
 
 // PATCH /api/tunnel-interfaces/:id/peers/:peerId

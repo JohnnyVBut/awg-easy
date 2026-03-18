@@ -84,13 +84,14 @@ func getWGHost() string {
 
 // GET /api/tunnel-interfaces
 // Returns all interfaces with their peers.
+// Wrapped as { interfaces: [...] } because the frontend does `data.interfaces || []`.
 func listInterfaces(c *fiber.Ctx) error {
 	ifaces := mgr().GetAllInterfaces()
 	out := make([]fiber.Map, 0, len(ifaces))
 	for _, t := range ifaces {
 		out = append(out, ifaceJSON(t, true))
 	}
-	return c.JSON(out)
+	return c.JSON(fiber.Map{"interfaces": out})
 }
 
 // GET /api/tunnel-interfaces/:id

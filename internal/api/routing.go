@@ -37,22 +37,30 @@ func RegisterRouting(api fiber.Router) {
 // ── Kernel views ──────────────────────────────────────────────────────────────
 
 // GET /api/routing/table?table=main
+// Wrapped as { routes: [...] } because the frontend does `res.routes || []`.
 func getKernelRoutes(c *fiber.Ctx) error {
 	table := c.Query("table", "main")
 	routes, err := routing.Get().GetKernelRoutes(table)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(routes)
+	if routes == nil {
+		routes = []routing.KernelRoute{}
+	}
+	return c.JSON(fiber.Map{"routes": routes})
 }
 
 // GET /api/routing/tables
+// Wrapped as { tables: [...] } because the frontend does `res.tables || []`.
 func getRoutingTables(c *fiber.Ctx) error {
 	tables, err := routing.Get().GetRoutingTables()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(tables)
+	if tables == nil {
+		tables = []routing.RoutingTable{}
+	}
+	return c.JSON(fiber.Map{"tables": tables})
 }
 
 // GET /api/routing/test?ip=8.8.8.8&src=10.8.0.2&mark=1000
@@ -84,18 +92,28 @@ func testRoute(c *fiber.Ctx) error {
 		}
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(result)
+	// Wrap as { result, matchedRule, steps } because the frontend does:
+	//   res.result, res.matchedRule || null, res.steps || []
+	return c.JSON(fiber.Map{
+		"result":      result,
+		"matchedRule": nil,
+		"steps":       []fiber.Map{},
+	})
 }
 
 // ── Static routes CRUD ────────────────────────────────────────────────────────
 
 // GET /api/routing/routes
+// Wrapped as { routes: [...] } because the frontend does `res.routes || []`.
 func getStaticRoutes(c *fiber.Ctx) error {
 	routes, err := routing.Get().GetRoutes()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(routes)
+	if routes == nil {
+		routes = []routing.Route{}
+	}
+	return c.JSON(fiber.Map{"routes": routes})
 }
 
 // POST /api/routing/routes

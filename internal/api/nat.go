@@ -28,12 +28,13 @@ func RegisterNat(api fiber.Router) {
 
 // GET /api/nat/interfaces
 // Returns host network interfaces for the outInterface dropdown in the UI.
+// Wrapped as { interfaces: [...] } because the frontend does `res.interfaces || []`.
 func getNatInterfaces(c *fiber.Ctx) error {
 	ifaces, err := nat.Get().GetNetworkInterfaces()
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	if err != nil || ifaces == nil {
+		ifaces = []nat.HostInterface{}
 	}
-	return c.JSON(ifaces)
+	return c.JSON(fiber.Map{"interfaces": ifaces})
 }
 
 // GET /api/nat/rules
