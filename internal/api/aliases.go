@@ -7,8 +7,9 @@
 //	GET    /api/aliases/:id
 //	PATCH  /api/aliases/:id
 //	DELETE /api/aliases/:id
-//	POST   /api/aliases/:id/upload    ← upload prefix file → ipset
-//	POST   /api/aliases/:id/generate  ← generate prefixes via RIPE/ASN
+//	POST   /api/aliases/:id/upload           ← upload prefix file → ipset
+//	POST   /api/aliases/:id/generate         ← start async generation job, returns { jobId }
+//	GET    /api/aliases/:id/generate/:jobId  ← poll job status { status, entryCount?, error? }
 package api
 
 import (
@@ -33,6 +34,7 @@ func RegisterAliases(api fiber.Router) {
 
 	g.Post("/:id/upload", uploadAlias)
 	g.Post("/:id/generate", generateAlias)
+	g.Get("/:id/generate/:jobId", getAliasJobStatus)
 }
 
 // GET /api/aliases
@@ -124,6 +126,8 @@ func uploadAlias(c *fiber.Ctx) error {
 
 // POST /api/aliases/:id/generate
 // Body: GeneratorOpts { source, country?, asn?, asnList? }
+// Starts an async generation job and returns { jobId } immediately.
+// Poll GET /generate/:jobId for completion.
 func generateAlias(c *fiber.Ctx) error {
 	var opts aliases.GeneratorOpts
 	if err := c.BodyParser(&opts); err != nil {
@@ -135,4 +139,15 @@ func generateAlias(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	return c.JSON(fiber.Map{"jobId": jobID})
+}
+
+// GET /api/aliases/:id/generate/:jobId
+// Returns the current status of an async generation job.
+// Response: { status: "running"|"done"|"error"|"unknown", entryCount?, error? }
+// The frontend polls this every 3s until status == "done" or "error",
+// then calls loadAliases() to refresh the prefix count.
+func getAliasJobStatus(c *fiber.Ctx) error {
+	jobID := c.Params("jobId")
+	status := aliases.Get().GetJobStatus(jobID)
+	return c.JSON(status)
 }
