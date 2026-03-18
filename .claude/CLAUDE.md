@@ -631,6 +631,137 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 
 ---
 
+## Go Rewrite (feature/go-rewrite)
+
+### Стек
+- **Backend:** Go 1.23, Fiber v2, modernc.org/sqlite (CGO-free), embed.FS
+- **Frontend:** тот же Vue 2 / Tailwind / VueI18n, вшит в бинарник через `//go:embed all:www`
+- **Конфиг:** флаги CLI + ENV-переменные (флаг приоритетнее)
+
+### Ключевые архитектурные решения
+
+| Решение | Подробности |
+|---------|-------------|
+| embed.FS | Фронтенд вшит в бинарник при сборке. Static middleware регистрируется **после** всех `/api/*` маршрутов — иначе SPA-fallback глотает API-запросы |
+| Fiber middleware порядок | recover → logging → api routes → static(SPA fallback) |
+| Nil slice → JSON null | Go `nil` slice сериализуется как `null`, не `[]`. Везде инициализируем пустым slice перед `c.JSON()` |
+| Compat layer | `internal/api/compat.go` — заглушки для старых Node.js эндпоинтов, которые фронтенд всё ещё вызывает |
+| Логирование | Кастомный middleware: логируются только мутации (POST/PATCH/DELETE/PUT) и ошибки (4xx/5xx). GET 200 не логируются — они случаются каждую секунду из setInterval и спамили бы лог |
+| SQLite | Всё хранится в SQLite (`/etc/wireguard/data/awg.db`), JSON-файлы Node.js версии не используются |
+
+### Коммиты feature/go-rewrite (эта сессия)
+
+| Коммит | Что |
+|--------|-----|
+| `003ed2e` | feat(go): embed.FS — фронтенд вшит в бинарник |
+| `7f50489` | fix(frontend): static middleware регистрируется ПОСЛЕ api routes |
+| `d5e690a` | fix(api): compat shims + nil-slice JSON fixes |
+| `514084a` | fix(compat): /api/release возвращает 999999 (подавляет баннер "update available") |
+| `8909432` | fix(api): все list-эндпоинты оборачиваются в именованные ключи (contract с фронтендом) |
+| `b82baf0` | fix(logging): кастомный middleware вместо Fiber logger — только мутации и ошибки |
+| `b75c4f1` | fix(build): DOCKER_BUILDKIT=1 в build-go.sh (старый Docker без buildx) |
+| `1b8b6ab` | feat(api): 7 пропущенных эндпоинтов из Node.js версии (name/address/expireDate/generateOneTimeLink/export-json/backup/restore) |
+| `1637848` | fix(aliases): добавлен GET /aliases/:id/generate/:jobId — эндпоинт статуса джоба |
+| `a035f81` | fix(aliases): race condition — watchJob обновляет DB после фронтенд-поллинга (FinalizeGeneration) |
+
+### API contract — обёртка ответов
+
+Фронтенд ВСЕГДА использует `res.key || []` паттерн. Go обязан оборачивать:
+
+| Эндпоинт | Ключ обёртки |
+|---|---|
+| GET /tunnel-interfaces | `{ interfaces: [...] }` |
+| GET .../peers | `{ peers: [...] }` |
+| POST .../peers | `{ peer: {...} }` |
+| POST .../peers/import-json | `{ peer: {...} }` |
+| POST .../peers/:id/enable/disable | `peer` (bare object, OK) |
+| GET /routing/table | `{ routes: [...] }` |
+| GET /routing/tables | `{ tables: [...] }` |
+| GET /routing/routes | `{ routes: [...] }` |
+| GET /routing/test | `{ result, matchedRule: null, steps: [] }` |
+| GET /nat/interfaces | `{ interfaces: [...] }` |
+| GET /nat/rules | `{ rules: [...] }` |
+| GET /gateways | `{ gateways: [...] }` |
+| GET /gateway-groups | `{ groups: [...] }` |
+| GET /system/interfaces (compat) | `{ interfaces: [...] }` |
+
+### Известные баги / особенности Go rewrite
+
+**FIX-GO-1: nil slice → JSON null**
+Go `nil` slice сериализуется как `null`. `null.peers` в JS → TypeError.
+Всегда: `if slice == nil { slice = []Type{} }` перед `c.JSON()`.
+
+**FIX-GO-2: Static middleware после API routes**
+Если `filesystem.New()` регистрировать до `/api/*`, все API-запросы отдают `index.html`.
+Порядок: сначала все `api.*` роуты, потом `app.Use("/", filesystem.New(...))`.
+
+**FIX-GO-3: Alias generation race condition**
+`ipset.runGeneratorAsync` ставит статус `"done"` в `jobs` sync.Map.
+`aliases.watchJob` спит 2s потом обновляет DB.
+Фронтенд поллит каждые 3s → может получить `"done"` до обновления DB → `loadAliases()` видит `entryCount=0`.
+Фикс: `getAliasJobStatus` вызывает `FinalizeGeneration(aliasID, entryCount)` перед ответом — DB обновляется синхронно.
+
+**FIX-GO-4: GET /api/wireguard/client спамит лог каждую секунду**
+Фронтенд вызывает `refresh()` → `getClients()` каждую секунду.
+Без compat-заглушки → SPA fallback → HTML → JSON parse fail → "Server error 200: OK".
+Фикс: `GET /wireguard/client → []` в `RegisterCompatAuth()`.
+
+**FIX-GO-5: Fiber logger логирует GET 200 поллинг**
+Fiber `fiberlog.New()` логирует каждый запрос.
+Фронтенд делает setInterval 1s → `/api/wireguard/client` + `/api/tunnel-interfaces/*/peers` каждую секунду.
+Фикс: кастомный middleware, логирует только `method != "GET" || status >= 400`.
+
+**FIX-GO-6: /api/release возвращает 0 → баннер "Update available"**
+Старый фронтенд сравнивает версию с changelog. `0 < 14` → красный баннер на всех вкладках.
+Фикс: `/api/release → 999999`.
+
+**FIX-GO-7: Alias job status polling — missing endpoint**
+Фронтенд поллит `GET /aliases/:id/generate/:jobId` каждые 3s.
+Эндпоинт отсутствовал → 404 → catch → clearInterval → "empty" без тоста об ошибке.
+Фикс: добавлен `GET /:id/generate/:jobId → getAliasJobStatus`.
+
+### Compat layer (internal/api/compat.go)
+
+**RegisterCompat** (без авторизации):
+- `/lang` → `"en"`
+- `/release` → `999999`
+- `/remember-me` → `true`
+- `/ui-traffic-stats` → `false`
+- `/ui-chart-type` → `0`
+- `/wg-enable-one-time-links` → `false`
+- `/ui-sort-clients` → `false`
+- `/wg-enable-expire-time` → `false`
+- `/ui-avatar-settings` → `{dicebear:null, gravatar:false}`
+
+**RegisterCompatAuth** (требует авторизации):
+- `GET /wireguard/client` → `[]` (пустой список — фронтенд поллит каждую секунду)
+- `ALL /wireguard/*` → 501 Not Implemented
+- `GET /system/interfaces` → `{interfaces: [...]}`  (для NAT dropdown)
+
+### Checkpoint Go rewrite
+
+**Активная ветка:** `feature/go-rewrite`
+**Последний коммит:** `a035f81` fix(aliases): eliminate race between watchJob and frontend poll
+
+**Что работает (протестировано на production):**
+- Interfaces: CRUD, start/stop/restart, peers, S2S interconnect, export-params, backup/restore
+- Peers: полный CRUD + name/address/expireDate/oneTimeLink/export-json
+- Routing: static routes + kernel routes + routing tables
+- NAT: Outbound MASQUERADE/SNAT CRUD + alias source + auto-правила
+- Gateways: CRUD + live ping/HTTP monitoring + Gateway Groups + fallback
+- Firewall Aliases: host/network/ipset/group + L4 port/port-group + upload + generate (async job)
+- Firewall Rules: ACCEPT/DROP/REJECT + PBR (gateway) + port matching + ↑↓ order
+- AWG2 Templates: CRUD + Generate (7 CPS-профилей)
+- Auth: session cookie, bcrypt
+
+**Что не реализовано:**
+- `GET /routing/test` — matchedRule/steps всегда null/[] (simulateTrace не портирован)
+- Admin Tunnel (wg0) — заглушка 501
+- Port Forwarding (DNAT)
+- One-time links (generateOneTimeLink сохраняет токен, но `/cnf/:link` не реализован)
+
+---
+
 ## Checkpoint (текущее состояние)
 
 **Активная ветка:** `feature/kernel-module`
