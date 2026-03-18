@@ -146,13 +146,8 @@ func importPeerJSON(c *fiber.Ctx) error {
 		}
 	}
 
-	// If importing side hasn't set a PSK yet, generate one automatically
-	// so both sides end up with the same PSK on the second import.
-	if inp.PresharedKey == "" {
-		inp.GenerateKeys = false // don't regenerate the public key
-		// Generate PSK only — we'll use a direct wg genpsk call.
-		// For simplicity, set GenerateKeys=false and let CreatePeer handle it.
-	}
+	// PSK is generated automatically in AddPeer when inp.PresharedKey == ""
+	// (interconnect peer without PSK → AddPeer calls peer.GeneratePSK).
 
 	p, err := mgr().AddPeer(ifaceID, inp)
 	if err != nil {

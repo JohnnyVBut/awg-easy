@@ -321,6 +321,18 @@ func (t *TunnelInterface) AddPeer(inp peer.PeerInput) (*peer.Peer, error) {
 		inp.GenerateKeys = false
 	}
 
+	// Interconnect peers always need a PSK for mutual authentication.
+	// If none was provided (first importer in S2S workflow), generate one now.
+	// The importer exports their params with this PSK so the remote side can
+	// import it and the two ends end up with a matching PSK.
+	if inp.PeerType == "interconnect" && inp.PresharedKey == "" {
+		psk, err := peer.GeneratePSK(t.syncBin())
+		if err != nil {
+			return nil, fmt.Errorf("generate PSK for interconnect peer: %w", err)
+		}
+		inp.PresharedKey = psk
+	}
+
 	// Derive peer tunnel address from AllowedIPs + interface mask when not set.
 	// address is shown in UI separately from AllowedIPs (e.g. AllowedIPs=0.0.0.0/0
 	// but address=10.8.0.2/24 — the actual tunnel interface address of the peer).

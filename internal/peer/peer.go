@@ -268,6 +268,19 @@ type GeneratedKeys struct {
 	PresharedKey string
 }
 
+// GeneratePSK runs wg/awg genpsk and returns a fresh pre-shared key.
+// bin is "wg" for WireGuard 1.0 and "awg" for AmneziaWG 2.0.
+func GeneratePSK(bin string) (string, error) {
+	if bin == "" {
+		bin = "wg"
+	}
+	psk, err := util.ExecDefault(bin + " genpsk")
+	if err != nil {
+		return "", fmt.Errorf("genpsk: %w", err)
+	}
+	return strings.TrimSpace(psk), nil
+}
+
 // GenerateKeys runs wg/awg genkey + pubkey + genpsk.
 // bin is "wg" for WireGuard 1.0 and "awg" for AmneziaWG 2.0.
 func GenerateKeys(bin string) (GeneratedKeys, error) {
