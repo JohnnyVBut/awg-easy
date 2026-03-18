@@ -135,12 +135,22 @@ func importPeerJSON(c *fiber.Ctx) error {
 	if v, ok := body["endpoint"].(string); ok {
 		inp.Endpoint = strings.TrimSpace(v)
 	}
-	// allowedIPs from the export = remote tunnel IP /32 (what to route through this peer).
+	// address from the export is always the remote peer's overlay IP with mask
+	// (e.g. "10.255.255.1/29"). Store it as inp.Address so the peer card in the
+	// UI shows the correct overlay IP — critical when multiple peers share
+	// allowedIPs=0.0.0.0/0 on a transit interface.
+	if v, ok := body["address"].(string); ok {
+		inp.Address = strings.TrimSpace(v)
+	}
+
+	// allowedIPs from the export determines what traffic WireGuard routes through
+	// this peer. For transit interfaces (disableRoutes=true) this is "0.0.0.0/0".
+	// Fall back to deriving /32 from address when allowedIPs is absent (point-to-point).
 	if v, ok := body["allowedIPs"].(string); ok {
 		inp.AllowedIPs = strings.TrimSpace(v)
-	} else if v, ok := body["address"].(string); ok {
-		// Fallback: derive /32 from address field ("10.x.x.1/24" → "10.x.x.1/32").
-		ip := strings.SplitN(strings.TrimSpace(v), "/", 2)[0]
+	} else if inp.Address != "" {
+		// No allowedIPs in export — derive /32 from address for point-to-point peering.
+		ip := strings.SplitN(inp.Address, "/", 2)[0]
 		if ip != "" {
 			inp.AllowedIPs = ip + "/32"
 		}
