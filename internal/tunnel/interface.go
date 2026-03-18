@@ -14,7 +14,7 @@
 //	FIX-7  quickBin/syncBin chosen by protocol
 //	FIX-8  KernelRemovePeer → Restart for AWG2 (mutex, fire-and-forget goroutine)
 //	FIX-9  KernelSetPeer   → Reload for AWG2, wg set peer for WG1 (mutex)
-//	FIX-10 GetStatus uses ExecFast (5 s timeout, kills hung awg show dump)
+//	FIX-10 GetStatus uses ExecSilentFast (5 s timeout, no log — runs every second)
 package tunnel
 
 import (
@@ -768,7 +768,9 @@ func (t *TunnelInterface) GetStatus() {
 		return
 	}
 
-	out, err := util.ExecFast(fmt.Sprintf("%s show %s dump", t.syncBin(), t.ID))
+	// ExecSilentFast: polling runs every second — avoid spamming logs with "$ awg show dump".
+	// Errors are still logged below via log.Printf.
+	out, err := util.ExecSilentFast(fmt.Sprintf("%s show %s dump", t.syncBin(), t.ID))
 	if err != nil {
 		log.Printf("tunnel: getStatus %s: %v", t.ID, err)
 		return

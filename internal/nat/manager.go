@@ -501,7 +501,8 @@ func (m *Manager) applyRule(rule *NatRule) error {
 		return err
 	}
 	for i, addCmd := range addCmds {
-		if _, cerr := util.ExecFast(chkCmds[i]); cerr == nil {
+		// ExecSilent: iptables -C is an idempotency check — don't log (FIX-14).
+		if _, cerr := util.ExecSilent(chkCmds[i]); cerr == nil {
 			log.Printf("nat: applyRule (already in kernel): %s", addCmd)
 			continue
 		}
