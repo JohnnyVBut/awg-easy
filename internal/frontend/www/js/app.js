@@ -2005,7 +2005,11 @@ new Vue({
       return '—';
     },
 
-    _firewallActionStyle(action) {
+    _firewallActionStyle(action, enabled) {
+      if (!enabled) {
+        // Disabled rule — muted grey badge regardless of action.
+        return 'background:#e5e7eb; color:#9ca3af;';
+      }
       if (action === 'accept') return 'background:#dcfce7; color:#15803d;';
       if (action === 'drop')   return 'background:#fee2e2; color:#dc2626;';
       if (action === 'reject') return 'background:#ffedd5; color:#ea580c;';

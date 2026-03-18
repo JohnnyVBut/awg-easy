@@ -3551,7 +3551,7 @@
                   </td>
                   <!-- Action badge -->
                   <td class="text-center tc">
-                    <span class="text-xs font-bold rounded" :style="_firewallActionStyle(rule.action)" style="padding:3px 8px;">
+                    <span class="text-xs font-bold rounded" :style="_firewallActionStyle(rule.action, rule.enabled)" style="padding:3px 8px;">
                       {{ rule.action ? rule.action.toUpperCase() : '—' }}
                     </span>
                   </td>
