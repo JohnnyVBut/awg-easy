@@ -532,6 +532,10 @@ func buildAddCmd(r *Route) string {
 	if r.Dev != "" {
 		cmd += " dev " + r.Dev
 	}
+	// proto static — marks the route as user-defined (admin-added).
+	// Without this the kernel uses proto "boot" which shows as "--" in
+	// "ip route show" and in the kernel routes UI table.
+	cmd += " proto static"
 	if r.Metric != nil {
 		cmd += fmt.Sprintf(" metric %d", *r.Metric)
 	}
