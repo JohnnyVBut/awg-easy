@@ -665,6 +665,9 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | `a035f81` | fix(aliases): race condition — watchJob обновляет DB после фронтенд-поллинга (FinalizeGeneration) |
 | `8ef5b12` | docs: sync CLAUDE.md — Go rewrite session |
 | `9aee3e6` | fix(routing): route test — SimulateTrace + fwmark instead of 'from' flag (FIX-GO-8) |
+| `8652c52` | docs: add FIX-GO-8 + update checkpoint |
+| `f1e6ab0` | fix(firewall): PBR routing table empty after container restart (FIX-GO-9) |
+| `6bcb3ec` | fix(firewall): ipInCIDR always false for non-network-address IPs (FIX-GO-10) |
 
 ### API contract — обёртка ответов
 
@@ -737,6 +740,22 @@ fwmark из правил файрвола, затем `ip route get <dst> mark <
 `routing.TestRoute` упрощён: убран параметр `srcIP string` — PBR трассировка
 теперь ответственность handler'а, а не менеджера маршрутов.
 
+**FIX-GO-9: PBR routing table empty after container restart**
+Два бага:
+- **Init order**: `firewall.Init()` (шаг 4) вызывает `rebuildChains()` → `ip route replace default via X dev wgY table N`. Но wgY ещё не существует — `tunnel.Init()` на шаге 5. Команда падает тихо, таблица N остаётся пустой. ip rule сохраняется от предыдущего запуска (`--network host`), пакеты маркируются → lookup N → пусто → проваливаются в main table → неверный шлюз.
+- **Interface restart**: `wg-quick down` удаляет ВСЕ маршруты интерфейса включая `default via X dev wgY table N`. После рестарта никто не восстанавливал маршрут.
+
+Фикс:
+1. `RebuildChains()` — публичный wrapper для rebuildChains
+2. `main.go`: `fwMgr.RebuildChains()` вызывается ПОСЛЕ `tunnel.Init()`
+3. `interfaces.go`: `firewall.Get().RebuildChains()` в `startInterface` и `restartInterface`
+4. `onlink` во всех `ip route replace` — обходит проверку досягаемости next-hop (нужно для шлюзов не в подсети интерфейса)
+
+**FIX-GO-10: ipInCIDR всегда false для IP не совпадающих с сетевым адресом**
+`bits.RotateLeft32(^uint32(0), -prefixLen)` — ротация всех единиц на любое число позиций = снова все единицы = `0xFFFFFFFF`. Маска никогда не применялась корректно. Результат: `192.168.100.3 & 0xFFFFFFFF != 192.168.100.0 & 0xFFFFFFFF` → false. SimulateTrace CIDR-матчинг был полностью сломан — "No rule matched" для любого src IP кроме сетевого адреса.
+
+Фикс: заменить на `net.ParseCIDR(cidr)` + `ipNet.Contains(ip)` — stdlib правильно применяет маску.
+
 ### Compat layer (internal/api/compat.go)
 
 **RegisterCompat** (без авторизации):
@@ -758,7 +777,7 @@ fwmark из правил файрвола, затем `ip route get <dst> mark <
 ### Checkpoint Go rewrite
 
 **Активная ветка:** `feature/go-rewrite`
-**Последний коммит:** `9aee3e6` fix(routing): route test — SimulateTrace + fwmark instead of 'from' flag
+**Последний коммит:** `6bcb3ec` fix(firewall): ipInCIDR always false for non-network-address IPs
 
 **Что работает (протестировано на production):**
 - Interfaces: CRUD, start/stop/restart, peers, S2S interconnect, export-params, backup/restore
