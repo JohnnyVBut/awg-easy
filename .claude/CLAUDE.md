@@ -672,6 +672,8 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | `7cc4675` | fix(ui): firewall action badge grayed out when rule disabled — correct path internal/frontend/www |
 | `63d4016` | fix(api): backup includes PSK for all peer types |
 | `f1812be` | fix(s2s): populate peer address from export — required for multi-peer transit |
+| `e80e9a6` | fix(ui): rebrand AWG Easy → WG Router (title + sidebar) |
+| `275335b` | fix(peers): stable sort — GetAllPeers map iteration was non-deterministic (FIX-GO-13) |
 
 ### API contract — обёртка ответов
 
@@ -768,6 +770,11 @@ fwmark из правил файрвола, затем `ip route get <dst> mark <
 **FIX-GO-12: Фронтенд Go rewrite — файлы в internal/frontend/www/, не src/www/**
 Go rewrite вшивает фронтенд из `internal/frontend/www/` (`//go:embed all:www` в `internal/frontend/embed.go`). `src/www/` — файлы Node.js версии, не попадают в Go-бинарник. Все изменения фронтенда для Go rewrite делать ТОЛЬКО в `internal/frontend/www/`.
 
+**FIX-GO-13: GetAllPeers — Go map iteration non-deterministic → dashboard reorders every second**
+`t.peers` — `map[string]*peer.Peer`. Go runtime намеренно рандомизирует порядок итерации по map при каждом обходе. `GetAllPeers()` итерировал map напрямую → каждый вызов возвращал пиров в другом порядке → фронтенд (polling 1s) перемешивал карточки пиров в dashboard каждую секунду.
+`ORDER BY created_at` в SQL-запросе `GetPeers` не помогал — `listPeers` API читает из in-memory map, а не напрямую из SQLite.
+Фикс: `sort.Slice(out, func(i,j int) bool { return out[i].CreatedAt < out[j].CreatedAt })` в `GetAllPeers()`. RFC3339 строки сортируются лексикографически = хронологически.
+
 ### Compat layer (internal/api/compat.go)
 
 **RegisterCompat** (без авторизации):
@@ -789,7 +796,7 @@ Go rewrite вшивает фронтенд из `internal/frontend/www/` (`//go:
 ### Checkpoint Go rewrite
 
 **Активная ветка:** `feature/go-rewrite`
-**Последний коммит:** `f1812be` fix(s2s): populate peer address from export
+**Последний коммит:** `275335b` fix(peers): stable sort order in GetAllPeers
 
 **Что работает (протестировано на production):**
 - Interfaces: CRUD, start/stop/restart, peers, S2S interconnect, export-params, backup/restore
