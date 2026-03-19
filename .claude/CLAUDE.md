@@ -668,6 +668,10 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | `8652c52` | docs: add FIX-GO-8 + update checkpoint |
 | `f1e6ab0` | fix(firewall): PBR routing table empty after container restart (FIX-GO-9) |
 | `6bcb3ec` | fix(firewall): ipInCIDR always false for non-network-address IPs (FIX-GO-10) |
+| `a87aeba` | fix(routing): ipInCIDR — replace broken bitmask with net.ParseCIDR (FIX-GO-10 deploy) |
+| `7cc4675` | fix(ui): firewall action badge grayed out when rule disabled — correct path internal/frontend/www |
+| `63d4016` | fix(api): backup includes PSK for all peer types |
+| `f1812be` | fix(s2s): populate peer address from export — required for multi-peer transit |
 
 ### API contract — обёртка ответов
 
@@ -756,6 +760,14 @@ fwmark из правил файрвола, затем `ip route get <dst> mark <
 
 Фикс: заменить на `net.ParseCIDR(cidr)` + `ipNet.Contains(ip)` — stdlib правильно применяет маску.
 
+**FIX-GO-11: importPeerJSON не сохраняет address пира для transit-интерфейсов**
+Для transit-пиров (`allowedIPs=0.0.0.0/0`) `AddPeer` пропускает деривацию `address` из AllowedIPs (guard `peerIP != "0.0.0.0"`). `importPeerJSON` использовал `body["address"]` только как фоллбэк для AllowedIPs /32, но никогда не писал в `inp.Address`. Итог: `address=""` у всех импортированных interconnect-пиров. На интерфейсе с 3+ пирами (full mesh) все пиры неотличимы в UI — у всех `allowedIPs=0.0.0.0/0` и пустой адрес.
+
+Фикс: `importPeerJSON` явно читает `body["address"]` в `inp.Address` до обработки `allowedIPs`.
+
+**FIX-GO-12: Фронтенд Go rewrite — файлы в internal/frontend/www/, не src/www/**
+Go rewrite вшивает фронтенд из `internal/frontend/www/` (`//go:embed all:www` в `internal/frontend/embed.go`). `src/www/` — файлы Node.js версии, не попадают в Go-бинарник. Все изменения фронтенда для Go rewrite делать ТОЛЬКО в `internal/frontend/www/`.
+
 ### Compat layer (internal/api/compat.go)
 
 **RegisterCompat** (без авторизации):
@@ -777,16 +789,17 @@ fwmark из правил файрвола, затем `ip route get <dst> mark <
 ### Checkpoint Go rewrite
 
 **Активная ветка:** `feature/go-rewrite`
-**Последний коммит:** `6bcb3ec` fix(firewall): ipInCIDR always false for non-network-address IPs
+**Последний коммит:** `f1812be` fix(s2s): populate peer address from export
 
 **Что работает (протестировано на production):**
 - Interfaces: CRUD, start/stop/restart, peers, S2S interconnect, export-params, backup/restore
 - Peers: полный CRUD + name/address/expireDate/oneTimeLink/export-json
-- Routing: static routes + kernel routes + routing tables
+- Routing: static routes + kernel routes + routing tables + policy-aware Route Lookup (SimulateTrace)
 - NAT: Outbound MASQUERADE/SNAT CRUD + alias source + auto-правила
 - Gateways: CRUD + live ping/HTTP monitoring + Gateway Groups + fallback
 - Firewall Aliases: host/network/ipset/group + L4 port/port-group + upload + generate (async job)
 - Firewall Rules: ACCEPT/DROP/REJECT + PBR (gateway) + port matching + ↑↓ order
+- UI: disabled rule → серый ACCEPT/REJECT/DROP badge
 - AWG2 Templates: CRUD + Generate (7 CPS-профилей)
 - Auth: session cookie, bcrypt
 
@@ -794,6 +807,14 @@ fwmark из правил файрвола, затем `ip route get <dst> mark <
 - Admin Tunnel (wg0) — заглушка 501
 - Port Forwarding (DNAT)
 - One-time links (generateOneTimeLink сохраняет токен, но `/cnf/:link` не реализован)
+- Backup с приватным ключом интерфейса — решено добавить checkbox "Include private keys" в UI (по умолчанию выкл). Без него restore восстанавливает только пиров, интерфейс оставляет текущий ключ.
+
+**S2S топология — важные ограничения (задокументировано 2026-03-19):**
+- WireGuard использует `allowedIPs` как таблицу маршрутизации исходящего трафика
+- `allowedIPs=0.0.0.0/0` работает только для **одного** пира на интерфейсе — при двух+ пирах с одинаковым prefix WG выберет только один
+- Full mesh из N роутеров: каждый пир должен иметь `/32` конкретного соседа + нужные префиксы за ним
+- Настоящий LAN Exchange (L2 shared medium) через WireGuard невозможен — только point-to-point туннели
+- Рекомендуемые топологии: hub-and-spoke (спицы с `0.0.0.0/0`, хаб с `/32`) или full mesh с явными prefix-листами
 
 ---
 
