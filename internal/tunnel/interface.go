@@ -24,6 +24,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -284,6 +285,11 @@ func (t *TunnelInterface) GetAllPeers() []*peer.Peer {
 	for _, p := range t.peers {
 		out = append(out, p)
 	}
+	// Go map iteration is non-deterministic — sort by CreatedAt so the frontend
+	// receives peers in a stable order on every poll tick.
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt < out[j].CreatedAt
+	})
 	return out
 }
 
@@ -920,9 +926,11 @@ func (t *TunnelInterface) ExportInterfaceParams(wgHost string) InterfaceExport {
 		Address:   t.Address,
 		Protocol:  t.Protocol,
 	}
-	if t.DisableRoutes {
-		exp.AllowedIPs = "0.0.0.0/0"
-	}
+	// NOTE: AllowedIPs is intentionally omitted from the export.
+	// importPeerJSON derives the peer's AllowedIPs from the `address` field
+	// (remote tunnel IP → /32). Exporting "0.0.0.0/0" for disableRoutes=true
+	// interfaces caused the importer to store AllowedIPs="0.0.0.0/0" instead
+	// of the correct /32, leaving the peer's address field empty as well.
 	if psk != "" {
 		exp.PresharedKey = psk
 	}
