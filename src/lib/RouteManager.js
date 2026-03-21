@@ -260,6 +260,7 @@ class RouteManager {
       if (k === 'from')  { result.prefsrc = v; i++; }  // 'ip route get X from Y' → output includes 'from Y' instead of 'src Y'
       if (k === 'proto') { result.protocol = v; i++; }
       if (k === 'table') { result.table = v; i++; }
+      if (k === 'mark')  { result.mark = v; i++; }
     }
     return result;
   }
