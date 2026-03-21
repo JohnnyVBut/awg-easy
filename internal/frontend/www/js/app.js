@@ -940,7 +940,7 @@ new Vue({
     async deleteTunnelInterface(iface) {
       if (!confirm(`Delete interface "${iface.name}"? This will also delete all peers.`)) return;
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${iface.id}`, {
+        const res = await fetch(`./api/tunnel-interfaces/${iface.id}`, {
           method: 'DELETE',
           credentials: 'include',
         });
@@ -975,7 +975,7 @@ new Vue({
       if (this.loadingInterfaceId) return; // предотвратить двойной клик
       this.loadingInterfaceId = iface.id;
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${iface.id}/start`, {
+        const res = await fetch(`./api/tunnel-interfaces/${iface.id}/start`, {
           method: 'POST',
           credentials: 'include',
         });
@@ -997,7 +997,7 @@ new Vue({
       if (this.loadingInterfaceId) return;
       this.loadingInterfaceId = iface.id;
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${iface.id}/stop`, {
+        const res = await fetch(`./api/tunnel-interfaces/${iface.id}/stop`, {
           method: 'POST',
           credentials: 'include',
         });
@@ -1019,7 +1019,7 @@ new Vue({
       if (this.loadingInterfaceId) return;
       this.loadingInterfaceId = iface.id;
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${iface.id}/restart`, {
+        const res = await fetch(`./api/tunnel-interfaces/${iface.id}/restart`, {
           method: 'POST',
           credentials: 'include',
         });
@@ -1039,7 +1039,7 @@ new Vue({
 
     async loadInterfacePeers(interfaceId) {
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${interfaceId}/peers`, { credentials: 'include' });
+        const res = await fetch(`./api/tunnel-interfaces/${interfaceId}/peers`, { credentials: 'include' });
         if (!res.ok) throw new Error(res.statusText);
         const data = await res.json();
         this.selectedInterfacePeers = data.peers || [];
@@ -1115,7 +1115,7 @@ new Vue({
     async deletePeer(peer) {
       if (!confirm(`Delete peer "${peer.name}"?`)) return;
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${this.selectedInterface.id}/peers/${peer.id}`, {
+        const res = await fetch(`./api/tunnel-interfaces/${this.selectedInterface.id}/peers/${peer.id}`, {
           method: 'DELETE',
           credentials: 'include',
         });
@@ -1131,7 +1131,7 @@ new Vue({
 
     async downloadPeerConfig(peer) {
       try {
-        const res = await fetch(`/api/tunnel-interfaces/${this._peerIfaceId(peer)}/peers/${peer.id}/config`, {
+        const res = await fetch(`./api/tunnel-interfaces/${this._peerIfaceId(peer)}/peers/${peer.id}/config`, {
           credentials: 'include',
         });
         if (!res.ok) throw new Error(res.statusText);
