@@ -7,9 +7,9 @@ FROM golang:1.23-alpine AS builder
 WORKDIR /app
 
 # Download dependencies — cached layer (invalidated only when go.mod changes).
-# go.sum is generated inside the build; it is not committed to the repo.
+# 'go mod download all' fetches direct + all transitive deps and generates go.sum.
 COPY go.mod ./
-RUN go mod download && go mod tidy
+RUN go mod download all
 
 # Copy source and build.
 # CGO_ENABLED=0: fully static binary, no libc dependency.
