@@ -95,11 +95,13 @@ https://:443 {
 
         # Serve static files (index.html, video, etc.)
         file_server
+    }
 
-        # Custom error page — do not reveal Caddy or server info
-        handle_errors {
-            rewrite * /404.html
-            file_server
-        }
+    # Custom error page — do not reveal Caddy or server info
+    # handle_errors must be at site block level, not inside handle
+    handle_errors {
+        root * /srv/www
+        rewrite * /404.html
+        file_server
     }
 }
