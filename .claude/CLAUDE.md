@@ -797,10 +797,36 @@ Go rewrite вшивает фронтенд из `internal/frontend/www/` (`//go:
 - `ALL /wireguard/*` → 501 Not Implemented
 - `GET /system/interfaces` → `{interfaces: [...]}`  (для NAT dropdown)
 
+### FIX-GO-16: doReload() — 10s timeout + fallback на Restart() при дедлоке syncconf
+**Файл:** `internal/tunnel/interface.go` → `doReload()`
+**Причина:** amneziawg-installer v5.7.5 выпустил митигацию для upstream AWG kernel deadlock #146.
+Без timeout `awg syncconf` может зависнуть навсегда (deadlock в kernel module).
+С fallback — при ошибке делается полный `Restart()` (down→up) вместо зависания.
+
+```go
+// ПРАВИЛЬНО: 10s timeout + fallback на Restart()
+const syncconfTimeout = 10 * time.Second
+
+func (t *TunnelInterface) doReload() error {
+    cmd := fmt.Sprintf("%s syncconf %s <(%s strip %s)", ...)
+    if _, err := util.Exec(cmd, syncconfTimeout, true); err != nil {
+        log.Printf("tunnel: %s syncconf failed (%v) — falling back to full restart", t.ID, err)
+        if restartErr := t.Restart(); restartErr != nil {
+            return fmt.Errorf("syncconf failed and fallback restart also failed: %w", restartErr)
+        }
+        return nil
+    }
+    return nil
+}
+// НЕПРАВИЛЬНО: util.ExecDefault (30s без fallback) — при deadlock зависает на 30s, не восстанавливается
+```
+
+---
+
 ### Checkpoint Go rewrite
 
 **Активная ветка:** `feature/go-rewrite`
-**Последний коммит:** `685061b` fix(caddy): use WIRESTEER_PORT env var
+**Последний коммит:** `eef0ddd` security: fix SameSite=Strict, add input validation, document threat model
 
 **Что работает (протестировано на production):**
 - Interfaces: CRUD, start/stop/restart, peers, S2S interconnect, export-params, backup/restore

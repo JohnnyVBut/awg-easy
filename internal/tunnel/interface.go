@@ -561,14 +561,31 @@ func (t *TunnelInterface) Reload() {
 	}()
 }
 
+// syncconfTimeout is the deadline for `awg/wg syncconf`.
+// Mirrors amneziawg-installer v5.7.5 mitigation for upstream kernel deadlock #146:
+// if the AWG kernel module hangs during syncconf, kill it after 10s and fall back
+// to a full interface restart instead of hanging indefinitely.
+const syncconfTimeout = 10 * time.Second
+
 // doReload executes `<syncBin> syncconf <id> <(<quickBin> strip <id>)`.
 // Uses bash process substitution — works because util.Exec runs via `bash -c`.
 // Must be called with reloadMu held.
+//
+// On timeout or error (AWG kernel deadlock #146): falls back to full Restart().
+// Restart() itself holds no locks, so calling it here (while reloadMu is held)
+// is safe — any subsequent Reload() goroutine will simply queue behind reloadMu.
 func (t *TunnelInterface) doReload() error {
 	cmd := fmt.Sprintf("%s syncconf %s <(%s strip %s)",
 		t.syncBin(), t.ID, t.quickBin(), t.ID)
-	if _, err := util.ExecDefault(cmd); err != nil {
-		return err
+	if _, err := util.Exec(cmd, syncconfTimeout, true); err != nil {
+		// syncconf timed out or failed — likely AWG kernel module deadlock (#146).
+		// Fall back to full down→up restart to recover a clean kernel state.
+		log.Printf("tunnel: %s syncconf failed (%v) — falling back to full restart", t.ID, err)
+		if restartErr := t.Restart(); restartErr != nil {
+			return fmt.Errorf("syncconf failed and fallback restart also failed: %w", restartErr)
+		}
+		log.Printf("tunnel: %s recovered via full restart after syncconf failure", t.ID)
+		return nil
 	}
 	log.Printf("tunnel: %s hot-reloaded (syncconf)", t.ID)
 	return nil
