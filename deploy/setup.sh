@@ -340,7 +340,6 @@ if [[ ! -f "$HOME/.acme.sh/acme.sh" ]]; then
   EMAIL_ARG=""
   [[ -n "${ACME_EMAIL:-}" ]] && EMAIL_ARG="email=${ACME_EMAIL}"
   curl -fsSL https://get.acme.sh | sh -s $EMAIL_ARG
-  source "$HOME/.bashrc" 2>/dev/null || true
   ok "acme.sh installed"
 else
   ok "acme.sh already installed"
