@@ -143,6 +143,15 @@ else
   ok "Docker installed"
 fi
 
+# buildx is required for Dockerfile --mount=type=cache (BuildKit syntax)
+if ! docker buildx version &>/dev/null; then
+  info "Installing docker-buildx-plugin..."
+  apt-get install -y docker-buildx-plugin -qq
+  ok "docker-buildx-plugin installed"
+else
+  ok "docker buildx $(docker buildx version | awk '{print $2}')"
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 4 — sysctl
 # ═══════════════════════════════════════════════════════════════════════════════
