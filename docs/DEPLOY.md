@@ -157,7 +157,11 @@ curl https://get.acme.sh | sh -s email=YOUR@EMAIL.COM
 source ~/.bashrc
 ```
 
-Issue a short-lived certificate for your server IP (Let's Encrypt supports bare IPs):
+### Option A — bare IP address (most common for VPS)
+
+Let's Encrypt supports TLS certificates for bare IP addresses, but **only** via the
+`shortlived` profile (6-day validity). Standard 90-day certificates for IPs are not
+available from Let's Encrypt.
 
 ```bash
 ~/.acme.sh/acme.sh --issue \
@@ -168,8 +172,20 @@ Issue a short-lived certificate for your server IP (Let's Encrypt supports bare 
   --days 3
 ```
 
-> **Note:** `shortlived` certificates are valid for 6 days with auto-renewal every 3 days.
-> Standard certificates (valid 90 days) do not require `--certificate-profile shortlived --days 3`.
+acme.sh installs a cron job that renews automatically every 3 days — no manual action needed.
+
+### Option B — domain name
+
+If you have a domain pointing to the server, use a standard 90-day certificate instead:
+
+```bash
+~/.acme.sh/acme.sh --issue \
+  --server letsencrypt \
+  -d yourdomain.example.com \
+  --standalone
+```
+
+No `--certificate-profile` flag needed. Auto-renewal every 60 days.
 
 Install the certificate to a persistent location:
 
