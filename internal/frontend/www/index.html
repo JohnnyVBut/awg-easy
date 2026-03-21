@@ -89,9 +89,8 @@
         <nav class="w-64 flex-shrink-0 bg-gray-50 dark:bg-neutral-800 overflow-y-auto flex flex-col"
              style="border-right: 1px solid #e5e7eb; min-height: 100vh;">
           <!-- Logo -->
-          <div style="padding: 20px 16px 12px;">
-            <img src="img/logo_old-1.svg" width="36" class="inline align-middle mr-2" />
-            <span class="text-lg font-semibold dark:text-neutral-200 align-middle">WireSteer</span>
+          <div style="padding: 20px 16px 14px;">
+            <img src="img/logo.svg" style="width:176px; height:auto; display:block;" alt="WireSteer" />
           </div>
           <!-- Menu items -->
           <div style="padding: 0 8px;" class="flex-grow">
@@ -4664,10 +4663,9 @@
       </div><!-- /authenticated === true (flex h-screen) -->
 
       <div v-if="authenticated === false">
-        <h1 class="text-4xl font-medium my-16 text-gray-700 dark:text-neutral-200 text-center">
-          <img src="img/logo_old-1.svg" width="60" class="inline align-middle dark:bg" />
-          <span class="align-middle">AmneziaWG</span>
-        </h1>
+        <div class="text-center my-16">
+          <img src="img/logo.svg" style="width:220px; height:auto; display:inline-block;" alt="WireSteer" />
+        </div>
 
         <!-- Step 1: username + password -->
         <form v-if="!totpRequired" @submit="login"
