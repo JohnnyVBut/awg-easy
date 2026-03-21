@@ -23,6 +23,15 @@ fi
 echo -e "${GREEN}Building Docker image (Go/Fiber)...${NC}"
 docker build --network=host -f Dockerfile.go -t awg2-easy-go:latest .
 
+# Detect compose command (v2 plugin vs v1 standalone)
+if docker compose version &>/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    COMPOSE="docker-compose"
+else
+    COMPOSE="docker compose"  # best guess, will show a clear error if missing
+fi
+
 echo ""
 echo -e "${GREEN}✓ Build complete!${NC}"
 echo ""
@@ -31,8 +40,8 @@ echo ""
 echo "Next steps:"
 echo "  1. Edit docker-compose.go.yml with your settings (WG_HOST, PASSWORD_HASH)"
 echo "  2. Deploy:"
-echo "     docker compose -f docker-compose.go.yml down && docker compose -f docker-compose.go.yml up -d"
+echo "     ${COMPOSE} -f docker-compose.go.yml down && ${COMPOSE} -f docker-compose.go.yml up -d"
 echo "  3. Check logs:"
 echo "     docker logs awg-router"
 echo "  4. Healthcheck:"
-echo "     curl http://localhost:51821/api/health"
+echo "     curl http://127.0.0.1:8888/api/health"
