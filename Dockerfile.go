@@ -1,20 +1,14 @@
 # ============================================================
 # AWG-Easy 3.0 — Go/Fiber build
 # ============================================================
-# syntax=docker/dockerfile:1.4
 # Stage 1: Build Go binary
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
 # Download dependencies.
-# go get скачивает пакеты и создаёт go.sum без исходников.
-# BuildKit cache mount: /root/go/pkg/mod кэшируется между сборками →
-# повторная сборка без изменений в go.mod занимает секунды, не минуты.
 COPY go.mod ./
-RUN --mount=type=cache,target=/root/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    go get github.com/gofiber/fiber/v2@v2.52.5 && \
+RUN go get github.com/gofiber/fiber/v2@v2.52.5 && \
     go get modernc.org/sqlite@v1.33.1 && \
     go get github.com/google/uuid@v1.6.0 && \
     go get rsc.io/qr@v0.2.0 && \
@@ -24,15 +18,11 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
 # Copy source and build.
 # CGO_ENABLED=0: fully static binary, no libc dependency.
 # -ldflags="-s -w": strip debug symbols → smaller binary.
-# BuildKit cache mount: go build cache сохраняется → только изменённые
-# пакеты перекомпилируются. modernc.org/sqlite (~380s) кэшируется после первой сборки.
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 # www/ is now embedded via internal/frontend/embed.go (//go:embed all:www).
 # No separate COPY needed — included in COPY internal/ above.
-RUN --mount=type=cache,target=/root/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" \
     -o awg-easy \
     ./cmd/awg-easy
