@@ -33,6 +33,7 @@ import (
 type Config struct {
 	DataDir      string // --data-dir / DATA_DIR
 	Port         int    // --port / PORT         (TCP, Web UI)
+	BindHost     string // --bind / BIND_ADDR    (listen host, default "" = 0.0.0.0)
 	WGPort       int    // --wg-port / WG_PORT   (UDP, WireGuard default)
 	Host         string // --host / WG_HOST      (required)
 	PasswordHash string // --password-hash / PASSWORD_HASH
@@ -193,9 +194,11 @@ func main() {
 	nat.SetInstance(natMgr)
 
 	// ── Start HTTP server ──────────────────────────────────────────────────────
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("AWG-Easy 3.0 | host=%s | port=%d (tcp) | wg-port=%d (udp) | data=%s | debug=%v",
-		cfg.Host, cfg.Port, cfg.WGPort, cfg.DataDir, cfg.Debug)
+	// cfg.BindHost="" → ":port" → listens on all interfaces (0.0.0.0).
+	// cfg.BindHost="127.0.0.1" → "127.0.0.1:port" → localhost only (behind reverse proxy).
+	addr := fmt.Sprintf("%s:%d", cfg.BindHost, cfg.Port)
+	log.Printf("WireSteer | host=%s | listen=%s (tcp) | wg-port=%d (udp) | data=%s",
+		cfg.Host, addr, cfg.WGPort, cfg.DataDir)
 
 	// Run in a goroutine so the signal wait below is not blocked.
 	go func() {
@@ -228,6 +231,10 @@ func parseConfig() Config {
 	flag.IntVar(&cfg.Port, "port",
 		envInt("PORT", 8888),
 		"Web UI listen port (TCP)")
+
+	flag.StringVar(&cfg.BindHost, "bind",
+		envStr("BIND_ADDR", ""),
+		"Web UI listen host (default empty = 0.0.0.0; set 127.0.0.1 when behind reverse proxy)")
 
 	flag.IntVar(&cfg.WGPort, "wg-port",
 		envInt("WG_PORT", 555),
