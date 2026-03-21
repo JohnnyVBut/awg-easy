@@ -66,10 +66,36 @@ new Vue({
   data: {
     authenticated: null,
     authenticating: false,
+    username: 'admin',     // login form username field
     password: null,
     requiresPassword: null,
     remember: false,
     rememberMeEnabled: false,
+
+    // TOTP login step 2
+    totpCode: '',          // 6-digit code input during login
+    totpRequired: false,   // true = password OK, show TOTP input
+    totpPending: false,    // waiting for TOTP verification
+
+    // Users management
+    users: [],
+    currentUser: null,
+
+    // TOTP setup modal (for /users/me/totp/setup flow)
+    showTOTPSetupModal: false,
+    totpSetupSecret: '',
+    totpSetupQrPng: '',
+    totpSetupQrUri: '',
+    totpSetupCode: '',
+    totpSetupSaving: false,
+
+    // Disable TOTP modal
+    showTOTPDisableModal: false,
+    totpDisableCode: '',
+
+    // Add user modal
+    showAddUserModal: false,
+    addUserForm: { username: '', password: '', passwordConfirm: '' },
 
     clients: null,
     clientsPersist: {},
@@ -565,23 +591,19 @@ new Vue({
 
       this.authenticating = true;
       this.api.createSession({
+        username: this.username || 'admin',
         password: this.password,
         remember: this.remember,
       })
-        .then(async () => {
-          const session = await this.api.getSession();
-          this.authenticated = session.authenticated;
-          this.requiresPassword = session.requiresPassword;
-          await this.refresh();
-          // loadTunnelInterfaces / loadSettings are called in mounted() but may
-          // have got 401 (unauthenticated) before login. Re-load now that we have a session.
-          this.loadTunnelInterfaces();
-          this.loadSettings(); // needed for AWG2 template dropdown in Create/Edit modals
-          if (this.activePage === 'gateways') {
-            this.loadGateways();
-            this.loadGatewayGroups();
-            this.loadSystemInterfaces();
+        .then(async (res) => {
+          // Server may require TOTP as a second step.
+          if (res && res.totp_required) {
+            this.totpRequired = true;
+            this.totpCode = '';
+            return; // stay on login screen — show TOTP input
           }
+          // Fully authenticated (no TOTP or TOTP already done).
+          await this._onLoginSuccess();
         })
         .catch((err) => {
           this.showToast(err.message || err.toString(), 'error');
@@ -590,6 +612,43 @@ new Vue({
           this.authenticating = false;
           this.password = null;
         });
+    },
+
+    // Step 2: submit TOTP code after password was accepted.
+    async loginStep2() {
+      if (!this.totpCode || this.authenticating) return;
+      this.authenticating = true;
+      try {
+        await this.api.verifyTOTP({ code: this.totpCode });
+        this.totpRequired = false;
+        this.totpCode = '';
+        await this._onLoginSuccess();
+      } catch (err) {
+        this.showToast(err.message || err.toString(), 'error');
+      } finally {
+        this.authenticating = false;
+      }
+    },
+
+    // Called after a successful full authentication (steps 1 or 2).
+    async _onLoginSuccess() {
+      const session = await this.api.getSession();
+      this.authenticated = session.authenticated;
+      this.requiresPassword = session.requiresPassword;
+      await this.refresh();
+      // Re-load data that may have got 401 before login.
+      this.loadTunnelInterfaces();
+      this.loadSettings();
+      this.loadUsers();
+      this.loadCurrentUser();
+      if (this.activePage === 'gateways') {
+        this.loadGateways();
+        this.loadGatewayGroups();
+        this.loadSystemInterfaces();
+      }
+      if (this.activePage === 'settings') {
+        this.loadUsers();
+      }
     },
     logout(e) {
       e.preventDefault();
@@ -689,7 +748,7 @@ new Vue({
     switchPage(pageId) {
       this.activePage = pageId;
       if (pageId === 'interfaces') this.loadTunnelInterfaces();
-      if (pageId === 'settings') this.loadSettings();
+      if (pageId === 'settings') { this.loadSettings(); this.loadUsers(); }
       if (pageId === 'gateways') {
         this.loadGateways();
         this.loadGatewayGroups();
@@ -2625,6 +2684,116 @@ new Vue({
         i4: tmpl.i4 || '', i5: tmpl.i5 || '',
       };
     },
+
+    // ========================================================================
+    // Users Management
+    // ========================================================================
+
+    async loadUsers() {
+      try {
+        const res = await this.api.getUsers();
+        this.users = res.users || [];
+      } catch (err) {
+        console.error('loadUsers failed:', err);
+        this.users = [];
+      }
+    },
+
+    async loadCurrentUser() {
+      try {
+        this.currentUser = await this.api.getCurrentUser();
+      } catch (err) {
+        this.currentUser = null;
+      }
+    },
+
+    async createUser() {
+      const { username, password, passwordConfirm } = this.addUserForm;
+      if (!username) { this.showToast('Username is required', 'error'); return; }
+      if (!password) { this.showToast('Password is required', 'error'); return; }
+      if (password !== passwordConfirm) { this.showToast('Passwords do not match', 'error'); return; }
+      try {
+        await this.api.createUser({ username, password });
+        this.showAddUserModal = false;
+        this.addUserForm = { username: '', password: '', passwordConfirm: '' };
+        await this.loadUsers();
+        this.showToast(`User "${username}" created`);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to create user', 'error');
+      }
+    },
+
+    async deleteUser(user) {
+      if (!confirm(`Delete user "${user.username}"?`)) return;
+      try {
+        await this.api.deleteUser(user.id);
+        await this.loadUsers();
+        this.showToast(`User "${user.username}" deleted`);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to delete user', 'error');
+      }
+    },
+
+    // ========================================================================
+    // TOTP Setup
+    // ========================================================================
+
+    async openTOTPSetup() {
+      try {
+        const res = await this.api.getTOTPSetup();
+        this.totpSetupSecret = res.secret || '';
+        this.totpSetupQrPng  = res.qr_png  || '';
+        this.totpSetupQrUri  = res.qr_uri  || '';
+        this.totpSetupCode   = '';
+        this.totpSetupSaving = false;
+        this.showTOTPSetupModal = true;
+      } catch (err) {
+        this.showToast(err.message || 'Failed to start TOTP setup', 'error');
+      }
+    },
+
+    async confirmTOTPEnable() {
+      if (!this.totpSetupCode) { this.showToast('Enter the 6-digit code', 'error'); return; }
+      this.totpSetupSaving = true;
+      try {
+        const res = await this.api.enableTOTP({ code: this.totpSetupCode });
+        this.showTOTPSetupModal = false;
+        this.totpSetupCode = '';
+        // Update the user list and current user to reflect totp_enabled=true.
+        if (res && res.user) {
+          this.currentUser = res.user;
+          const idx = this.users.findIndex(u => u.id === res.user.id);
+          if (idx !== -1) this.users.splice(idx, 1, res.user);
+        }
+        this.showToast('Two-factor authentication enabled');
+      } catch (err) {
+        this.showToast(err.message || 'Failed to enable 2FA', 'error');
+      } finally {
+        this.totpSetupSaving = false;
+      }
+    },
+
+    openTOTPDisable() {
+      this.totpDisableCode = '';
+      this.showTOTPDisableModal = true;
+    },
+
+    async confirmTOTPDisable() {
+      if (!this.totpDisableCode) { this.showToast('Enter the 6-digit code', 'error'); return; }
+      try {
+        const res = await this.api.disableTOTP({ code: this.totpDisableCode });
+        this.showTOTPDisableModal = false;
+        this.totpDisableCode = '';
+        if (res && res.user) {
+          this.currentUser = res.user;
+          const idx = this.users.findIndex(u => u.id === res.user.id);
+          if (idx !== -1) this.users.splice(idx, 1, res.user);
+        }
+        this.showToast('Two-factor authentication disabled');
+      } catch (err) {
+        this.showToast(err.message || 'Failed to disable 2FA', 'error');
+      }
+    },
   },
   filters: {
     bytes,
@@ -2662,6 +2831,9 @@ new Vue({
         // Load settings + templates at startup so they are available
         // on any page (e.g. "Obfuscation Profile" dropdown in Create Interface modal).
         this.loadSettings();
+        // Load users and current user for the Users section in Settings.
+        this.loadUsers();
+        this.loadCurrentUser();
       })
       .catch((err) => {
         this.showToast(err.message || err.toString(), 'error');

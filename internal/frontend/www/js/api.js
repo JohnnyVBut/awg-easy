@@ -98,11 +98,11 @@ class API {
     });
   }
 
-  async createSession({ password, remember }) {
+  async createSession({ username, password, remember }) {
     return this.call({
       method: 'post',
       path: '/session',
-      body: { password, remember },
+      body: { username, password, remember },
     });
   }
 
@@ -828,6 +828,64 @@ class API {
    */
   async moveFirewallRule({ id, direction }) {
     return this.call({ method: 'post', path: `/firewall/rules/${id}/move`, body: { direction } });
+  }
+
+  // ============================================================
+  // Users API — multi-user management
+  // ============================================================
+
+  /** List all users. */
+  async getUsers() {
+    return this.call({ method: 'get', path: '/users' });
+  }
+
+  /** Create a new user. */
+  async createUser({ username, password }) {
+    return this.call({ method: 'post', path: '/users', body: { username, password } });
+  }
+
+  /** Update a user's username or password. */
+  async updateUser(id, updates) {
+    return this.call({ method: 'patch', path: `/users/${id}`, body: updates });
+  }
+
+  /** Delete a user by ID. */
+  async deleteUser(id) {
+    return this.call({ method: 'delete', path: `/users/${id}` });
+  }
+
+  /** Get the currently authenticated user. */
+  async getCurrentUser() {
+    return this.call({ method: 'get', path: '/users/me' });
+  }
+
+  /** Update own password. */
+  async updateCurrentUser(updates) {
+    return this.call({ method: 'patch', path: '/users/me', body: updates });
+  }
+
+  // ============================================================
+  // TOTP API
+  // ============================================================
+
+  /** Start TOTP setup — returns { secret, qr_uri, qr_png }. */
+  async getTOTPSetup() {
+    return this.call({ method: 'get', path: '/users/me/totp/setup' });
+  }
+
+  /** Confirm TOTP setup with a 6-digit code. */
+  async enableTOTP({ code }) {
+    return this.call({ method: 'post', path: '/users/me/totp/enable', body: { code } });
+  }
+
+  /** Disable TOTP — requires current TOTP code for confirmation. */
+  async disableTOTP({ code }) {
+    return this.call({ method: 'post', path: '/users/me/totp/disable', body: { code } });
+  }
+
+  /** Verify TOTP code during login (step 2 after password). */
+  async verifyTOTP({ code }) {
+    return this.call({ method: 'post', path: '/auth/totp/verify', body: { code } });
   }
 
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/JohnnyVBut/awg-easy/internal/nat"
 	"github.com/JohnnyVBut/awg-easy/internal/routing"
 	"github.com/JohnnyVBut/awg-easy/internal/tunnel"
+	"github.com/JohnnyVBut/awg-easy/internal/users"
 )
 
 // Config holds all runtime configuration resolved from flags and ENV.
@@ -53,6 +54,15 @@ func main() {
 	// ── Auth subsystem ────────────────────────────────────────────────────────
 	// Initialise before registering routes so middleware is ready.
 	api.InitAuth(cfg.PasswordHash)
+
+	// Seed the admin user from PASSWORD_HASH env if the users table is empty.
+	// After this point PASSWORD_HASH is only used for the initial seed —
+	// subsequent logins use the users table directly.
+	if cfg.PasswordHash != "" {
+		if err := users.SeedAdminIfEmpty(cfg.PasswordHash); err != nil {
+			log.Printf("user seed warning: %v", err)
+		}
+	}
 
 	// ── Fiber app + middleware ────────────────────────────────────────────────
 	app := fiber.New(fiber.Config{
@@ -107,6 +117,9 @@ func main() {
 
 	// ── Auth gate — all routes below require authentication ───────────────────
 	apiGroup.Use(api.AuthMiddleware)
+
+	// Users management (multi-user auth + TOTP setup).
+	api.RegisterUsers(apiGroup)
 
 	// Settings + Templates (registered before other managers are ready, but
 	// settings package only needs db which is already initialised above).

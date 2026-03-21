@@ -310,6 +310,22 @@ ALTER TABLE peers ADD COLUMN expired_at     TEXT NOT NULL DEFAULT '';  -- '' = n
 ALTER TABLE peers ADD COLUMN one_time_link  TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 7,
+		sql: `
+-- Multi-user authentication table.
+-- Replaces the single PASSWORD_HASH env-var approach.
+-- Seeded at startup: if empty and PASSWORD_HASH env is set, admin user is created.
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL DEFAULT '',
+    totp_secret   TEXT NOT NULL DEFAULT '',
+    totp_enabled  INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`,
+	},
 }
 
 func runMigrations(db *sql.DB) error {
