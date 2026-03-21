@@ -189,7 +189,7 @@ else
   info "Generating decoy.mp4 (480p noise, 60s — may take 1-2 min on slow CPUs)..."
   ffmpeg -y \
     -f lavfi -i "color=c=0x0f0f13:s=854x480:r=24" \
-    -vf "noise=c0s=18:c0f=t+gauss,hue=s=0.1" \
+    -vf "noise=c0s=18:c0f=t,hue=s=0.1" \
     -t 60 \
     -c:v libx264 -b:v 2000k -preset ultrafast \
     -an \
