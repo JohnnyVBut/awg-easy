@@ -68,15 +68,6 @@ https://:443 {
     #   /ADMIN_PATH/api/...   → /api/...    → WireSteer API handler
     #
     handle_path /{$ADMIN_PATH}/* {
-        # Separate log for admin traffic — keep away from decoy access log
-        log {
-            output file /logs/admin-access.log {
-                roll_size 5mb
-                roll_keep 3
-            }
-            format json
-        }
-
         # Rate limit POST /api/session (login attempts): 5 per IP per minute.
         # After 5 failed attempts the client receives 429 Too Many Requests.
         @login {
