@@ -33,6 +33,7 @@ import (
 	"github.com/JohnnyVBut/awg-easy/internal/db"
 	"github.com/JohnnyVBut/awg-easy/internal/peer"
 	"github.com/JohnnyVBut/awg-easy/internal/util"
+	"github.com/JohnnyVBut/awg-easy/internal/validate"
 )
 
 // TunnelInterface represents a single WireGuard or AmneziaWG tunnel interface.
@@ -351,6 +352,28 @@ func (t *TunnelInterface) AddPeer(inp peer.PeerInput) (*peer.Peer, error) {
 				ifaceMask = parts[1]
 			}
 			inp.Address = peerIP + "/" + ifaceMask
+		}
+	}
+
+	// Validate fields that will be passed to shell commands (command injection prevention).
+	if inp.PublicKey != "" {
+		if err := validate.WGKey(inp.PublicKey); err != nil {
+			return nil, fmt.Errorf("invalid public key: %w", err)
+		}
+	}
+	if inp.PresharedKey != "" {
+		if err := validate.WGKey(inp.PresharedKey); err != nil {
+			return nil, fmt.Errorf("invalid preshared key: %w", err)
+		}
+	}
+	if inp.AllowedIPs != "" {
+		if err := validate.CIDR(inp.AllowedIPs); err != nil {
+			return nil, fmt.Errorf("invalid allowed IPs: %w", err)
+		}
+	}
+	if inp.Endpoint != "" {
+		if err := validate.Endpoint(inp.Endpoint); err != nil {
+			return nil, fmt.Errorf("invalid endpoint: %w", err)
 		}
 	}
 

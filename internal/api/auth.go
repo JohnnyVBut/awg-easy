@@ -73,7 +73,7 @@ func InitAuth(passwordHash string) {
 		Expiration:     defaultSessionAge,
 		KeyLookup:      "cookie:session_id",
 		CookieHTTPOnly: true,
-		CookieSameSite: "Lax",
+		CookieSameSite: "Strict",
 	})
 }
 
