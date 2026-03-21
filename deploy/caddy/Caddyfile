@@ -89,7 +89,7 @@ https://:443 {
             events 5
         }
 
-        reverse_proxy 127.0.0.1:51821
+        reverse_proxy 127.0.0.1:{$WIRESTEER_PORT}
     }
 
     # Redirect /ADMIN_PATH (no trailing slash) → add trailing slash
