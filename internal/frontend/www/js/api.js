@@ -888,4 +888,31 @@ class API {
     return this.call({ method: 'post', path: '/auth/totp/verify', body: { code } });
   }
 
+  // ============================================================
+  // API Tokens — programmatic access
+  // ============================================================
+
+  /** List all API tokens for the current user. */
+  async getApiTokens() {
+    return this.call({ method: 'get', path: '/tokens' });
+  }
+
+  /**
+   * Create a new API token.
+   * @param {{ name: string }} data
+   * @returns {{ token: object, raw_token: string }}
+   * raw_token is shown ONCE — save it, it cannot be retrieved later.
+   */
+  async createApiToken({ name }) {
+    return this.call({ method: 'post', path: '/tokens', body: { name } });
+  }
+
+  /**
+   * Revoke (delete) an API token.
+   * @param {{ id: string }}
+   */
+  async deleteApiToken({ id }) {
+    return this.call({ method: 'delete', path: `/tokens/${id}` });
+  }
+
 }

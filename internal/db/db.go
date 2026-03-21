@@ -326,6 +326,24 @@ CREATE TABLE IF NOT EXISTS users (
 );
 `,
 	},
+	{
+		version: 8,
+		sql: `
+-- API tokens for programmatic access.
+-- Only the SHA-256 hash of the token is stored — the raw value is shown once at creation.
+-- ON DELETE CASCADE: deleting a user revokes all their tokens automatically.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL DEFAULT '',
+    token_hash  TEXT NOT NULL UNIQUE,   -- SHA-256(raw_token) as hex
+    last_used   TEXT,                   -- NULL until first use; updated on every authenticated request
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+`,
+	},
 }
 
 func runMigrations(db *sql.DB) error {

@@ -26,8 +26,13 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/session"
 	totpLib "github.com/pquerna/otp/totp"
 
+	"github.com/JohnnyVBut/awg-easy/internal/tokens"
 	"github.com/JohnnyVBut/awg-easy/internal/users"
 )
+
+// localKeyTokenUserID is the fiber.Ctx Locals key set when a request is
+// authenticated via a Bearer API token (instead of a session cookie).
+const localKeyTokenUserID = "token_user_id"
 
 // ── Session key constants ─────────────────────────────────────────────────────
 
@@ -79,7 +84,8 @@ func InitAuth(passwordHash string) {
 // Pass-through when:
 //  1. No users exist in the DB (open mode — first-run or empty table).
 //  2. Session cookie contains authenticated=true.
-//  3. Authorization header: "username:password" or raw password (admin compat).
+//  3. Authorization: Bearer ws_... — valid API token (sets token_user_id in locals).
+//  4. Authorization header: "username:password" or raw password (admin compat).
 //
 // Returns 401 JSON otherwise.
 func AuthMiddleware(c *fiber.Ctx) error {
@@ -97,8 +103,17 @@ func AuthMiddleware(c *fiber.Ctx) error {
 		}
 	}
 
-	// Authorization header fallback.
+	// Authorization header: Bearer token or username:password fallback.
 	if hdr := c.Get("Authorization"); hdr != "" {
+		// Bearer API token — preferred for programmatic access.
+		if strings.HasPrefix(hdr, "Bearer ") {
+			rawToken := strings.TrimPrefix(hdr, "Bearer ")
+			if userID, err := tokens.VerifyAndTouch(rawToken); err == nil && userID != "" {
+				c.Locals(localKeyTokenUserID, userID)
+				return c.Next()
+			}
+		}
+		// Legacy fallback: "username:password" or raw password for "admin".
 		if checkAuthHeader(hdr) {
 			return c.Next()
 		}
@@ -322,9 +337,18 @@ func RegisterAuth(api fiber.Router) {
 
 // ── Session helpers (used by users.go handlers) ───────────────────────────────
 
-// currentUserID extracts the user ID from the current session.
-// Returns ("", false) if no authenticated session exists.
+// currentUserID extracts the user ID from the current request context.
+// Checks (in order):
+//  1. Locals["token_user_id"] — set by Bearer token auth in AuthMiddleware.
+//  2. Session cookie — set by POST /api/session login flow.
+//
+// Returns ("", false) if neither source provides a user ID.
 func currentUserID(c *fiber.Ctx) (string, bool) {
+	// Token-authenticated request: user ID is stored in locals.
+	if id, ok := c.Locals(localKeyTokenUserID).(string); ok && id != "" {
+		return id, true
+	}
+	// Session-authenticated request.
 	if authStore == nil {
 		return "", false
 	}

@@ -1827,6 +1827,59 @@
             </table>
           </div>
 
+          <!-- API Tokens -->
+          <div class="shadow-md rounded-lg bg-white dark:bg-neutral-700 overflow-hidden">
+            <div class="p-5 border-b dark:border-neutral-600 flex items-center justify-between">
+              <div>
+                <p class="text-xl font-medium dark:text-neutral-200">API Tokens</p>
+                <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">
+                  Long-lived tokens for programmatic access — use as
+                  <code class="font-mono bg-gray-100 dark:bg-neutral-600 px-1 rounded">Authorization: Bearer ws_...</code>
+                </p>
+              </div>
+              <button @click="showCreateTokenModal = true"
+                class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition">
+                + Create Token
+              </button>
+            </div>
+
+            <!-- Empty state -->
+            <div v-if="!apiTokens || apiTokens.length === 0"
+              class="text-center text-gray-400 dark:text-neutral-500 py-8">
+              No API tokens yet.
+            </div>
+
+            <!-- Token table -->
+            <table v-if="apiTokens && apiTokens.length > 0" class="w-full text-sm">
+              <thead>
+                <tr class="border-b dark:border-neutral-600 text-left">
+                  <th class="tc font-medium text-gray-500 dark:text-neutral-400">Name</th>
+                  <th class="tc font-medium text-gray-500 dark:text-neutral-400">Last used</th>
+                  <th class="tc font-medium text-gray-500 dark:text-neutral-400">Created</th>
+                  <th class="tc"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="token in apiTokens" :key="token.id"
+                  class="border-b last:border-b-0 dark:border-neutral-600">
+                  <td class="tc dark:text-neutral-200 font-medium font-mono">{{ token.name }}</td>
+                  <td class="tc text-gray-400 dark:text-neutral-500 text-xs">
+                    {{ token.last_used ? new Date(token.last_used).toLocaleString() : 'Never' }}
+                  </td>
+                  <td class="tc text-gray-400 dark:text-neutral-500 text-xs">
+                    {{ token.created_at ? new Date(token.created_at).toLocaleDateString() : '—' }}
+                  </td>
+                  <td class="tc">
+                    <button @click="deleteApiToken(token)"
+                      class="px-3 py-1 text-xs border border-red-300 text-red-600 dark:text-red-400 rounded transition hover:bg-red-50 dark:hover:bg-red-900">
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
         </div>
 
         <!-- ============================================================== -->
@@ -4823,6 +4876,67 @@
           <button @click="createUser()"
             class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition">
             Create User
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Create API Token Modal ==================== -->
+    <div v-if="showCreateTokenModal" class="modal-overlay" @click.self="showCreateTokenModal = false">
+      <div class="modal-panel modal-panel-sm bg-white dark:bg-neutral-700">
+        <div class="modal-header">
+          <h3 class="text-lg font-semibold dark:text-neutral-100">Create API Token</h3>
+        </div>
+        <div class="modal-body">
+          <div>
+            <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Token name</label>
+            <input v-model="createTokenForm.name" type="text" placeholder="e.g. monitoring-script"
+              class="w-full px-3 py-2 border rounded dark:bg-neutral-600 dark:border-neutral-500 dark:text-neutral-200 text-sm"
+              @keyup.enter="createApiToken()" />
+          </div>
+          <p class="text-xs text-gray-500 dark:text-neutral-400">
+            The token will be shown once after creation. Store it securely — it cannot be retrieved later.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button @click="showCreateTokenModal = false"
+            class="px-4 py-2 text-sm border dark:border-neutral-500 text-gray-600 dark:text-neutral-300 rounded transition">
+            Cancel
+          </button>
+          <button @click="createApiToken()"
+            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition">
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== New Token Value Modal ==================== -->
+    <div v-if="showNewTokenModal" class="modal-overlay">
+      <div class="modal-panel modal-panel-sm bg-white dark:bg-neutral-700">
+        <div class="modal-header">
+          <h3 class="text-lg font-semibold dark:text-neutral-100">Token Created</h3>
+        </div>
+        <div class="modal-body">
+          <div class="bg-amber-50 dark:bg-amber-900 border border-amber-300 dark:border-amber-700 rounded p-3 text-xs text-amber-800 dark:text-amber-200 mb-3">
+            ⚠ This is the only time the token will be shown. Copy it now — it cannot be retrieved later.
+          </div>
+          <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Your API token</label>
+          <div class="flex gap-2 items-center">
+            <code class="flex-1 px-3 py-2 bg-gray-100 dark:bg-neutral-600 rounded text-xs font-mono break-all dark:text-neutral-200 select-all">{{ newTokenValue }}</code>
+            <button @click="copyTokenToClipboard()"
+              class="px-3 py-2 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition whitespace-nowrap">
+              Copy
+            </button>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-neutral-400 mt-2">
+            Usage: <code class="font-mono bg-gray-100 dark:bg-neutral-600 px-1 rounded">Authorization: Bearer {{ newTokenValue }}</code>
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button @click="showNewTokenModal = false; newTokenValue = ''"
+            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition">
+            Done
           </button>
         </div>
       </div>

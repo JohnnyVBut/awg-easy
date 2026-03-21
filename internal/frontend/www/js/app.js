@@ -97,6 +97,13 @@ new Vue({
     showAddUserModal: false,
     addUserForm: { username: '', password: '', passwordConfirm: '' },
 
+    // API Tokens
+    apiTokens: [],
+    showCreateTokenModal: false,
+    createTokenForm: { name: '' },
+    showNewTokenModal: false,   // shown after successful creation
+    newTokenValue: '',          // raw token — displayed once, never stored
+
     clients: null,
     clientsPersist: {},
     clientDelete: null,
@@ -748,7 +755,7 @@ new Vue({
     switchPage(pageId) {
       this.activePage = pageId;
       if (pageId === 'interfaces') this.loadTunnelInterfaces();
-      if (pageId === 'settings') { this.loadSettings(); this.loadUsers(); }
+      if (pageId === 'settings') { this.loadSettings(); this.loadUsers(); this.loadApiTokens(); }
       if (pageId === 'gateways') {
         this.loadGateways();
         this.loadGatewayGroups();
@@ -2732,6 +2739,52 @@ new Vue({
       } catch (err) {
         this.showToast(err.message || 'Failed to delete user', 'error');
       }
+    },
+
+    // ========================================================================
+    // API Tokens
+    // ========================================================================
+
+    async loadApiTokens() {
+      try {
+        const res = await this.api.getApiTokens();
+        this.apiTokens = res.tokens || [];
+      } catch (err) {
+        this.apiTokens = [];
+      }
+    },
+
+    async createApiToken() {
+      const { name } = this.createTokenForm;
+      if (!name) { this.showToast('Token name is required', 'error'); return; }
+      try {
+        const res = await this.api.createApiToken({ name });
+        this.showCreateTokenModal = false;
+        this.createTokenForm = { name: '' };
+        this.newTokenValue = res.raw_token || '';
+        this.showNewTokenModal = true;
+        await this.loadApiTokens();
+      } catch (err) {
+        this.showToast(err.message || 'Failed to create token', 'error');
+      }
+    },
+
+    async deleteApiToken(token) {
+      if (!confirm(`Revoke token "${token.name}"? This cannot be undone.`)) return;
+      try {
+        await this.api.deleteApiToken({ id: token.id });
+        await this.loadApiTokens();
+        this.showToast(`Token "${token.name}" revoked`);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to revoke token', 'error');
+      }
+    },
+
+    copyTokenToClipboard() {
+      if (!this.newTokenValue) return;
+      navigator.clipboard.writeText(this.newTokenValue)
+        .then(() => this.showToast('Token copied to clipboard'))
+        .catch(() => this.showToast('Failed to copy — select and copy manually', 'error'));
     },
 
     // ========================================================================

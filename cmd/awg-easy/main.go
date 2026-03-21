@@ -121,6 +121,9 @@ func main() {
 	// Users management (multi-user auth + TOTP setup).
 	api.RegisterUsers(apiGroup)
 
+	// API tokens (programmatic access without session/TOTP).
+	api.RegisterTokens(apiGroup)
+
 	// Settings + Templates (registered before other managers are ready, but
 	// settings package only needs db which is already initialised above).
 	api.RegisterSettings(apiGroup)
