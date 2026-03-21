@@ -816,6 +816,49 @@ Go rewrite вшивает фронтенд из `internal/frontend/www/` (`//go:
 - One-time links (generateOneTimeLink сохраняет токен, но `/cnf/:link` не реализован)
 - Backup с приватным ключом интерфейса — решено добавить checkbox "Include private keys" в UI (по умолчанию выкл). Без него restore восстанавливает только пиров, интерфейс оставляет текущий ключ.
 
+**Хотелки (обсуждено 2026-03-20, не запланировано к реализации):**
+
+1. **VPN-only management + INPUT chain в UI**
+   - После деплоя закрыть веб-интерфейс и SSH из интернета
+   - Доступ только через VPN с конкретных IP
+   - Сейчас: делается вручную через iptables
+   - Хотелось бы: поддержка INPUT chain в FirewallManager → управление из UI
+
+2. **Multi-user + Resource-scoped RBAC**
+   - Таблицы: users, groups, user_groups, group_access (group_id, resource_type, resource_id, actions[])
+   - Пример: группа "kz-ops" видит и редактирует только пиров на wg10
+   - Роли: superadmin (*:*), operator (peers:read+write на своих интерфейсах), viewer (read-only)
+   - Каждый handler проверяет доступ к конкретному resource_id
+   - GET /tunnel-interfaces и GET /peers фильтруются по доступным интерфейсам
+   - Отдельный UI раздел управления пользователями/группами
+   - Оценка: 3-4 недели работы
+
+3. **TOTP 2FA (Google Authenticator)**
+   - Второй фактор при логине (RFC 6238)
+   - QR-код при создании пользователя
+   - Не зависит от внешних сервисов (в отличие от Telegram OTP)
+   - Предпочтительнее Telegram OTP как основной 2FA
+
+4. **Telegram OTP (альтернативный 2FA)**
+   - Логин: username → OTP отправляется в Telegram → вводится в форме
+   - users.telegram_id + in-memory OTP store с TTL 5 минут
+   - Зависит от доступности Telegram с хоста (проблема для России)
+   - Fallback: консольная команда `wiresteer otp <username>` для генерации OTP напрямую
+   - Требует OUTPUT chain routing для Telegram через KZ gateway (см. ниже)
+
+5. **Telegram Bot для управления роутером**
+   - Отдельный микросервис (не встроен в основной бинарник)
+   - Аутентифицируется в WireSteer API как bot-пользователь с ролью operator
+   - Whitelist chat_id — только конкретные Telegram ID могут давать команды
+   - Ограниченный набор команд: статус интерфейсов, restart, просмотр пиров (не удаление/изменение firewall)
+   - Bot token в ENV
+   - Все действия логируются
+   - **Требует:** OUTPUT chain PBR для Telegram IP (mangle OUTPUT → fwmark → KZ gateway)
+     ```bash
+     iptables-nft -t mangle -A OUTPUT -m set --match-set telegram_set dst -j MARK --set-mark <fwmark>
+     ```
+     telegram_set = алиас типа network с префиксами: 149.154.160.0/20, 91.108.4.0/22, 91.108.8.0/22, 91.108.16.0/22, 91.108.56.0/22
+
 **S2S топология — важные ограничения (задокументировано 2026-03-19):**
 - WireGuard использует `allowedIPs` как таблицу маршрутизации исходящего трафика
 - `allowedIPs=0.0.0.0/0` работает только для **одного** пира на интерфейсе — при двух+ пирах с одинаковым prefix WG выберет только один
