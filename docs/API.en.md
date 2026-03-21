@@ -1,18 +1,63 @@
 # WireSteer — API Reference (Go Rewrite)
 
 > **Base URL:** `/api`
-> **Auth:** All routes except session, lang, release, remember-me and UI-flag stubs require a valid session cookie (POST `/api/session` → cookie).
+> **Auth:** All routes except session, lang, release, remember-me and UI-flag stubs require either a valid session cookie **or** an API token (`Authorization: Bearer ws_...`).
 > **Content-Type:** `application/json`
 
 ---
 
 ## Authentication
 
+### Session (Web UI)
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/session` | Current session state. Returns `{ authenticated, requiresPassword }` |
-| `POST` | `/api/session` | Login. Body: `{ password }`. Returns `{ authenticated }` |
+| `GET` | `/api/session` | Current session state. Returns `{ authenticated, requiresPassword, totp_pending, username }` |
+| `POST` | `/api/session` | Login step 1. Body: `{ username, password, remember? }`. Returns `{ authenticated: true }` or `{ totp_required: true }` |
 | `DELETE` | `/api/session` | Logout |
+| `POST` | `/api/auth/totp/verify` | Login step 2 (TOTP). Body: `{ code }`. Returns `{ authenticated: true }`. Requires `totp_pending` session. |
+
+### Users management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/users` | List all users. Returns `{ users: [...] }` |
+| `POST` | `/api/users` | Create user. Body: `{ username, password }`. Returns `{ user }` |
+| `GET` | `/api/users/me` | Current user info |
+| `PATCH` | `/api/users/me` | Change own password. Body: `{ password }` |
+| `PATCH` | `/api/users/:id` | Update username or password. Body: `{ username?, password? }` |
+| `DELETE` | `/api/users/:id` | Delete user (cannot delete the last user) |
+
+### TOTP (2FA) setup
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/users/me/totp/setup` | Generate TOTP secret. Returns `{ secret, qr_uri, qr_png }`. Secret stored in session until confirmed. |
+| `POST` | `/api/users/me/totp/enable` | Confirm and activate TOTP. Body: `{ code }` |
+| `POST` | `/api/users/me/totp/disable` | Deactivate TOTP. Body: `{ code }` (current TOTP code required) |
+
+### API Tokens (programmatic access)
+
+Long-lived tokens for scripts and automation. No TOTP required.
+Token format: `ws_` + 64 hex chars. Only SHA-256 hash is stored — raw value shown once at creation.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/tokens` | List current user's tokens. Returns `{ tokens: [{id, name, last_used, created_at}] }` |
+| `POST` | `/api/tokens` | Create token. Body: `{ name }`. Returns `{ token, raw_token }` — `raw_token` shown **once** |
+| `DELETE` | `/api/tokens/:id` | Revoke token |
+
+**Usage:**
+```bash
+# Login to get session cookie
+curl -c /tmp/ws.cookie -X POST https://<IP>/<ADMIN_PATH>/api/session \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"..."}'
+
+# Use Bearer token (no session, no TOTP)
+curl -H "Authorization: Bearer ws_<token>" \
+  https://<IP>/<ADMIN_PATH>/api/tunnel-interfaces
+```
 
 ---
 

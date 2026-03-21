@@ -1,18 +1,63 @@
 # WireSteer — API Reference (Go Rewrite)
 
 > **Base URL:** `/api`
-> **Auth:** Все маршруты кроме session, lang, release, remember-me и UI-флагов требуют валидного session cookie (POST `/api/session` → cookie).
+> **Auth:** Все маршруты кроме session, lang, release, remember-me и UI-флагов требуют либо валидного session cookie, либо API-токена (`Authorization: Bearer ws_...`).
 > **Content-Type:** `application/json`
 
 ---
 
 ## Аутентификация
 
+### Сессия (Web UI)
+
 | Метод | Путь | Описание |
 |-------|------|----------|
-| `GET` | `/api/session` | Текущее состояние сессии. Возвращает `{ authenticated, requiresPassword }` |
-| `POST` | `/api/session` | Логин. Body: `{ password }`. Возвращает `{ authenticated }` |
+| `GET` | `/api/session` | Текущее состояние сессии. Возвращает `{ authenticated, requiresPassword, totp_pending, username }` |
+| `POST` | `/api/session` | Логин шаг 1. Body: `{ username, password, remember? }`. Возвращает `{ authenticated: true }` или `{ totp_required: true }` |
 | `DELETE` | `/api/session` | Логаут |
+| `POST` | `/api/auth/totp/verify` | Логин шаг 2 (TOTP). Body: `{ code }`. Возвращает `{ authenticated: true }`. Требует `totp_pending` сессии. |
+
+### Управление пользователями
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `GET` | `/api/users` | Список пользователей. Возвращает `{ users: [...] }` |
+| `POST` | `/api/users` | Создать пользователя. Body: `{ username, password }`. Возвращает `{ user }` |
+| `GET` | `/api/users/me` | Текущий пользователь |
+| `PATCH` | `/api/users/me` | Изменить свой пароль. Body: `{ password }` |
+| `PATCH` | `/api/users/:id` | Обновить username или пароль. Body: `{ username?, password? }` |
+| `DELETE` | `/api/users/:id` | Удалить пользователя (нельзя удалить последнего) |
+
+### TOTP (2FA)
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `GET` | `/api/users/me/totp/setup` | Сгенерировать TOTP secret. Возвращает `{ secret, qr_uri, qr_png }`. Secret хранится в сессии до подтверждения. |
+| `POST` | `/api/users/me/totp/enable` | Подтвердить и активировать TOTP. Body: `{ code }` |
+| `POST` | `/api/users/me/totp/disable` | Отключить TOTP. Body: `{ code }` (текущий TOTP-код) |
+
+### API-токены (программный доступ)
+
+Долгоживущие токены для скриптов и автоматизации. TOTP не требуется.
+Формат токена: `ws_` + 64 hex-символа. В БД хранится только SHA-256 хеш — raw-значение показывается единожды при создании.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `GET` | `/api/tokens` | Список токенов текущего пользователя. Возвращает `{ tokens: [{id, name, last_used, created_at}] }` |
+| `POST` | `/api/tokens` | Создать токен. Body: `{ name }`. Возвращает `{ token, raw_token }` — `raw_token` показывается **один раз** |
+| `DELETE` | `/api/tokens/:id` | Отозвать токен |
+
+**Использование:**
+```bash
+# Логин через сессию
+curl -c /tmp/ws.cookie -X POST https://<IP>/<ADMIN_PATH>/api/session \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"..."}'
+
+# API-токен (без сессии, без TOTP)
+curl -H "Authorization: Bearer ws_<токен>" \
+  https://<IP>/<ADMIN_PATH>/api/tunnel-interfaces
+```
 
 ---
 
