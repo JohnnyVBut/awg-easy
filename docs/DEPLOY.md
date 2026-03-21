@@ -1,6 +1,6 @@
-# AWG-Easy 2.0 — Deploy from Scratch
+# WireSteer — Deploy from Scratch
 
-Full server setup guide: Ubuntu 22.04 + AmneziaWG kernel module + Docker.
+Full server setup: Ubuntu 22.04 / 24.04 + AmneziaWG kernel module + Docker + Caddy reverse proxy.
 
 ---
 
@@ -8,25 +8,27 @@ Full server setup guide: Ubuntu 22.04 + AmneziaWG kernel module + Docker.
 
 | | |
 |---|---|
-| OS | Ubuntu 22.04 LTS |
-| Kernel | 6.8+ (HWE) |
+| OS | Ubuntu 22.04 LTS or Ubuntu 24.04 LTS |
+| Kernel | 6.1+ (see Step 1) |
 | RAM | 512 MB minimum |
-| Access | Root or sudo |
-| Network | Public IP, UDP ports open |
+| Access | Root |
+| Network | Public IP, ports 443/TCP and WireGuard UDP ports open |
 
 ---
 
-## Step 1 — Install HWE kernel (kernel 6.8+)
+## Step 1 — Upgrade kernel to 6.x (Ubuntu 22.04 only)
 
-The AmneziaWG DKMS module requires kernel ≥ 6.1 (`timer_delete` was added then).
-Ubuntu 22.04 ships with kernel 5.15 by default — upgrade to HWE:
+> **Ubuntu 24.04:** skip this step — ships with kernel 6.8 by default.
+
+Ubuntu 22.04 ships with kernel 5.15. The AmneziaWG DKMS module requires ≥ 6.1
+(`timer_delete` symbol). Install the HWE kernel:
 
 ```bash
-sudo apt update && sudo apt install -y linux-generic-hwe-22.04
-sudo reboot
+apt update && apt install -y linux-generic-hwe-22.04
+reboot
 ```
 
-After reboot, verify:
+After reboot verify:
 
 ```bash
 uname -r
@@ -38,15 +40,15 @@ uname -r
 ## Step 2 — Install AmneziaWG kernel module
 
 ```bash
-sudo add-apt-repository ppa:amnezia/ppa
-sudo apt install -y amneziawg
+add-apt-repository ppa:amnezia/ppa
+apt install -y amneziawg
 ```
 
-Load the module now and add to autoload on every boot:
+Load the module immediately and register it for autoload on boot:
 
 ```bash
-sudo modprobe amneziawg
-echo "amneziawg" | sudo tee /etc/modules-load.d/amneziawg.conf
+modprobe amneziawg
+echo "amneziawg" | tee /etc/modules-load.d/amneziawg.conf
 ```
 
 Verify:
@@ -62,164 +64,308 @@ lsmod | grep amneziawg
 
 ```bash
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-newgrp docker          # activate group without logout
 ```
 
 ---
 
-## Step 4 — Clone repository and checkout branch
+## Step 4 — Configure kernel parameters
+
+Enable IP forwarding and tune network buffers (required for WireGuard routing and HTTP/3):
+
+```bash
+cat > /etc/sysctl.d/99-wiresteer.conf << 'EOF'
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+net.core.rmem_max = 7340032
+net.core.wmem_max = 7340032
+EOF
+
+sysctl --system
+```
+
+---
+
+## Step 5 — Clone repository
 
 ```bash
 git clone https://github.com/JohnnyVBut/awg-easy.git
 cd awg-easy
-git checkout feature/kernel-module
+git checkout feature/go-rewrite
 ```
 
 ---
 
-## Step 5 — Install persistent sysctl settings
-
-Applies on every host reboot (ip forwarding, BBR, buffers, etc.):
+## Step 6 — Build WireSteer (Go binary + Docker image)
 
 ```bash
-sudo cp sysctl.d/99-awg.conf /etc/sysctl.d/99-awg.conf
-sudo sysctl --system
+./build-go.sh
 ```
+
+The script compiles the Go binary and builds the Docker image `awg2-easy-go:latest`.
 
 ---
 
-## Step 6 — Build Docker image
+## Step 7 — Configure WireSteer
+
+Edit `docker-compose.go.yml`. The key variables:
+
+```yaml
+environment:
+  - PASSWORD_HASH=          # bcrypt hash of your admin password (see below)
+  - WG_HOST=                # your server's public IP or hostname
+  - PORT=8888               # Web UI port (listens on localhost only)
+  - BIND_ADDR=127.0.0.1     # bind to localhost — Caddy proxies from outside
+```
+
+**Generate password hash:**
 
 ```bash
-docker build -t awg2-easy:latest .
+docker run --rm -it awg2-easy-go:latest /app/wiresteer hash
+# Enter password when prompted — copy the $2a$... hash
 ```
+
+Paste the hash as the value of `PASSWORD_HASH=`.
 
 ---
 
-## Step 7 — Start container
+## Step 8 — Start WireSteer
 
 ```bash
-./run.sh
+docker compose -f docker-compose.go.yml up -d
 ```
 
-The script will:
-1. Apply kernel parameters on the host (`ip_forward`, BBR, buffers)
-2. Ask for Web UI password and generate bcrypt hash
-3. Detect public server IP (or ask to enter manually)
-4. Start the container with `--network host`
-
----
-
-## Step 8 — Verify
+Verify it is healthy and listening on localhost:
 
 ```bash
-# Container is running
 docker ps
-
-# Logs (should show wg0 started)
-docker logs awg-easy
-
-# WireGuard interfaces on host
-ip -d link show type amneziawg
-
-# Listening UDP ports (wg0 = 51820, wg10 = 51830, etc.)
-ss -unlp | grep -E '518[23][0-9]'
-
-# NAT rules (appear after first tunnel interface Start)
-iptables -t nat -L POSTROUTING -n -v
+curl http://127.0.0.1:8888/api/health
+# expected: {"host":"...","status":"ok","version":"3.0.0-alpha"}
 ```
-
-Web UI: `http://<server-ip>:51821`
 
 ---
 
-## Ports
+## Step 9 — Obtain TLS certificate (acme.sh)
+
+WireSteer must be running (Step 8) before this step.
+acme.sh uses standalone mode — it temporarily binds port 80 to complete the ACME HTTP-01 challenge.
+**Port 80 must be free** (Caddy is not started yet at this point).
+
+Install acme.sh:
+
+```bash
+curl https://get.acme.sh | sh -s email=YOUR@EMAIL.COM
+source ~/.bashrc
+```
+
+Issue a short-lived certificate for your server IP (Let's Encrypt supports bare IPs):
+
+```bash
+~/.acme.sh/acme.sh --issue \
+  --server letsencrypt \
+  -d YOUR.SERVER.IP \
+  --standalone \
+  --certificate-profile shortlived \
+  --days 3
+```
+
+> **Note:** `shortlived` certificates are valid for 6 days with auto-renewal every 3 days.
+> Standard certificates (valid 90 days) do not require `--certificate-profile shortlived --days 3`.
+
+Install the certificate to a persistent location:
+
+```bash
+mkdir -p /etc/ssl/wiresteer
+
+~/.acme.sh/acme.sh --install-cert -d YOUR.SERVER.IP \
+  --key-file       /etc/ssl/wiresteer/server.key \
+  --fullchain-file /etc/ssl/wiresteer/server.crt \
+  --reloadcmd      "docker exec wiresteer-caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true"
+```
+
+---
+
+## Step 10 — Deploy Caddy reverse proxy
+
+Caddy sits in front of WireSteer: serves the decoy site on HTTPS, and only routes
+requests under a secret path to the admin UI.
+
+```bash
+cd ~/awg-easy/deploy/caddy
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```bash
+# Secret path prefix for the admin UI — choose something random, no slashes
+ADMIN_PATH=your_random_secret_here
+
+# WireSteer port (must match PORT in docker-compose.go.yml)
+WIRESTEER_PORT=8888
+```
+
+Start Caddy:
+
+```bash
+docker compose up -d --build
+docker compose logs -f
+```
+
+Expected output — no errors, then:
+```
+{"level":"info","msg":"serving initial configuration"}
+```
+
+---
+
+## Step 11 — Verify full stack
+
+```bash
+# Decoy site (no admin path)
+curl -k https://YOUR.SERVER.IP
+# → StreamVault HTML
+
+# Admin UI (with secret path — note the trailing slash)
+curl -k https://YOUR.SERVER.IP/YOUR_ADMIN_PATH/api/health
+# → {"status":"ok",...}
+```
+
+Open in browser: `https://YOUR.SERVER.IP/YOUR_ADMIN_PATH/`
+
+---
+
+## Ports reference
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 51821 | TCP | Web UI |
-| 51820 | UDP | WireGuard (wg0, classic clients) |
-| 51830 | UDP | Tunnel Interface wg10 |
-| 51831 | UDP | Tunnel Interface wg11 |
-| 51832+ | UDP | Each new Tunnel Interface gets the next free port |
+| 443 | TCP + UDP (HTTP/3) | HTTPS — Caddy (public) |
+| 80 | TCP | ACME renewal only (not permanently open) |
+| 8888 | TCP | WireSteer UI — bound to 127.0.0.1, not public |
+| 51830 | UDP | WireGuard interface wg10 (first tunnel) |
+| 51831 | UDP | WireGuard interface wg11, etc. |
 
-With `--network host` all ports are immediately accessible — no container restart needed when new interfaces are created.
+WireGuard UDP ports must be open in the host firewall:
+
+```bash
+ufw allow 51830:51840/udp
+```
 
 ---
 
-## Creating a Tunnel Interface (AmneziaWG 2.0)
+## Data directory
 
-1. Open Web UI → **Tunnel Interfaces** tab
-2. Click **Create Interface**
-   - Name: anything (e.g. `Mobile`)
-   - Protocol: `AmneziaWG 2.0`
-   - Address: VPN subnet for this interface (e.g. `10.10.0.1/24`)
-   - AWG parameters are pre-filled with secure defaults
-3. Click **Start** on the created interface
-4. Click **Manage Peers** → **Add Peer**
-   - Mode: **Generate Keys** (server generates all keys, QR shown automatically)
-   - Type: **Client** (mobile/dynamic IP)
-   - Name: e.g. `iPhone`
-   - Allowed IPs: VPN IP for this client (e.g. `10.10.0.2/32`)
-5. Scan QR with AmneziaWG mobile app
+All WireSteer state is stored in `~/awg-easy/data/`:
+
+```
+data/
+  wireguard.db          ← SQLite: interfaces, peers, routes, NAT, firewall rules, etc.
+  *.save                ← ipset snapshots (auto-restored on startup)
+  /etc/amnezia/amneziawg/wg10.conf   ← generated WireGuard configs (inside container)
+```
+
+The data directory is mounted into the container via `docker-compose.go.yml`.
 
 ---
 
 ## Updating
 
 ```bash
-cd awg-easy
-git pull origin feature/kernel-module
-docker build -t awg2-easy:latest .
-docker stop awg-easy && docker rm awg-easy
-./run.sh
+cd ~/awg-easy
+git pull origin feature/go-rewrite
+./build-go.sh
+docker compose -f docker-compose.go.yml up -d
 ```
 
-> After update, existing tunnel interfaces with `enabled: true` are auto-started by the container on boot.
-> If PostUp/PostDown rules changed — do **Stop → Start** on each interface in the UI to re-apply iptables rules.
+Caddy does not need to be restarted for WireSteer updates.
 
 ---
 
 ## Troubleshooting
 
-### Module not loaded after reboot
+### AmneziaWG module not loaded after reboot
+
 ```bash
-sudo modprobe amneziawg
-# If that fails:
-sudo dkms status            # check build status
-uname -r                    # verify kernel version is 6.x
+modprobe amneziawg
+# If that fails — check DKMS build status:
+dkms status
+uname -r        # must be 6.x
 ```
 
-### Container starts but wg0 not coming up
+### WireSteer container exits immediately
+
 ```bash
-docker logs awg-easy        # look for wg-quick errors
-ls /etc/wireguard/          # check wg0.conf exists
+docker logs awg-router
 ```
 
-### Client connects but no internet
-```bash
-# Check NAT rule is present:
-iptables -t nat -L POSTROUTING -n -v | grep MASQUERADE
+Common causes:
+- `PASSWORD_HASH` is empty or malformed
+- `WG_HOST` is not set
 
-# If missing — Stop and Start the interface in the UI to re-apply PostUp
-# Check ip_forward:
-sysctl net.ipv4.ip_forward  # must be 1
+### Interfaces not appearing in UI
+
+```bash
+# Confirm API is reachable through Caddy:
+curl -k https://YOUR.SERVER.IP/YOUR_ADMIN_PATH/api/health
+
+# Check WireSteer logs:
+docker logs awg-router | tail -30
 ```
 
-### Client connects but DNS doesn't work
-The generated client config includes `DNS = 1.1.1.1, 8.8.8.8`.
-If you regenerated config after the fix — re-download/re-scan QR for existing peers.
+If the UI loads but the Interfaces page is empty — make sure you are accessing
+the UI via `https://YOUR.SERVER.IP/YOUR_ADMIN_PATH/` (with trailing slash).
+Without the trailing slash, relative API paths resolve incorrectly.
 
-### Port not reachable from outside
+### Caddy certificate errors
+
 ```bash
-# Verify interface is running:
+# Re-issue the certificate:
+~/.acme.sh/acme.sh --issue --server letsencrypt -d YOUR.SERVER.IP \
+  --standalone --certificate-profile shortlived --days 3 --force
+
+# Reinstall:
+~/.acme.sh/acme.sh --install-cert -d YOUR.SERVER.IP \
+  --key-file /etc/ssl/wiresteer/server.key \
+  --fullchain-file /etc/ssl/wiresteer/server.crt \
+  --reloadcmd "docker exec wiresteer-caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true"
+
+# Restart Caddy:
+cd ~/awg-easy/deploy/caddy && docker compose restart
+```
+
+### WireGuard tunnel not passing traffic
+
+```bash
+# Check interface is up:
 ip -d link show wg10
 
-# Verify port is listening:
-ss -unlp | grep 51830
+# Check NAT rule exists:
+iptables-nft -t nat -L POSTROUTING -n -v | grep MASQUERADE
 
-# Check firewall:
-ufw status
-iptables -L INPUT -n | grep 5183
+# Check IP forwarding:
+sysctl net.ipv4.ip_forward    # must be 1
+
+# If PostUp rules are missing — Stop and Start the interface in the UI
 ```
+
+### QUIC UDP buffer warning in Caddy logs
+
+```
+failed to sufficiently increase receive buffer size (was: 208 kiB, wanted: 7168 kiB, got: 416 kiB)
+```
+
+This is a warning, not an error. HTTP/3 works but with a smaller buffer.
+To silence it, apply the sysctl settings from Step 4 and restart Caddy.
+
+---
+
+## acme.sh auto-renewal
+
+acme.sh installs a cron job automatically during installation. Verify:
+
+```bash
+crontab -l | grep acme
+# expected: something like: 0 0 * * * /root/.acme.sh/acme.sh --cron --home /root/.acme.sh ...
+```
+
+On renewal, acme.sh runs the `--reloadcmd` configured in Step 9,
+which reloads Caddy config without downtime.
