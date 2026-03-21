@@ -725,7 +725,7 @@ new Vue({
 
     async loadTunnelInterfaces() {
       try {
-        const res = await fetch('/api/tunnel-interfaces', { credentials: 'include' });
+        const res = await fetch('./api/tunnel-interfaces', { credentials: 'include' });
         if (!res.ok) throw new Error(res.statusText);
         const data = await res.json();
         this.tunnelInterfaces = data.interfaces || [];
@@ -767,7 +767,7 @@ new Vue({
           payload.settings = this.interfaceCreate.settings;
         }
 
-        const res = await fetch('/api/tunnel-interfaces', {
+        const res = await fetch('./api/tunnel-interfaces', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
