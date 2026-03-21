@@ -90,8 +90,16 @@ https://:443 {
     handle {
         root * /srv/www
 
-        # Compress responses
-        encode gzip
+        # Compress text responses (HTML, CSS, JS) — skip video (already compressed)
+        @compressible {
+            not path /video/*
+        }
+        encode @compressible gzip
+
+        # Video: no-store forces browser to re-fetch on every loop iteration,
+        # producing a continuous QUIC stream (~2 Mbps) that looks like real streaming.
+        @video path /video/*
+        header @video Cache-Control "no-store, no-cache, must-revalidate"
 
         # Serve static files (index.html, video, etc.)
         file_server

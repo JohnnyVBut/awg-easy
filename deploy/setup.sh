@@ -164,6 +164,41 @@ SYSCTL
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# STEP 5a — Generate decoy video (QUIC streaming bait)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo -e "${B}── Step 5a: Decoy video${N}"
+
+VIDEO_DIR="$CADDY_DIR/www/video"
+VIDEO_FILE="$VIDEO_DIR/decoy.mp4"
+mkdir -p "$VIDEO_DIR"
+
+if [[ -f "$VIDEO_FILE" ]]; then
+  ok "decoy.mp4 already exists ($(du -sh "$VIDEO_FILE" | cut -f1))"
+else
+  if ! command -v ffmpeg &>/dev/null; then
+    info "Installing ffmpeg..."
+    apt-get install -y ffmpeg -qq
+    ok "ffmpeg installed"
+  fi
+
+  info "Generating decoy.mp4 (dark noise, 720p, 60s, ~2 Mbps — this takes ~10 seconds)..."
+  # Dark noise video matching the StreamVault theme (#0f0f13 background).
+  # noise=c0s=18 = subtle TV-static intensity.
+  # b:v 2000k = ~2 Mbps → ~15 MB → re-fetched every loop = continuous QUIC stream.
+  # faststart = moov atom at front → browser starts playing without full download.
+  ffmpeg -y \
+    -f lavfi -i "color=c=0x0f0f13:s=1280x720:r=24" \
+    -vf "noise=c0s=18:c0f=t+gauss,hue=s=0.1" \
+    -t 60 \
+    -c:v libx264 -b:v 2000k -preset fast \
+    -an \
+    -movflags +faststart \
+    "$VIDEO_FILE" 2>/dev/null
+  ok "decoy.mp4 generated ($(du -sh "$VIDEO_FILE" | cut -f1), 60s, ~2 Mbps)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # STEP 5 — Build WireSteer
 # ═══════════════════════════════════════════════════════════════════════════════
 echo ""

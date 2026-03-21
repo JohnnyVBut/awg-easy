@@ -247,12 +247,20 @@
     </nav>
   </header>
 
-  <!-- Hero: canvas noise player (no real video needed) -->
+  <!-- Hero: canvas noise fallback + real video overlay when available -->
   <div class="hero">
     <canvas id="noise-canvas"></canvas>
 
-    <!-- Buffering spinner -->
-    <div class="buffering">
+    <!-- Real video plays over canvas when decoy.mp4 exists.
+         loop + muted required for autoplay. No controls = immersive.
+         preload=auto starts buffering immediately to generate QUIC traffic. -->
+    <video id="hero-video" autoplay loop playsinline muted preload="auto"
+           style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;">
+      <source src="./video/decoy.mp4" type="video/mp4">
+    </video>
+
+    <!-- Buffering spinner — shown until video starts playing -->
+    <div class="buffering" id="buffering-indicator">
       <div class="buffering-ring"></div>
       <span>Buffering&hellip; <span id="buf-pct">64</span>%</span>
     </div>
@@ -452,6 +460,24 @@
     window.addEventListener('resize', resizeHero);
     resizeHero();
     loop();
+
+    // ── Real video overlay ────────────────────────────────────────────────
+    // When decoy.mp4 is available, show it over the canvas and hide spinner.
+    const vid = document.getElementById('hero-video');
+    const buf = document.getElementById('buffering-indicator');
+    if (vid) {
+      vid.addEventListener('canplay', () => {
+        vid.style.display = 'block';
+        // Keep spinner hidden once video is playing
+        vid.addEventListener('playing', () => {
+          if (buf) buf.style.display = 'none';
+        }, { once: true });
+      });
+      // If video fails to load (file not present), canvas stays — no error shown
+      vid.addEventListener('error', () => {
+        vid.style.display = 'none';
+      });
+    }
   })();
   </script>
 
