@@ -7,13 +7,17 @@
 #
 # What it does:
 #   1. Installs acme.sh (if not present)
-#   2. Issues a shortlived cert (6 days) for the IP via HTTP-01 challenge
+#   2. Issues a shortlived cert (6 days) for the IP via HTTP-01 standalone mode
+#      (acme.sh binds a temporary HTTP server on port 80 — no Caddy needed yet)
 #   3. Installs the cert to /etc/ssl/wiresteer/
 #   4. Configures auto-renewal via acme.sh cron (every 3 days)
-#   5. On renewal, reloads Caddy via `docker exec wiresteer-caddy caddy reload`
+#   5. On renewal: Caddy serves /.well-known/acme-challenge/* via webroot /srv/acme
+#      and reloads automatically via `docker exec wiresteer-caddy caddy reload`
 #
 # Requirements:
-#   - Port 80 must be reachable from the internet during issuance
+#   - Port 80 must be reachable from the internet during FIRST issuance
+#     (acme.sh standalone mode binds port 80 briefly; no existing HTTP server needed)
+#   - For RENEWAL: Caddy handles the challenge via webroot /srv/acme (already configured)
 #   - Caddy container name: wiresteer-caddy (see docker-compose.yml)
 #   - Docker must be installed and running
 
@@ -43,12 +47,15 @@ else
     source "$HOME/.acme.sh/acme.sh.env" 2>/dev/null || true
 fi
 
-echo "==> Issuing short-lived certificate for $IP..."
+# First issuance: standalone mode — acme.sh temporarily binds port 80 itself.
+# This avoids the chicken-and-egg problem (Caddy not yet started, cert not yet available).
+# On subsequent renewals, acme.sh switches to webroot (/srv/acme) served by Caddy.
+echo "==> Issuing short-lived certificate for $IP (standalone mode)..."
 ~/.acme.sh/acme.sh \
     --issue \
     --server letsencrypt \
     -d "$IP" \
-    -w "$ACME_WEBROOT" \
+    --standalone \
     --certificate-profile shortlived \
     --days 3
 

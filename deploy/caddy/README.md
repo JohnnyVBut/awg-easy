@@ -13,7 +13,8 @@ Caddy sits in front of WireSteer and provides:
 ### 1. Issue TLS certificate
 
 ```bash
-# Port 80 must be reachable from the internet during issuance
+# Port 80 must be reachable from the internet (acme.sh standalone mode binds it briefly).
+# No existing HTTP server needed — this is designed to run BEFORE Caddy starts.
 chmod +x scripts/acme-install.sh
 sudo ./scripts/acme-install.sh <YOUR_PUBLIC_IP> <YOUR_EMAIL>
 ```
@@ -35,13 +36,13 @@ www/video/decoy.mp4
 
 ### 4. Ensure WireSteer binds to 127.0.0.1 only
 
-Add to your WireSteer docker-compose or startup:
-```
---listen 127.0.0.1:51821
-```
-or block external access via iptables:
+Set `BIND_ADDR=127.0.0.1` in `docker-compose.go.yml` (already the default).
+This prevents WireSteer from being reachable directly from the internet — all traffic
+must go through Caddy's hidden `ADMIN_PATH`.
+
+As a second layer, block the port via iptables:
 ```bash
-iptables-nft -A INPUT ! -i lo -p tcp --dport 51821 -j DROP
+iptables-nft -A INPUT ! -i lo -p tcp --dport 8888 -j DROP
 ```
 
 ### 5. Start Caddy
@@ -61,6 +62,21 @@ https://<IP>/<ADMIN_PATH>/
 - `ADMIN_PATH` is security through obscurity — TOTP in WireSteer is the real gate
 - `Referrer-Policy: no-referrer` prevents the hidden path from leaking via Referer headers
 - Rate limiting blocks brute force on the login endpoint (5 POST /api/session per IP per minute)
-- WireSteer port 51821 MUST NOT be reachable from the internet (see step 4)
-- TLS cert renews automatically every 3 days via acme.sh cron
+- WireSteer port (default 8888) MUST NOT be reachable from the internet (see step 4)
+- TLS cert renews automatically every 3 days via acme.sh cron (webroot via Caddy after first issue)
 - Caddy container runs read-only with minimal capabilities (NET_BIND_SERVICE only)
+
+## Certificate issuance model
+
+**First issuance** (`acme-install.sh`): uses acme.sh `--standalone` mode.
+acme.sh temporarily binds port 80, answers the ACME HTTP-01 challenge, then exits.
+No existing HTTP server required — this is intentional (Caddy can't start without a cert).
+
+**Renewals** (automatic, every 3 days via cron): acme.sh switches to webroot mode,
+placing the challenge token in `/srv/acme`. Caddy serves `/.well-known/acme-challenge/*`
+from that directory (configured in `Caddyfile`), then gets reloaded automatically.
+
+```
+First time:  acme.sh --standalone   (binds :80 itself, no Caddy needed)
+Renewals:    acme.sh --webroot /srv/acme  (Caddy serves the challenge)
+```

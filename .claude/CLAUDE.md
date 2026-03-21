@@ -674,6 +674,10 @@ POST   /api/firewall/rules/:id/move ← { direction: 'up'|'down' }
 | `f1812be` | fix(s2s): populate peer address from export — required for multi-peer transit |
 | `e80e9a6` | fix(ui): rebrand AWG Easy → WG Router (title + sidebar) |
 | `275335b` | fix(peers): stable sort — GetAllPeers map iteration was non-deterministic (FIX-GO-13) |
+| `192eb4b` | feat: add --bind / BIND_ADDR to restrict Web UI listen address |
+| `6beed08` | feat(deploy): Caddy reverse proxy — decoy site + hidden admin path + rate limiting |
+| `685061b` | fix(caddy): use WIRESTEER_PORT env var instead of hardcoded 51821 |
+| (pending) | fix(caddy): standalone mode for first cert issuance + README + CLAUDE.md |
 
 ### API contract — обёртка ответов
 
@@ -796,7 +800,7 @@ Go rewrite вшивает фронтенд из `internal/frontend/www/` (`//go:
 ### Checkpoint Go rewrite
 
 **Активная ветка:** `feature/go-rewrite`
-**Последний коммит:** `275335b` fix(peers): stable sort order in GetAllPeers
+**Последний коммит:** `685061b` fix(caddy): use WIRESTEER_PORT env var
 
 **Что работает (протестировано на production):**
 - Interfaces: CRUD, start/stop/restart, peers, S2S interconnect, export-params, backup/restore
@@ -809,6 +813,23 @@ Go rewrite вшивает фронтенд из `internal/frontend/www/` (`//go:
 - UI: disabled rule → серый ACCEPT/REJECT/DROP badge
 - AWG2 Templates: CRUD + Generate (7 CPS-профилей)
 - Auth: session cookie, bcrypt
+- **Caddy reverse proxy** (`deploy/caddy/`): HTTPS/HTTP3, hidden admin path, rate limit, decoy site, security headers, BIND_ADDR=127.0.0.1
+- **TLS cert**: acme.sh shortlived profile (6-day), bare IP via Let's Encrypt, первый выпуск через standalone mode
+
+**Caddy — статус деплоя на production:**
+- ✅ acme.sh standalone mode — сертификат выдан Let's Encrypt для bare IP
+- ✅ `.env` создан с рандомным `ADMIN_PATH`
+- ✅ WireSteer перезапущен с `BIND_ADDR=127.0.0.1`
+- ✅ decoy.mp4 скачан (Big Buck Bunny)
+- ⏳ `docker compose up -d --build` в `deploy/caddy/` — следующий шаг
+- ⏳ Проверить `https://<IP>/<ADMIN_PATH>/`
+
+**acme.sh — модель обновления (задокументирована):**
+```
+Первый выпуск: acme.sh --standalone   (порт 80 занимает сам, Caddy не нужен)
+Продление:     acme.sh --webroot /srv/acme  (Caddy отвечает на challenge)
+```
+Renewal hook: `docker exec wiresteer-caddy caddy reload --config /etc/caddy/Caddyfile`
 
 **Что не реализовано:**
 - Admin Tunnel (wg0) — заглушка 501
