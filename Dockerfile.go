@@ -6,18 +6,18 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Download dependencies — cached layer (invalidated only when go.mod changes).
-# 'go mod download all' fetches direct + all transitive deps and generates go.sum.
+# Copy source first (go mod tidy needs imports to resolve indirect deps).
 COPY go.mod ./
-RUN go mod download all
-
-# Copy source and build.
-# CGO_ENABLED=0: fully static binary, no libc dependency.
-# -ldflags="-s -w": strip debug symbols → smaller binary.
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-# www/ is now embedded via internal/frontend/embed.go (//go:embed all:www).
-# No separate COPY needed — included in COPY internal/ above.
+
+# Resolve full dependency graph, update go.mod with indirect deps, generate go.sum.
+# Cached unless go.mod or source changes.
+RUN go mod tidy
+
+# Build static binary.
+# CGO_ENABLED=0: fully static binary, no libc dependency.
+# -ldflags="-s -w": strip debug symbols → smaller binary.
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" \
     -o awg-easy \
