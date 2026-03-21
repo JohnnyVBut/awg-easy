@@ -6,14 +6,9 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Download dependencies.
-COPY go.mod ./
-RUN go get github.com/gofiber/fiber/v2@v2.52.5 && \
-    go get modernc.org/sqlite@v1.33.1 && \
-    go get github.com/google/uuid@v1.6.0 && \
-    go get rsc.io/qr@v0.2.0 && \
-    go get golang.org/x/crypto@v0.31.0 && \
-    go get github.com/pquerna/otp@v1.4.0
+# Download dependencies — cached layer (invalidated only when go.mod/go.sum change).
+COPY go.mod go.sum ./
+RUN go mod download
 
 # Copy source and build.
 # CGO_ENABLED=0: fully static binary, no libc dependency.
