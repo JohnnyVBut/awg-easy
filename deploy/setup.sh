@@ -182,19 +182,22 @@ else
     ok "ffmpeg installed"
   fi
 
-  info "Generating decoy.mp4 (dark noise, 720p, 60s, ~2 Mbps — this takes ~10 seconds)..."
-  # Dark noise video matching the StreamVault theme (#0f0f13 background).
-  # noise=c0s=18 = subtle TV-static intensity.
-  # b:v 2000k = ~2 Mbps → ~15 MB → re-fetched every loop = continuous QUIC stream.
-  # faststart = moov atom at front → browser starts playing without full download.
+  # 480p noise video: easier to encode than 720p, still convincing as streaming.
+  # noise=c0s=18 = TV-static intensity. ultrafast preset = CPU-friendly.
+  # b:v 2000k → ~15 MB for 60s → browser re-fetches every loop = ~2 Mbps QUIC stream.
+  # faststart = moov atom at front → playback starts before full download.
+  #
+  # Progress is shown so the terminal doesn't look frozen.
+  info "Generating decoy.mp4 (480p noise, 60s — may take 1-2 min on slow CPUs)..."
   ffmpeg -y \
-    -f lavfi -i "color=c=0x0f0f13:s=1280x720:r=24" \
+    -f lavfi -i "color=c=0x0f0f13:s=854x480:r=24" \
     -vf "noise=c0s=18:c0f=t+gauss,hue=s=0.1" \
     -t 60 \
-    -c:v libx264 -b:v 2000k -preset fast \
+    -c:v libx264 -b:v 2000k -preset ultrafast \
     -an \
     -movflags +faststart \
-    "$VIDEO_FILE" 2>/dev/null
+    "$VIDEO_FILE" 2>&1 | grep --line-buffered -oP 'frame=\s*\K[0-9]+' \
+    | awk '{printf "\r    encoding frame %s / 1440 ...", $1; fflush()}'; echo ""
   ok "decoy.mp4 generated ($(du -sh "$VIDEO_FILE" | cut -f1), 60s, ~2 Mbps)"
 fi
 
