@@ -186,8 +186,6 @@ else
   # noise=c0s=18 = TV-static intensity. ultrafast preset = CPU-friendly.
   # b:v 2000k → ~15 MB for 60s → browser re-fetches every loop = ~2 Mbps QUIC stream.
   # faststart = moov atom at front → playback starts before full download.
-  #
-  # Progress is shown so the terminal doesn't look frozen.
   info "Generating decoy.mp4 (480p noise, 60s — may take 1-2 min on slow CPUs)..."
   ffmpeg -y \
     -f lavfi -i "color=c=0x0f0f13:s=854x480:r=24" \
@@ -196,9 +194,22 @@ else
     -c:v libx264 -b:v 2000k -preset ultrafast \
     -an \
     -movflags +faststart \
-    "$VIDEO_FILE" 2>&1 | grep --line-buffered -oP 'frame=\s*\K[0-9]+' \
-    | awk '{printf "\r    encoding frame %s / 1440 ...", $1; fflush()}'; echo ""
-  ok "decoy.mp4 generated ($(du -sh "$VIDEO_FILE" | cut -f1), 60s, ~2 Mbps)"
+    "$VIDEO_FILE" > /tmp/wiresteer-ffmpeg.log 2>&1 &
+  FFMPEG_PID=$!
+  # Spinner so terminal doesn't look frozen
+  SPIN='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'; si=0
+  while kill -0 "$FFMPEG_PID" 2>/dev/null; do
+    si=$(( (si+1) % 10 ))
+    printf "\r    ${SPIN:$si:1} encoding..."
+    sleep 0.3
+  done
+  printf "\r"
+  if wait "$FFMPEG_PID"; then
+    ok "decoy.mp4 generated ($(du -sh "$VIDEO_FILE" | cut -f1), 60s, ~2 Mbps)"
+  else
+    warn "ffmpeg failed — decoy video skipped (log: /tmp/wiresteer-ffmpeg.log)"
+    warn "Canvas noise fallback will be used instead"
+  fi
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
