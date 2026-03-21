@@ -151,11 +151,21 @@ echo ""
 echo -e "${B}── Step 3: Docker${N}"
 
 if command -v docker &>/dev/null; then
-  ok "Docker $(docker --version | awk '{print $3}' | tr -d ,) already installed"
+  DOCKER_VER=$(docker --version | awk '{print $3}' | tr -d ,)
+  ok "Docker ${DOCKER_VER} already installed"
+
+  # Detect Ubuntu-bundled docker.io (old, ships docker-compose 1.29 which breaks on
+  # Docker 25+ image format — missing ContainerConfig). Replace with official Docker CE.
+  if dpkg -l docker.io &>/dev/null 2>&1; then
+    warn "Detected Ubuntu-bundled docker.io — replacing with official Docker CE..."
+    apt-get remove -y docker.io docker-compose 2>/dev/null || true
+    curl -fsSL https://get.docker.com | sh
+    ok "Replaced docker.io with official Docker CE $(docker --version | awk '{print $3}' | tr -d ,)"
+  fi
 else
-  info "Installing Docker..."
+  info "Installing Docker (official)..."
   curl -fsSL https://get.docker.com | sh
-  ok "Docker installed"
+  ok "Docker installed: $(docker --version | awk '{print $3}' | tr -d ,)"
 fi
 
 resolve_compose
