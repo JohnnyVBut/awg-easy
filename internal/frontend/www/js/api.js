@@ -6,7 +6,19 @@
 class API {
 
   async call({ method, path, body }) {
-    const res = await fetch(`./api${path}`, {
+    // Compute API base URL from the first path segment of the current page.
+    // Works correctly whether the page was loaded with or without a trailing slash,
+    // and whether there is a reverse-proxy prefix (e.g. Caddy ADMIN_PATH) or not.
+    // Examples:
+    //   /a3c8ac6953f44ce1bf1e0c06/  → /a3c8ac6953f44ce1bf1e0c06/api
+    //   /a3c8ac6953f44ce1bf1e0c06   → /a3c8ac6953f44ce1bf1e0c06/api  (no trailing slash — safe)
+    //   /                           → /api  (direct access, no proxy prefix)
+    const segs = window.location.pathname.split('/').filter(Boolean);
+    const apiBase = segs.length > 0
+      ? `${window.location.origin}/${segs[0]}/api`
+      : `${window.location.origin}/api`;
+
+    const res = await fetch(`${apiBase}${path}`, {
       method: method.toUpperCase(), // Node.js 22 llhttp: HTTP method must be uppercase
       headers: {
         'Content-Type': 'application/json',

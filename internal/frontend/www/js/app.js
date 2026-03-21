@@ -940,11 +940,7 @@ new Vue({
     async deleteTunnelInterface(iface) {
       if (!confirm(`Delete interface "${iface.name}"? This will also delete all peers.`)) return;
       try {
-        const res = await fetch(`./api/tunnel-interfaces/${iface.id}`, {
-          method: 'DELETE',
-          credentials: 'include',
-        });
-        if (!res.ok) throw new Error(res.statusText);
+        await this.api.deleteTunnelInterface({ interfaceId: iface.id });
         if (this.activeInterfaceId === iface.id) {
           this.activeInterfaceId = null;
           this.selectedInterface = null;
@@ -975,16 +971,8 @@ new Vue({
       if (this.loadingInterfaceId) return; // предотвратить двойной клик
       this.loadingInterfaceId = iface.id;
       try {
-        const res = await fetch(`./api/tunnel-interfaces/${iface.id}/start`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.message || res.statusText);
-        }
-        const data = await res.json();
-        if (data.interface) this._applyInterfaceUpdate(data.interface);
+        const data = await this.api.startTunnelInterface({ interfaceId: iface.id });
+        if (data && data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Start failed:', err);
         this.showToast(`Start failed: ${err.message}`, 'error');
@@ -997,16 +985,8 @@ new Vue({
       if (this.loadingInterfaceId) return;
       this.loadingInterfaceId = iface.id;
       try {
-        const res = await fetch(`./api/tunnel-interfaces/${iface.id}/stop`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.message || res.statusText);
-        }
-        const data = await res.json();
-        if (data.interface) this._applyInterfaceUpdate(data.interface);
+        const data = await this.api.stopTunnelInterface({ interfaceId: iface.id });
+        if (data && data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Stop failed:', err);
         this.showToast(`Stop failed: ${err.message}`, 'error');
@@ -1019,16 +999,8 @@ new Vue({
       if (this.loadingInterfaceId) return;
       this.loadingInterfaceId = iface.id;
       try {
-        const res = await fetch(`./api/tunnel-interfaces/${iface.id}/restart`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.message || res.statusText);
-        }
-        const data = await res.json();
-        if (data.interface) this._applyInterfaceUpdate(data.interface);
+        const data = await this.api.restartTunnelInterface({ interfaceId: iface.id });
+        if (data && data.interface) this._applyInterfaceUpdate(data.interface);
       } catch (err) {
         console.error('Restart failed:', err);
         this.showToast(`Restart failed: ${err.message}`, 'error');
@@ -1039,9 +1011,7 @@ new Vue({
 
     async loadInterfacePeers(interfaceId) {
       try {
-        const res = await fetch(`./api/tunnel-interfaces/${interfaceId}/peers`, { credentials: 'include' });
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json();
+        const data = await this.api.getTunnelInterfacePeers({ interfaceId });
         this.selectedInterfacePeers = data.peers || [];
       } catch (err) {
         console.error('Failed to load peers:', err);
@@ -1115,11 +1085,10 @@ new Vue({
     async deletePeer(peer) {
       if (!confirm(`Delete peer "${peer.name}"?`)) return;
       try {
-        const res = await fetch(`./api/tunnel-interfaces/${this.selectedInterface.id}/peers/${peer.id}`, {
-          method: 'DELETE',
-          credentials: 'include',
+        await this.api.deleteTunnelInterfacePeer({
+          interfaceId: this.selectedInterface.id,
+          peerId: peer.id,
         });
-        if (!res.ok) throw new Error(res.statusText);
         await this.loadInterfacePeers(this.selectedInterface.id);
         await this.loadTunnelInterfaces();
         this.showToast('Peer deleted!');
@@ -1131,7 +1100,11 @@ new Vue({
 
     async downloadPeerConfig(peer) {
       try {
-        const res = await fetch(`./api/tunnel-interfaces/${this._peerIfaceId(peer)}/peers/${peer.id}/config`, {
+        const segs = window.location.pathname.split('/').filter(Boolean);
+        const apiBase = segs.length > 0
+          ? `${window.location.origin}/${segs[0]}/api`
+          : `${window.location.origin}/api`;
+        const res = await fetch(`${apiBase}/tunnel-interfaces/${this._peerIfaceId(peer)}/peers/${peer.id}/config`, {
           credentials: 'include',
         });
         if (!res.ok) throw new Error(res.statusText);
