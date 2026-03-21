@@ -18,6 +18,21 @@ REBOOT_FLAG="/var/lib/.wiresteer-needs-reboot"
 # ── Colors ───────────────────────────────────────────────────────────────────
 G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; B='\033[0;34m'; N='\033[0m'
 
+# ── Docker Compose command (v2 plugin or v1 standalone) ───────────────────────
+# Resolved after Docker is confirmed installed (Step 3).
+# Use COMPOSE_CMD everywhere instead of hardcoded "docker compose".
+resolve_compose() {
+  if docker compose version &>/dev/null 2>&1; then
+    COMPOSE_CMD="docker compose"
+  elif command -v docker-compose &>/dev/null; then
+    COMPOSE_CMD="docker-compose"
+  else
+    fail "docker compose not found. Install docker-compose-plugin: apt install docker-compose-plugin"
+  fi
+  ok "Compose: $COMPOSE_CMD"
+}
+COMPOSE_CMD="docker compose"  # default, overridden by resolve_compose after Step 3
+
 ok()   { echo -e "${G}  [✓]${N} $*"; }
 info() { echo -e "${B}  [→]${N} $*"; }
 warn() { echo -e "${Y}  [!]${N} $*"; }
@@ -142,6 +157,8 @@ else
   curl -fsSL https://get.docker.com | sh
   ok "Docker installed"
 fi
+
+resolve_compose
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -294,8 +311,8 @@ sed -i "s|PORT=.*|PORT=${WIRESTEER_PORT}|"        "$COMPOSE_FILE"
 sed -i "s|PASSWORD_HASH=.*|PASSWORD_HASH=|"       "$COMPOSE_FILE"
 
 info "Starting WireSteer..."
-docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
-docker compose -f "$COMPOSE_FILE" up -d
+$COMPOSE_CMD -f "$COMPOSE_FILE" down 2>/dev/null || true
+$COMPOSE_CMD -f "$COMPOSE_FILE" up -d
 
 # Wait for health
 info "Waiting for health check..."
@@ -375,15 +392,15 @@ chmod 600 "$CADDY_DIR/.env"
 
 info "Starting Caddy..."
 cd "$CADDY_DIR"
-docker compose down 2>/dev/null || true
-docker compose up -d --build
+$COMPOSE_CMD down 2>/dev/null || true
+$COMPOSE_CMD up -d --build
 
 # Wait for Caddy
 sleep 2
 if docker ps --filter "name=wiresteer-caddy" --filter "status=running" | grep -q wiresteer-caddy; then
   ok "Caddy running"
 else
-  fail "Caddy failed to start — check: docker compose -f deploy/caddy/docker-compose.yml logs"
+  fail "Caddy failed to start — check: $COMPOSE_CMD -f deploy/caddy/docker-compose.yml logs"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
