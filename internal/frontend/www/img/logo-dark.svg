@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="980" height="300" viewBox="0 0 980 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Cascade logo</title>
-  <desc id="desc">Cascade logo with geometric network graph icon and the tagline Control your VPN traffic.</desc>
+  <desc id="desc">Cascade logo with geometric network graph icon and the tagline Your VPN, Your way.</desc>
   <defs>
     <linearGradient id="gradA" x1="36" y1="230" x2="232" y2="58" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#22C55E"/>
@@ -47,5 +47,5 @@
   </g>
 
   <text x="300" y="178" class="brand">Cascade</text>
-  <text x="305" y="250" class="tag">Control your VPN traffic.</text>
+  <text x="305" y="250" class="tag">Your VPN, Your way.</text>
 </svg>
