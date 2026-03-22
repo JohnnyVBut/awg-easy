@@ -9,16 +9,16 @@
 #   1. Installs acme.sh (if not present)
 #   2. Issues a shortlived cert (6 days) for the IP via HTTP-01 standalone mode
 #      (acme.sh binds a temporary HTTP server on port 80 — no Caddy needed yet)
-#   3. Installs the cert to /etc/ssl/wiresteer/
+#   3. Installs the cert to /etc/ssl/cascade/
 #   4. Configures auto-renewal via acme.sh cron (every 3 days)
 #   5. On renewal: Caddy serves /.well-known/acme-challenge/* via webroot /srv/acme
-#      and reloads automatically via `docker exec wiresteer-caddy caddy reload`
+#      and reloads automatically via `docker exec cascade-caddy caddy reload`
 #
 # Requirements:
 #   - Port 80 must be reachable from the internet during FIRST issuance
 #     (acme.sh standalone mode binds port 80 briefly; no existing HTTP server needed)
 #   - For RENEWAL: Caddy handles the challenge via webroot /srv/acme (already configured)
-#   - Caddy container name: wiresteer-caddy (see docker-compose.yml)
+#   - Caddy container name: cascade-caddy (see docker-compose.yml)
 #   - Docker must be installed and running
 
 set -euo pipefail
@@ -26,9 +26,9 @@ set -euo pipefail
 IP="${1:?Usage: $0 <PUBLIC_IP> <EMAIL>}"
 EMAIL="${2:?Usage: $0 <PUBLIC_IP> <EMAIL>}"
 
-CERT_DIR="/etc/ssl/wiresteer"
+CERT_DIR="/etc/ssl/cascade"
 ACME_WEBROOT="/srv/acme"
-CADDY_CONTAINER="wiresteer-caddy"
+CADDY_CONTAINER="cascade-caddy"
 
 echo "==> Creating directories..."
 mkdir -p "$CERT_DIR" "$ACME_WEBROOT"

@@ -1,6 +1,6 @@
-# WireSteer — Caddy Reverse Proxy
+# Cascade — Caddy Reverse Proxy
 
-Caddy sits in front of WireSteer and provides:
+Caddy sits in front of Cascade and provides:
 - HTTPS + HTTP/3 (QUIC) on port 443
 - Decoy streaming site on `/`
 - Hidden admin path (configured via `ADMIN_PATH` env var)
@@ -34,10 +34,10 @@ Download Big Buck Bunny (or any neutral mp4) to:
 www/video/decoy.mp4
 ```
 
-### 4. Ensure WireSteer binds to 127.0.0.1 only
+### 4. Ensure Cascade binds to 127.0.0.1 only
 
 Set `BIND_ADDR=127.0.0.1` in `docker-compose.go.yml` (already the default).
-This prevents WireSteer from being reachable directly from the internet — all traffic
+This prevents Cascade from being reachable directly from the internet — all traffic
 must go through Caddy's hidden `ADMIN_PATH`.
 
 As a second layer, block the port via iptables:
@@ -59,10 +59,10 @@ https://<IP>/<ADMIN_PATH>/
 
 ## Security notes
 
-- `ADMIN_PATH` is security through obscurity — TOTP in WireSteer is the real gate
+- `ADMIN_PATH` is security through obscurity — TOTP in Cascade is the real gate
 - `Referrer-Policy: no-referrer` prevents the hidden path from leaking via Referer headers
 - Rate limiting blocks brute force on the login endpoint (5 POST /api/session per IP per minute)
-- WireSteer port (default 8888) MUST NOT be reachable from the internet (see step 4)
+- Cascade port (default 8888) MUST NOT be reachable from the internet (see step 4)
 - TLS cert renews automatically every 3 days via acme.sh cron (webroot via Caddy after first issue)
 - Caddy container runs read-only with minimal capabilities (NET_BIND_SERVICE only)
 

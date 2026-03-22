@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: wiresteer-caddy
-    # Must match WireSteer network mode so Caddy can reach 127.0.0.1:51821.
+    container_name: cascade-caddy
+    # Must match Cascade network mode so Caddy can reach 127.0.0.1:8888.
     # With --network host, Caddy binds ports 80 and 443 directly on the host.
     network_mode: host
     restart: unless-stopped
@@ -20,7 +20,7 @@ services:
       # acme.sh webroot for ACME HTTP-01 challenges
       - /srv/acme:/srv/acme:ro
       # TLS certs managed by acme.sh on the host
-      - /etc/ssl/wiresteer:/certs:ro
+      - /etc/ssl/cascade:/certs:ro
       # Persistent logs
       - caddy_logs:/logs
 

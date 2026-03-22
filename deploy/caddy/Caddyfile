@@ -1,11 +1,11 @@
-# WireSteer — Caddy reverse proxy config
+# Cascade — Caddy reverse proxy config
 #
 # Environment variables (set in .env):
 #   ADMIN_PATH   — random hidden path segment, e.g. "a8f3k2m9p7"
 #
 # TLS certs are managed by acme.sh (see scripts/acme-install.sh):
-#   /etc/ssl/wiresteer/server.crt
-#   /etc/ssl/wiresteer/server.key
+#   /etc/ssl/cascade/server.crt
+#   /etc/ssl/cascade/server.key
 #
 # HTTP/3 (QUIC) is enabled automatically by Caddy when TLS is configured.
 
@@ -59,16 +59,16 @@ https://:443 {
 
     # ── Admin interface (hidden path) ─────────────────────────────────────────
     #
-    # handle_path strips the prefix before forwarding to WireSteer.
-    # WireSteer's SPA uses relative asset paths (./css/app.css, ./js/app.js),
+    # handle_path strips the prefix before forwarding to Cascade.
+    # Cascade's SPA uses relative asset paths (./css/app.css, ./js/app.js),
     # so they resolve relative to the current path segment and are proxied
     # correctly after prefix stripping:
-    #   /ADMIN_PATH/          → /           → WireSteer index.html
-    #   /ADMIN_PATH/css/...   → /css/...    → WireSteer static asset
-    #   /ADMIN_PATH/api/...   → /api/...    → WireSteer API handler
+    #   /ADMIN_PATH/          → /           → Cascade index.html
+    #   /ADMIN_PATH/css/...   → /css/...    → Cascade static asset
+    #   /ADMIN_PATH/api/...   → /api/...    → Cascade API handler
     #
     handle_path /{$ADMIN_PATH}/* {
-        reverse_proxy 127.0.0.1:{$WIRESTEER_PORT}
+        reverse_proxy 127.0.0.1:{$CASCADE_PORT}
     }
 
     # Redirect /ADMIN_PATH (no trailing slash) → add trailing slash

@@ -213,7 +213,7 @@ func main() {
 	// cfg.BindHost="" → ":port" → listens on all interfaces (0.0.0.0).
 	// cfg.BindHost="127.0.0.1" → "127.0.0.1:port" → localhost only (behind reverse proxy).
 	addr := fmt.Sprintf("%s:%d", cfg.BindHost, cfg.Port)
-	log.Printf("WireSteer | host=%s | listen=%s (tcp) | wg-port=%d (udp) | data=%s",
+	log.Printf("Cascade | host=%s | listen=%s (tcp) | wg-port=%d (udp) | data=%s",
 		cfg.Host, addr, cfg.WGPort, cfg.DataDir)
 
 	// Run in a goroutine so the signal wait below is not blocked.
