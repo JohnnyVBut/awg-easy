@@ -68,18 +68,6 @@ https://:443 {
     #   /ADMIN_PATH/api/...   → /api/...    → WireSteer API handler
     #
     handle_path /{$ADMIN_PATH}/* {
-        # Rate limit POST /api/session (login attempts): 5 per IP per minute.
-        # After 5 failed attempts the client receives 429 Too Many Requests.
-        @login {
-            method POST
-            path /api/session
-        }
-        rate_limit @login {
-            key    {http.request.remote.host}
-            window 1m
-            events 5
-        }
-
         reverse_proxy 127.0.0.1:{$WIRESTEER_PORT}
     }
 
