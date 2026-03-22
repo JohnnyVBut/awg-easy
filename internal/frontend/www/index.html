@@ -90,7 +90,7 @@
              style="border-right: 1px solid #e5e7eb; min-height: 100vh;">
           <!-- Logo -->
           <div style="padding: 20px 16px 14px;">
-            <img src="img/logo.svg" style="width:216px; height:auto; display:block;" alt="WireSteer" />
+            <img :src="uiTheme === 'dark' ? 'img/logo-dark.svg' : 'img/logo.svg'" style="width:216px; height:auto; display:block;" alt="WireSteer" />
           </div>
           <!-- Menu items -->
           <div style="padding: 0 8px;" class="flex-grow">
@@ -4664,7 +4664,7 @@
 
       <div v-if="authenticated === false">
         <div class="text-center" style="margin-top:80px; margin-bottom:12px;">
-          <img src="img/logo.svg" style="width:220px; height:auto; display:inline-block;" alt="WireSteer" />
+          <img :src="uiTheme === 'dark' ? 'img/logo-dark.svg' : 'img/logo.svg'" style="width:220px; height:auto; display:inline-block;" alt="WireSteer" />
         </div>
 
         <!-- Step 1: username + password -->
